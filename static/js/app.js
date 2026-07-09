@@ -596,6 +596,7 @@ function openLogin() {
   const loginForm = document.getElementById("login-form");
   if (loginForm) {
     loginForm.reset();
+    setLoginAdminMode(false);
   }
   const dialog = document.getElementById("login-dialog");
   if (!dialog.open) {
@@ -635,18 +636,31 @@ function setLoginAdminMode(enabled) {
   const modeHint = document.getElementById("login-mode-hint");
   const modeCheckbox = document.getElementById("login-admin-mode");
   const loginExtras = document.getElementById("login-extra-options");
+  const showAdminBtn = document.getElementById("show-admin-login-btn");
+  const passwordInput = document.querySelector('#login-form input[name="password"]');
   const isEnabled = Boolean(enabled);
   if (loginExtras) loginExtras.hidden = !isEnabled;
   if (adminFields) adminFields.hidden = !isEnabled;
+  if (showAdminBtn) showAdminBtn.hidden = isEnabled;
   if (adminUserInput) {
     adminUserInput.required = isEnabled;
-    if (!isEnabled) adminUserInput.value = "";
+    if (!isEnabled) {
+      adminUserInput.value = "";
+    } else if (!adminUserInput.value.trim()) {
+      adminUserInput.value = "admin";
+    }
   }
   if (modeCheckbox) modeCheckbox.checked = isEnabled;
   if (modeHint) {
     modeHint.textContent = isEnabled
       ? "Modo admin activo: ingresa usuario y clave."
       : "Admin: marca la opcion y usa usuario + clave.";
+  }
+  if (passwordInput) {
+    passwordInput.placeholder = isEnabled ? "Ingresa tu clave de admin" : "Ingresa tu clave de cajero";
+  }
+  if (isEnabled) {
+    setTimeout(() => (adminUserInput || passwordInput)?.focus(), 0);
   }
 }
 
@@ -6273,7 +6287,14 @@ async function login(event) {
     }
     openPostLoginDialog();
   } catch (error) {
-    alert(error.message);
+    const message = String(error?.message || "No se pudo iniciar sesion.");
+    if (!adminMode) {
+      alert(
+        `${message}\n\nSi eres administrador, pulsa "Entrar como administrador", luego usa usuario (ej. admin) y tu clave.`
+      );
+      return;
+    }
+    alert(message);
   }
 }
 
@@ -6913,8 +6934,10 @@ function setupEvents() {
   });
 
   document.getElementById("login-dialog-title")?.addEventListener("dblclick", () => {
-    const extras = document.getElementById("login-extra-options");
-    setLoginAdminMode(Boolean(extras?.hidden));
+    setLoginAdminMode(true);
+  });
+  document.getElementById("show-admin-login-btn")?.addEventListener("click", () => {
+    setLoginAdminMode(true);
   });
 
   const productDialog = document.getElementById("product-dialog");
