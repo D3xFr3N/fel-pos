@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FEL POS Movil</title>
+  <link rel="stylesheet" href="/static/css/mobile.css">
+</head>
+<body>
+  <main class="mobile-app">
+    <header class="mobile-header">
+      <h1>FEL POS Movil</h1>
+      <p>Conteo y verificacion de precios sincronizados con el sistema principal.</p>
+      <p class="hint">Usa tu usuario personal creado por admin en el sistema principal.</p>
+    </header>
+
+    <section class="card">
+      <div class="row">
+        <strong>Sesion</strong>
+        <span id="session-user">Sin sesion</span>
+      </div>
+      <form id="login-form" class="stack">
+        <label>
+          Usuario
+          <input name="username" required placeholder="admin o cajero">
+        </label>
+        <label>
+          Clave
+          <input name="password" type="password" required placeholder="********">
+        </label>
+        <button class="btn primary" type="submit">Iniciar sesion</button>
+      </form>
+      <button id="logout-btn" class="btn ghost" type="button">Cerrar sesion</button>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <h2>Orden de conteo activa</h2>
+        <button id="refresh-order-btn" class="btn ghost" type="button">Actualizar</button>
+      </div>
+      <p id="order-status" class="hint">Debes iniciar sesion.</p>
+      <div id="order-meta" class="stack"></div>
+    </section>
+
+    <section class="card">
+      <h2>Verificar precio</h2>
+      <form id="price-check-form" class="stack">
+        <label>
+          SKU / codigo de barras
+          <input id="price-sku" name="sku" required placeholder="Escanea codigo de barras">
+        </label>
+        <button class="btn primary" type="submit">Consultar precio</button>
+      </form>
+      <div id="price-result" class="stack"></div>
+    </section>
+
+    <section class="card">
+      <h2>Escanear para conteo</h2>
+      <p id="dynamic-adjust-status" class="dynamic-adjust">Ajuste dinamico: esperando orden activa.</p>
+      <form id="count-form" class="stack">
+        <label>
+          SKU / codigo de barras
+          <input id="count-sku" name="sku" required placeholder="Escanea SKU para conteo">
+        </label>
+        <label>
+          Cantidad
+          <input id="count-qty" name="qty" type="number" min="0.01" step="0.01" value="1" required>
+        </label>
+        <button id="count-submit-btn" class="btn primary" type="submit">Guardar escaneo</button>
+      </form>
+      <p class="hint">Cada escaneo se guarda de inmediato en la orden activa.</p>
+      <div id="count-summary" class="stack"></div>
+      <div id="count-lines" class="stack"></div>
+    </section>
+  </main>
+  <script src="/static/js/mobile.js"></script>
+</body>
+</html>

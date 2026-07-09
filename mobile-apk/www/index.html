@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FEL POS Conteo</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="card">
+      <h1>FEL POS Conteo</h1>
+      <p>APK para abrir la app movil de conteo y verificacion de precios.</p>
+    </header>
+
+    <section class="card" id="config-card">
+      <h2>Configuracion servidor</h2>
+      <label>
+        URL base del servidor FEL POS
+        <input id="server-url" placeholder="Ej. http://192.168.1.20:8000" />
+      </label>
+      <div class="actions">
+        <button id="save-server-btn" class="btn ghost" type="button">Guardar</button>
+        <button id="open-mobile-btn" class="btn primary" type="button">Abrir conteo y precios</button>
+      </div>
+      <p id="status" class="hint"></p>
+    </section>
+
+    <section class="card hidden" id="viewer-card">
+      <div class="viewer-header">
+        <strong id="viewer-url">-</strong>
+        <button id="change-server-btn" class="btn ghost" type="button">Cambiar servidor</button>
+      </div>
+      <iframe id="mobile-frame" title="FEL POS Movil"></iframe>
+    </section>
+  </main>
+
+  <script src="./main.js"></script>
+</body>
+</html>

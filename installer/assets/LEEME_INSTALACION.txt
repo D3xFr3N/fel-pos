@@ -1,0 +1,87 @@
+FEL POS Guatemala - Instalacion
+================================
+
+Gracias por instalar FEL POS.
+
+DATOS IMPORTANTES (NO BORRAR)
+-----------------------------
+- data\fel_pos.db        (base de datos)
+- data\backups\          (respaldos automaticos)
+- .env                   (configuracion de tu tienda)
+
+USUARIOS DE PRUEBA
+------------------
+- Admin:  admin / admin123
+- Cajero: cajero / cajero123
+
+CAMBIAR CLAVES
+--------------
+Entra como admin y ve a Configuracion para crear usuarios reales.
+
+PRIMER USO
+----------
+1. Durante la instalacion, elige el tipo de negocio y si deseas factura contable (FEL).
+2. Abre FEL POS desde el acceso directo.
+3. Inicia sesion como admin (admin / admin123).
+4. Ve a Configuracion y completa tu NIT y empresa (y certificador si usas FEL).
+5. Configura productos e inventario.
+
+FACTURACION CONTABLE (FEL)
+--------------------------
+Puedes elegir al instalar o en Configuracion:
+- Sin factura contable: solo ticket de venta POS
+- Con FEL demo: factura electronica de prueba
+- Con FEL produccion: factura real SAT (requiere certificador)
+
+PERFILES DE TIENDA DISPONIBLES
+------------------------------
+- Abarrotes (tienda general)
+- Farmacia
+- Libreria escolar
+- Ferreteria
+- Restaurante
+- Boutique
+
+Puedes cambiar el perfil despues en Configuracion sin perder datos.
+
+ACTUALIZACIONES AUTOMATICAS
+---------------------------
+Opcion A - GitHub Pages (recomendado, gratis):
+1. Sube el proyecto a GitHub (repo publico, ej. fel-pos).
+2. En tu PC con Git y GitHub CLI:
+   .\publish_github_updates.ps1 -GitHubOwner D3xFr3N -GitHubRepo fel-pos
+3. En GitHub: Settings -> Pages -> Branch gh-pages / (root).
+4. Configura en cada tienda:
+   UPDATE_MANIFEST_URL=https://D3xFr3N.github.io/fel-pos/latest.json
+5. Cada mejora: sube cambios, ejecuta publish_github_updates.ps1 o crea tag v0.3.6.
+
+Opcion B - Servidor propio:
+1. Publica latest.json y el zip de actualizacion en tu servidor web.
+2. Configura UPDATE_MANIFEST_URL en .env apuntando a latest.json.
+
+Las tiendas veran "Actualizar ahora" cuando haya una version nueva.
+No necesitas reenviar el instalador completo en cada mejora.
+
+CONFIGURAR FEL (SIN EDITAR ARCHIVOS)
+-------------------------------------
+En Configuracion (admin) puedes guardar:
+- Datos de empresa y NIT
+- Modo FEL (demo o produccion)
+- Certificador (Infile, Digifact), usuario, llave y URL API
+El sistema guarda en base de datos y sincroniza .env automaticamente.
+
+ACTUALIZAR SIN PERDER DATOS
+---------------------------
+1. Ejecuta "Respaldo antes de actualizar".
+2. Ejecuta "Actualizar sistema (seguro)" y selecciona la carpeta nueva.
+3. Tus datos en data\ y .env se conservan.
+4. La version queda registrada en data\app_version.json.
+
+VERSIONES
+---------
+- El archivo VERSION en la carpeta de instalacion indica la version actual.
+- En Configuracion (admin) puedes ver historial de versiones instaladas.
+
+SOPORTE
+-------
+Si no abre, revisa felpos-error.log en la carpeta de instalacion.

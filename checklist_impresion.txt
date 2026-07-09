@@ -1,0 +1,108 @@
+CHECKLIST INSTALACION SERVIDOR FEL POS
+======================================
+
+Proyecto:
+- Ruta: C:\Users\D3xFr3N\source\fel-pos
+
+OBJETIVO
+--------
+Dejar una PC como servidor estable para que admin y cajeros trabajen sincronizados.
+
+PASO 1 - PREPARAR PC SERVIDOR
+-----------------------------
+[ ] Usar una PC dedicada (ideal mini PC o equipo estable).
+[ ] Conectar por cable de red (LAN) al router.
+[ ] Conectar a UPS (respaldo de energia).
+[ ] Verificar Windows actualizado.
+
+PASO 2 - INSTALAR PYTHON
+------------------------
+[ ] Instalar Python 3.11 o superior.
+[ ] Marcar opcion "Add Python to PATH".
+[ ] Verificar en CMD: python --version
+
+PASO 3 - CONFIGURAR FEL POS (TODO EN UNO)
+-----------------------------------------
+[ ] Abrir carpeta del proyecto: C:\Users\D3xFr3N\source\fel-pos
+[ ] Clic derecho en setup_all_server.bat
+[ ] Ejecutar como administrador
+[ ] Esperar mensaje final: "FEL POS SERVIDOR: TODO CONFIGURADO"
+
+PASO 4 - VALIDAR ESTADO DEL SERVIDOR
+------------------------------------
+[ ] Ejecutar server_status.bat
+[ ] Confirmar tarea: FELPOS_Server_Autostart
+[ ] Confirmar puerto 8000 escuchando
+[ ] Revisar log: server-autostart.log
+
+PASO 5 - FIJAR IP DEL SERVIDOR
+------------------------------
+Opcion recomendada (router):
+[ ] Entrar al router
+[ ] Crear reserva DHCP para la PC servidor
+[ ] Asignar IP fija (ejemplo: 192.168.1.50)
+
+Opcion manual en Windows (si no hay reserva DHCP):
+[ ] Configuracion de red -> IP manual
+[ ] IP: 192.168.1.50
+[ ] Mascara: 255.255.255.0
+[ ] Gateway: 192.168.1.1 (o la de tu red)
+[ ] DNS: 8.8.8.8 y 1.1.1.1
+
+PASO 6 - EVITAR SUSPENSION
+--------------------------
+[ ] Panel de control -> Opciones de energia
+[ ] Suspender equipo: Nunca
+[ ] Hibernar: Nunca
+[ ] Desactivar apagado automatico por inactividad
+
+PASO 7 - PROBAR DESDE OTRA PC
+-----------------------------
+[ ] En servidor ejecutar: ipconfig
+[ ] Anotar IPv4 (ejemplo: 192.168.1.50)
+[ ] En PC cliente abrir: http://192.168.1.50:8000
+[ ] Probar login admin
+[ ] Probar login cajero (solo clave si esta activo)
+[ ] Probar venta de prueba
+
+PASO 8 - PRUEBA DE REINICIO
+---------------------------
+[ ] Reiniciar la PC servidor
+[ ] Esperar 1-2 minutos
+[ ] Ejecutar server_status.bat
+[ ] Verificar que el sistema levanto solo
+[ ] Entrar desde un cliente y validar acceso
+
+PASO 9 - OPERACION DIARIA
+-------------------------
+[ ] Mantener la PC servidor encendida
+[ ] No usarla para tareas pesadas
+[ ] Revisar server-autostart.log si hay fallas
+[ ] Verificar que backups se generen correctamente
+
+PASO 10 - RESPALDO EXTRA (RECOMENDADO)
+--------------------------------------
+[ ] Copiar carpeta data/backups diariamente a USB o nube
+[ ] Guardar una copia fuera de la tienda semanalmente
+
+PASO 11 - ACTUALIZAR SIN PERDER DATOS
+-------------------------------------
+[ ] Ejecutar pre_update_backup.bat
+[ ] Ejecutar update_system_safe.bat "C:\ruta\fel-pos-nuevo"
+[ ] Verificar que exista data\fel_pos.db
+[ ] Verificar que exista .env
+[ ] Reiniciar con run_server_mode.bat o server_status.bat
+
+SOPORTE RAPIDO
+--------------
+- Instalar autoarranque: install_server_autostart.bat
+- Quitar autoarranque: remove_server_autostart.bat
+- Ver estado: server_status.bat
+- Modo local escritorio: run_local_mode.bat
+- Modo servidor red: run_server_mode.bat
+- Respaldo antes de actualizar: pre_update_backup.bat
+- Actualizacion segura: update_system_safe.bat "C:\ruta\nueva-version"
+
+Notas:
+- Si no abre en clientes, revisar firewall, IP y que ambos equipos esten en la misma red.
+- Si se corta energia, esperar reinicio del servidor y validar con server_status.bat.

@@ -1,0 +1,40 @@
+name: Publish FEL POS update
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build EXE and update package
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.venv\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
+          .\build_exe.ps1
+          $owner = "${{ github.repository_owner }}"
+          $repo = "${{ github.event.repository.name }}"
+          .\build_update_release.ps1 -GitHubOwner $owner -GitHubRepo $repo
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist/release
+          commit_message: "Publicar actualizacion FEL POS"

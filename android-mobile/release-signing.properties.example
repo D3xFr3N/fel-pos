@@ -1,0 +1,4 @@
+storeFile=keystore/felpos-release.jks
+storePassword=CAMBIA_ESTA_CLAVE
+keyAlias=felpos
+keyPassword=CAMBIA_ESTA_CLAVE

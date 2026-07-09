@@ -1,0 +1,37 @@
+# Entorno y secretos
+.venv/
+.env
+*.log
+
+# Build y distribucion
+build/
+dist/
+*.spec
+.gh-pages-worktree/
+
+# Datos locales de desarrollo
+data/
+felpos-error.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+Desktop.ini
+
+# Android / mobile (artefactos de build)
+android-mobile/.gradle/
+android-mobile/app/build/
+android-mobile/local.properties
+mobile-apk/node_modules/
+mobile-apk/android/
+
+# Instalador staging (se regenera al compilar)
+installer/staging/

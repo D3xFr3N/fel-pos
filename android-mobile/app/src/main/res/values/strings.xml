@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FEL POS Movil</string>
+    <string name="app_title">Conteo y Verificacion de Precios</string>
+    <string name="server_hint">Ingresa la URL base del servidor FEL POS en tu red local.</string>
+    <string name="server_placeholder">http://192.168.1.20:8000</string>
+    <string name="save_server">Guardar servidor</string>
+    <string name="open_mobile">Abrir app movil</string>
+</resources>

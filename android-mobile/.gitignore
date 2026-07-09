@@ -1,0 +1,4 @@
+release-signing.properties
+keystore/
+app/build/
+.gradle/

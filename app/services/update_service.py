@@ -1,0 +1,263 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import shutil
+import sys
+import tempfile
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+from app.config import settings
+from app.data_paths import get_runtime_root
+from app.services.backup_service import create_backup
+from app.version import get_app_version
+
+PENDING_UPDATE_SCRIPT = "apply_pending_update.bat"
+PENDING_UPDATE_META = "pending_update.json"
+UPDATE_FILES = ("FELPOS.exe", "VERSION", "BUILD_DATE")
+HTTP_TIMEOUT_SECONDS = 45
+
+
+@dataclass
+class UpdateManifest:
+    version: str
+    download_url: str
+    build_date: str | None = None
+    sha256: str | None = None
+    release_notes: str | None = None
+
+
+def _version_key(value: str) -> tuple:
+    parts: list[Any] = []
+    for chunk in re.split(r"[.\-]", (value or "").strip()):
+        if not chunk:
+            continue
+        if chunk.isdigit():
+            parts.append(int(chunk))
+        else:
+            parts.append(chunk)
+    return tuple(parts) if parts else (0,)
+
+
+def is_newer_version(remote_version: str, current_version: str | None = None) -> bool:
+    current = current_version or get_app_version()
+    return _version_key(remote_version) > _version_key(current)
+
+
+def get_update_manifest_url() -> str:
+    return (settings.update_manifest_url or "").strip()
+
+
+def _fetch_manifest(url: str) -> UpdateManifest:
+    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        response = client.get(url)
+        response.raise_for_status()
+        payload = response.json()
+    version = str(payload.get("version") or "").strip()
+    download_url = str(payload.get("download_url") or "").strip()
+    if not version or not download_url:
+        raise ValueError("El manifiesto de actualizacion no tiene version o download_url.")
+    return UpdateManifest(
+        version=version,
+        download_url=download_url,
+        build_date=(str(payload.get("build_date")).strip() if payload.get("build_date") else None),
+        sha256=(str(payload.get("sha256")).strip().lower() if payload.get("sha256") else None),
+        release_notes=(str(payload.get("release_notes")).strip() if payload.get("release_notes") else None),
+    )
+
+
+def check_for_updates() -> dict:
+    manifest_url = get_update_manifest_url()
+    current_version = get_app_version()
+    if not manifest_url:
+        return {
+            "enabled": False,
+            "current_version": current_version,
+            "update_available": False,
+            "message": "Actualizaciones automaticas no configuradas.",
+        }
+
+    try:
+        manifest = _fetch_manifest(manifest_url)
+    except Exception as exc:
+        return {
+            "enabled": True,
+            "current_version": current_version,
+            "update_available": False,
+            "manifest_url": manifest_url,
+            "error": str(exc),
+            "message": f"No se pudo consultar actualizaciones: {exc}",
+        }
+
+    available = is_newer_version(manifest.version, current_version)
+    return {
+        "enabled": True,
+        "current_version": current_version,
+        "latest_version": manifest.version,
+        "build_date": manifest.build_date,
+        "download_url": manifest.download_url,
+        "release_notes": manifest.release_notes,
+        "update_available": available,
+        "manifest_url": manifest_url,
+        "message": (
+            f"Nueva version disponible: {manifest.version}"
+            if available
+            else "El sistema ya esta en la ultima version publicada."
+        ),
+    }
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _download_file(url: str, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        with client.stream("GET", url) as response:
+            response.raise_for_status()
+            with target.open("wb") as handle:
+                for chunk in response.iter_bytes():
+                    handle.write(chunk)
+
+
+def _extract_update_zip(zip_path: Path, extract_dir: Path) -> dict[str, Path]:
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    found: dict[str, Path] = {}
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        archive.extractall(extract_dir)
+    for name in UPDATE_FILES:
+        direct = extract_dir / name
+        if direct.exists():
+            found[name] = direct
+            continue
+        matches = list(extract_dir.rglob(name))
+        if matches:
+            found[name] = matches[0]
+    if "FELPOS.exe" not in found:
+        raise ValueError("El paquete de actualizacion no contiene FELPOS.exe.")
+    return found
+
+
+def _write_restart_script(install_dir: Path) -> Path:
+    script_path = install_dir / PENDING_UPDATE_SCRIPT
+    exe_name = "FELPOS.exe"
+    lines = [
+        "@echo off",
+        "setlocal EnableExtensions",
+        f'cd /d "{install_dir}"',
+        "echo Aplicando actualizacion de FEL POS...",
+        ":wait",
+        'tasklist /FI "IMAGENAME eq FELPOS.exe" 2>nul | find /I "FELPOS.exe" >nul',
+        "if not errorlevel 1 (",
+        "  timeout /t 1 >nul",
+        "  goto wait",
+        ")",
+    ]
+    for file_name in UPDATE_FILES:
+        pending_name = f"{file_name}.pending"
+        lines.extend(
+            [
+                f'if exist "{pending_name}" (',
+                f'  move /Y "{pending_name}" "{file_name}" >nul',
+                ")",
+            ]
+        )
+    lines.extend(
+        [
+            f'if exist "{PENDING_UPDATE_META}" del /F /Q "{PENDING_UPDATE_META}" >nul',
+            f'start "" "{install_dir}\\{exe_name}"',
+            "del /F /Q \"%~f0\" >nul 2>&1",
+            "endlocal",
+        ]
+    )
+    script_path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
+    return script_path
+
+
+def prepare_update_apply() -> dict:
+    if not sys.platform.startswith("win"):
+        raise ValueError("Las actualizaciones automaticas solo estan disponibles en Windows.")
+
+    check = check_for_updates()
+    if not check.get("enabled"):
+        raise ValueError("Configura UPDATE_MANIFEST_URL para habilitar actualizaciones automaticas.")
+    if not check.get("update_available"):
+        raise ValueError(check.get("message") or "No hay actualizaciones disponibles.")
+
+    manifest = _fetch_manifest(check["manifest_url"])
+    install_dir = get_runtime_root()
+    os.environ["FELPOS_PRE_UPDATE_BACKUP"] = "1"
+    backup = create_backup("pre_update")
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="felpos-update-"))
+    zip_path = temp_dir / "felpos-update.zip"
+    extract_dir = temp_dir / "extracted"
+    try:
+        _download_file(manifest.download_url, zip_path)
+        if manifest.sha256:
+            actual = _sha256_file(zip_path)
+            if actual.lower() != manifest.sha256.lower():
+                raise ValueError("La actualizacion descargada no coincide con el hash de seguridad.")
+
+        extracted = _extract_update_zip(zip_path, extract_dir)
+        staged_files: list[str] = []
+        for file_name, source_path in extracted.items():
+            pending_target = install_dir / f"{file_name}.pending"
+            shutil.copy2(source_path, pending_target)
+            staged_files.append(file_name)
+
+        meta_path = install_dir / PENDING_UPDATE_META
+        meta_path.write_text(
+            json.dumps(
+                {
+                    "target_version": manifest.version,
+                    "previous_version": get_app_version(),
+                    "staged_files": staged_files,
+                    "backup_name": backup.get("name"),
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        script_path = _write_restart_script(install_dir)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    return {
+        "message": f"Actualizacion {manifest.version} lista. El sistema se reiniciara para aplicarla.",
+        "target_version": manifest.version,
+        "previous_version": get_app_version(),
+        "backup_name": backup.get("name"),
+        "restart_script": str(script_path),
+        "restart_required": True,
+    }
+
+
+def launch_pending_update_restart() -> bool:
+    install_dir = get_runtime_root()
+    script_path = install_dir / PENDING_UPDATE_SCRIPT
+    if not script_path.exists():
+        return False
+    import subprocess
+
+    subprocess.Popen(
+        ["cmd.exe", "/c", str(script_path)],
+        cwd=str(install_dir),
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        | getattr(subprocess, "DETACHED_PROCESS", 0),
+        close_fds=True,
+    )
+    os._exit(0)

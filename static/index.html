@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FEL POS Guatemala</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-icon">Q</span>
+        <div>
+          <h1>FEL POS</h1>
+          <p id="company-name">Punto de venta con factura electronica</p>
+        </div>
+      </div>
+      <nav class="tabs">
+        <button class="tab active" data-tab="pos">Vender</button>
+        <button class="tab" data-tab="products">Productos</button>
+        <button class="tab" data-tab="departments">Departamentos</button>
+        <button class="tab" data-tab="suppliers">Proveedores</button>
+        <button class="tab" data-tab="purchases">Compras</button>
+        <button class="tab" data-tab="inventory">Dashboard inventario</button>
+        <button class="tab" data-tab="stock-count">Conteo fisico</button>
+        <button class="tab" data-tab="sales">Ventas</button>
+        <button class="tab" data-tab="reports">Reportes</button>
+        <button class="tab" data-tab="customers">Clientes</button>
+        <button class="tab" data-tab="promotions">Promociones</button>
+        <button class="tab" data-tab="orders">Ordenes</button>
+        <button class="tab" data-tab="cash">Caja</button>
+        <button class="tab" data-tab="config">Configuracion</button>
+      </nav>
+      <div class="session-box">
+        <span id="app-version-label" class="version-label" hidden></span>
+        <span id="session-user">Sin sesion</span>
+        <button id="open-mobile-qr-btn" class="btn ghost">QR app cel</button>
+        <button id="logout-btn" class="btn ghost">Salir</button>
+      </div>
+    </header>
+
+    <div id="system-alerts-bar" class="system-alerts-bar" hidden></div>
+
+    <main>
+      <section id="tab-pos" class="panel active">
+        <div class="pos-layout">
+          <div class="catalog">
+            <div class="search-bar">
+              <input id="product-search" type="search" placeholder="Buscar producto o SKU...">
+              <select id="pos-department-filter">
+                <option value="">Todos los departamentos</option>
+              </select>
+              <div id="pos-department-chips" class="department-chips"></div>
+            </div>
+            <div id="product-grid" class="product-grid"></div>
+          </div>
+
+          <aside class="ticket">
+            <div class="ticket-header">
+              <h2>Ticket actual</h2>
+              <div class="ticket-actions">
+                <button id="open-sale-session-btn" class="btn primary" type="button">Iniciar venta (clave)</button>
+                <button id="close-current-sale-btn" class="btn ghost">Cerrar venta</button>
+                <button id="clear-cart" class="btn ghost">Limpiar</button>
+              </div>
+            </div>
+            <p id="cash-owner-indicator" class="cash-owner-indicator">Sin caja activa.</p>
+            <p id="sale-session-indicator" class="cash-owner-indicator blocked">
+              Venta bloqueada. Ingresa clave para iniciar la venta.
+            </p>
+
+            <div class="customer-fields">
+              <label>
+                NIT cliente
+                <input id="customer-nit" type="text" value="CF" placeholder="CF o NIT">
+              </label>
+              <label>
+                Nombre
+                <input id="customer-name" type="text" value="CONSUMIDOR FINAL">
+              </label>
+              <label>
+                Cliente guardado
+                <select id="customer-select">
+                  <option value="">Nuevo / por NIT</option>
+                </select>
+              </label>
+            </div>
+
+            <div id="school-packages-pos" class="school-packages-pos" hidden>
+              <label>
+                Paquete escolar
+                <select id="school-package-select">
+                  <option value="">Seleccionar paquete...</option>
+                </select>
+              </label>
+              <button id="add-school-package-btn" class="btn ghost" type="button">Agregar paquete</button>
+            </div>
+
+            <div id="cart-items" class="cart-items"></div>
+
+            <div class="totals">
+              <div><span>Subtotal</span><strong id="subtotal">Q 0.00</strong></div>
+              <div><span>Descuento ticket</span><strong id="cart-discount-display">Q 0.00</strong></div>
+              <div><span>IVA</span><strong id="tax-total">Q 0.00</strong></div>
+              <div class="grand"><span>Total</span><strong id="grand-total">Q 0.00</strong></div>
+            </div>
+
+            <div class="payment-row">
+              <label>
+                Descuento ticket (Q)
+                <input id="cart-discount-input" type="number" step="0.01" min="0" value="0">
+              </label>
+              <label>
+                Pago
+                <select id="payment-method">
+                  <option value="efectivo">Efectivo</option>
+                  <option value="tarjeta">Tarjeta</option>
+                  <option value="transferencia">Transferencia</option>
+                  <option value="mixto">Pago mixto</option>
+                  <option value="credito">Credito cliente</option>
+                </select>
+              </label>
+              <div class="payment-actions">
+                <button id="open-cash-capture-btn" class="btn primary">Capturar efectivo (F12)</button>
+                <button id="close-cash-shift-btn" class="btn ghost" type="button">Cuadrar fondo (fin del dia)</button>
+              </div>
+              <p class="hint">Flujo efectivo: F12 captura, luego F1 imprime o F2 no imprime para confirmar la venta.</p>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="tab-products" class="panel">
+        <div class="panel-header">
+          <h2>Inventario</h2>
+          <div class="panel-actions">
+            <button id="show-low-stock-btn" class="btn ghost">Bajo inventario</button>
+            <button id="show-all-products-btn" class="btn ghost">Ver todos</button>
+            <button id="import-eleventa-btn" class="btn ghost">Importar inventario</button>
+            <button id="generate-missing-barcodes-btn" class="btn ghost">Generar CB faltantes</button>
+            <button id="new-product-btn" class="btn primary">Nuevo producto</button>
+          </div>
+        </div>
+        <div id="products-table" class="table-wrap"></div>
+      </section>
+
+      <section id="tab-departments" class="panel">
+        <div class="panel-header">
+          <h2>Departamentos</h2>
+          <button id="new-department-btn" class="btn primary">Nuevo departamento</button>
+        </div>
+        <div id="departments-table" class="table-wrap"></div>
+      </section>
+
+      <section id="tab-suppliers" class="panel">
+        <div class="panel-header">
+          <h2>Proveedores</h2>
+          <button id="new-supplier-btn" class="btn primary">Nuevo proveedor</button>
+        </div>
+        <div id="suppliers-table" class="table-wrap"></div>
+      </section>
+
+      <section id="tab-purchases" class="panel">
+        <div class="panel-header">
+          <h2>Ordenes de compra</h2>
+          <button id="new-purchase-order-btn" class="btn primary">Nueva orden compra</button>
+        </div>
+        <div id="purchase-orders-table" class="table-wrap"></div>
+      </section>
+
+      <section id="tab-inventory" class="panel">
+        <div class="panel-header">
+          <h2>Dashboard inventario</h2>
+          <div class="panel-actions">
+            <button id="refresh-inventory-dashboard-btn" class="btn ghost">Actualizar</button>
+            <button id="generate-critical-purchase-btn" class="btn primary">Generar compra automatica</button>
+          </div>
+        </div>
+        <div id="inventory-dashboard" class="config-card"></div>
+      </section>
+
+      <section id="tab-stock-count" class="panel">
+        <div class="panel-header">
+          <h2>Conteo fisico de inventario</h2>
+          <div class="panel-actions">
+            <button id="stock-count-new-session-btn" class="btn ghost">Nueva orden conteo</button>
+            <button id="stock-count-refresh-btn" class="btn ghost">Actualizar</button>
+            <select id="stock-count-paper-size" class="compact-select">
+              <option value="carta" selected>Carta</option>
+              <option value="oficio">Oficio</option>
+              <option value="legal">Legal</option>
+            </select>
+            <button id="stock-count-print-order-btn" class="btn ghost">Imprimir orden</button>
+            <button id="stock-count-print-diff-btn" class="btn ghost">Imprimir reporte diferencias</button>
+            <button id="stock-count-recount-btn" class="btn ghost">Reconteo (admin)</button>
+            <button id="stock-count-apply-btn" class="btn primary">Cerrar conteo y ajustar (admin)</button>
+          </div>
+        </div>
+        <div id="stock-count-panel" class="config-card"></div>
+      </section>
+
+      <section id="tab-sales" class="panel">
+        <div class="panel-header">
+          <h2>Historial de ventas</h2>
+        </div>
+        <div id="sales-table" class="table-wrap"></div>
+      </section>
+
+      <section id="tab-reports" class="panel">
+        <div class="panel-header">
+          <h2>Reportes y corte de caja</h2>
+          <div class="panel-actions">
+            <input id="report-date-from" type="date">
+            <input id="report-date-to" type="date">
+            <button id="refresh-reports-btn" class="btn primary" type="button">Actualizar</button>
+            <button id="export-catalog-btn" class="btn ghost" type="button">Exportar catalogo CSV</button>
+          </div>
+        </div>
+        <div id="reports-dashboard" class="config-card"></div>
+      </section>
+
+      <section id="tab-customers" class="panel">
+        <div class="panel-header">
+          <h2>Clientes y credito</h2>
+          <button id="new-customer-btn" class="btn primary" type="button">Nuevo cliente</button>
+        </div>
+        <div id="customers-table" class="table-wrap"></div>
+      </section>
+
+      <section id="tab-promotions" class="panel">
+        <div class="panel-header">
+          <h2>Promociones</h2>
+          <button id="new-promotion-btn" class="btn primary" type="button">Nueva promocion</button>
+        </div>
+        <div id="promotions-table" class="table-wrap"></div>
+      </section>
+
+      <section id="tab-orders" class="panel">
+        <div class="panel-header">
+          <h2>Ordenes y envios</h2>
+          <button id="new-order-btn" class="btn primary">Nueva orden</button>
+        </div>
+        <div id="orders-table" class="table-wrap"></div>
+      </section>
+
+      <section id="tab-cash" class="panel">
+        <div class="panel-header">
+          <h2>Control de caja</h2>
+        </div>
+        <div id="cash-card" class="config-card"></div>
+      </section>
+
+      <section id="tab-config" class="panel">
+        <div class="panel-header">
+          <h2>Datos del emisor FEL</h2>
+        </div>
+        <div id="config-card" class="config-card"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="product-dialog">
+    <form id="product-form" method="dialog">
+      <h3 id="product-dialog-title">Nuevo producto</h3>
+      <label>SKU<input name="sku" required></label>
+      <label class="barcode-field-row">
+        <span>Codigo de barras</span>
+        <div class="barcode-field-actions">
+          <input name="barcode" placeholder="Escanea o escribe codigo (opcional)">
+          <button type="button" class="btn ghost" id="product-generate-barcode-btn">Generar automatico</button>
+        </div>
+      </label>
+      <label>Nombre<input name="name" required></label>
+      <label>
+        Descripcion
+        <textarea name="description" rows="2" placeholder="Ej. Cuaderno 100 hojas rayado, lapiz HB, mochila azul talla M"></textarea>
+      </label>
+      <label>Proveedor<select name="supplier_id" id="product-supplier-select" required></select></label>
+      <label>Departamento<select name="department_id" id="product-department-select"></select></label>
+      <section id="product-school-fields" class="school-fields-block" hidden>
+        <p id="product-school-fields-title" class="hint">Datos utiles escolares</p>
+        <div class="school-fields-grid">
+          <label>
+            <span id="product-school-category-label">Categoria escolar</span>
+            <input name="school_category" placeholder="Ej. Cuadernos, Lapices, Mochilas">
+          </label>
+          <label>
+            <span id="product-school-grade-label">Grado</span>
+            <input name="school_grade" placeholder="Ej. Primaria, Basicos, Diversificado">
+          </label>
+          <label>
+            <span id="product-school-brand-label">Marca</span>
+            <input name="school_brand" placeholder="Ej. Norma, BIC, Scribe">
+          </label>
+          <label>
+            <span id="product-school-variant-label">Modelo / color / tamano</span>
+            <input name="school_variant" placeholder="Ej. 100 hojas rayado, Azul talla M">
+          </label>
+        </div>
+      </section>
+      <label>Precio<input name="price" type="number" step="0.01" min="0" required></label>
+      <label>Costo<input name="cost" type="number" step="0.01" min="0" value="0"></label>
+      <label>Stock<input name="stock" type="number" step="0.01" min="0" value="0"></label>
+      <label>Stock minimo<input name="min_stock" type="number" step="0.01" min="0" value="0"></label>
+      <label>IVA %<input name="tax_rate" type="number" step="0.01" min="0" max="100" value="12"></label>
+      <label>
+        <input name="wholesale_enabled" type="checkbox">
+        Habilitar mayoreo
+      </label>
+      <label>Cantidad minima mayoreo<input name="wholesale_min_qty" type="number" step="1" min="0" value="0"></label>
+      <label>Descuento mayoreo %<input name="wholesale_discount_pct" type="number" step="0.01" min="0" max="100" value="0"></label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-product-dialog">Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="stock-entry-dialog">
+    <form id="stock-entry-form" method="dialog">
+      <h3 id="stock-entry-title">Ingreso de inventario</h3>
+      <label>Cantidad de entrada<input name="quantity" type="number" step="0.01" min="0.01" required></label>
+      <label>Notas<input name="notes" placeholder="Compra, ajuste, etc."></label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-stock-entry-dialog">Cancelar</button>
+        <button type="submit" class="btn primary">Registrar entrada</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="eleventa-import-dialog">
+    <form id="eleventa-import-form">
+      <h3>Importar inventario</h3>
+      <p class="hint">
+        Sube un archivo .xlsx o .csv con tu catalogo (codigo, descripcion, precio, existencias, etc.).
+      </p>
+      <label>
+        Archivo de inventario
+        <input id="eleventa-import-file" name="file" type="file" accept=".xlsx,.csv,.txt" required>
+      </label>
+      <label>
+        Proveedor por defecto (si el archivo no trae proveedor)
+        <input id="eleventa-import-default-supplier" name="default_supplier_name" value="Importado inventario">
+      </label>
+      <label>
+        <input id="eleventa-import-update-existing" name="update_existing" type="checkbox" checked>
+        Actualizar productos que ya existan (por codigo/SKU)
+      </label>
+      <label>
+        <input id="eleventa-import-update-stock" name="update_stock" type="checkbox" checked>
+        Importar existencias (inventario)
+      </label>
+      <p id="eleventa-import-result" class="hint" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-eleventa-import-dialog">Cancelar</button>
+        <button type="submit" class="btn primary" id="eleventa-import-submit-btn">Importar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="barcode-label-dialog">
+    <form id="barcode-label-form" method="dialog">
+      <h3>Imprimir etiquetas de codigo de barras</h3>
+      <p id="barcode-label-product-name" class="hint">Producto</p>
+      <p id="barcode-label-current-code" class="hint">Codigo</p>
+      <label>
+        Descripcion del producto
+        <textarea id="barcode-label-description" name="description" rows="2" placeholder="Describe el producto para identificarlo al asignar codigo"></textarea>
+      </label>
+      <p class="hint">Agrega o corrige la descripcion para saber a que producto pertenece este codigo de barras.</p>
+      <label>
+        Cantidad de etiquetas
+        <input id="barcode-label-quantity" name="quantity" type="number" min="1" max="300" step="1" value="1" required>
+      </label>
+      <label>
+        Ancho etiqueta (mm)
+        <input id="barcode-label-width-mm" name="width_mm" type="number" min="20" max="120" step="1" value="50" required>
+      </label>
+      <label>
+        Alto etiqueta (mm)
+        <input id="barcode-label-height-mm" name="height_mm" type="number" min="15" max="80" step="1" value="30" required>
+      </label>
+      <div class="label-size-presets">
+        <button class="btn ghost label-size-preset-btn" type="button" data-width="40" data-height="25">40x25</button>
+        <button class="btn ghost label-size-preset-btn" type="button" data-width="50" data-height="30">50x30</button>
+        <button class="btn ghost label-size-preset-btn" type="button" data-width="58" data-height="40">58x40</button>
+        <button class="btn ghost label-size-preset-btn" type="button" data-width="80" data-height="50">80x50</button>
+      </div>
+      <label>
+        Modo de impresion
+        <select id="barcode-label-print-mode" name="print_mode">
+          <option value="browser" selected>Navegador (seleccionar impresora)</option>
+          <option value="thermal">Directo impresora termica etiquetas</option>
+        </select>
+      </label>
+      <label class="inline-option">
+        <input id="barcode-label-include-description" name="include_description" type="checkbox" checked>
+        Incluir descripcion en etiqueta
+      </label>
+      <label class="inline-option">
+        <input id="barcode-label-include-price" name="include_price" type="checkbox">
+        Incluir precio en etiqueta termica
+      </label>
+      <p class="hint">En modo navegador, selecciona tu impresora de etiquetas al imprimir.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-barcode-label-dialog">Cancelar</button>
+        <button type="submit" class="btn primary">Imprimir etiquetas</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="supplier-dialog">
+    <form id="supplier-form" method="dialog">
+      <h3 id="supplier-dialog-title">Nuevo proveedor</h3>
+      <label>Nombre<input name="name" required></label>
+      <label>Email<input name="email" type="email"></label>
+      <label>WhatsApp / Telefono<input name="phone"></label>
+      <label>Contacto<input name="contact_name"></label>
+      <label>Notas<textarea name="notes" rows="3"></textarea></label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-supplier-dialog">Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="department-dialog">
+    <form id="department-form" method="dialog">
+      <h3 id="department-dialog-title">Nuevo departamento</h3>
+      <label>Nombre<input name="name" required></label>
+      <label>Descripcion<textarea name="description" rows="3"></textarea></label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-department-dialog">Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="purchase-order-dialog">
+    <form id="purchase-order-form" method="dialog">
+      <h3>Nueva orden de compra</h3>
+      <p class="hint">Se separa automaticamente por proveedor y se envia al crear.</p>
+      <div id="purchase-order-lines" class="config-card"></div>
+      <button type="button" id="add-purchase-line-btn" class="btn ghost">Agregar producto</button>
+      <label>Notas<input name="notes"></label>
+      <label>
+        Canales de envio
+        <select name="channels" multiple>
+          <option value="gmail" selected>Gmail</option>
+          <option value="whatsapp">WhatsApp</option>
+        </select>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-purchase-order-dialog">Cancelar</button>
+        <button type="submit" class="btn primary">Crear ordenes</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="auto-purchase-dialog">
+    <form id="auto-purchase-form" method="dialog">
+      <h3>Generar compra automatica</h3>
+      <p class="hint">Selecciona si incluyes productos en alerta y ajusta cantidades antes de crear.</p>
+      <label class="inline-option">
+        <input id="auto-purchase-include-warning" type="checkbox" checked>
+        Incluir productos en alerta
+      </label>
+      <div id="auto-purchase-lines" class="table-wrap"></div>
+      <label>Notas<input id="auto-purchase-notes" name="notes" value="Generada automaticamente desde dashboard de inventario."></label>
+      <label>
+        Canales de envio
+        <select id="auto-purchase-channels" name="channels" multiple>
+          <option value="gmail" selected>Gmail</option>
+          <option value="whatsapp" selected>WhatsApp</option>
+        </select>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-auto-purchase-dialog">Cancelar</button>
+        <button type="submit" class="btn primary">Crear ordenes</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="mixed-checkout-dialog">
+    <form id="mixed-checkout-form" method="dialog">
+      <h3>Cobro mixto</h3>
+      <p class="hint">Divide el total entre efectivo y tarjeta o transferencia.</p>
+      <div class="change-box">
+        <span>Total a cobrar</span>
+        <strong id="mixed-checkout-total">Q 0.00</strong>
+      </div>
+      <label>
+        Monto en efectivo
+        <input id="mixed-cash-amount" type="number" min="0" step="0.01" required>
+      </label>
+      <label>
+        Otro metodo de pago
+        <select id="mixed-other-method">
+          <option value="tarjeta">Tarjeta</option>
+          <option value="transferencia">Transferencia</option>
+        </select>
+      </label>
+      <div class="change-box">
+        <span>Monto otro metodo</span>
+        <strong id="mixed-other-amount">Q 0.00</strong>
+      </div>
+      <label>
+        Efectivo recibido (para cambio)
+        <input id="mixed-cash-received" type="number" min="0" step="0.01" required>
+      </label>
+      <div class="change-box">
+        <span>Cambio a entregar</span>
+        <strong id="mixed-cash-change">Q 0.00</strong>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-mixed-checkout-dialog">Cancelar</button>
+        <button type="button" class="btn primary" id="mixed-final-print-btn">Cobro final e imprimir (F1)</button>
+        <button type="button" class="btn ghost" id="mixed-final-no-print-btn">Cobro final sin imprimir (F2)</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="cash-checkout-dialog">
+    <form id="cash-checkout-form" method="dialog">
+      <h3>Cobro en efectivo</h3>
+      <p id="cash-checkout-print-mode" class="hint"></p>
+      <div class="change-box">
+        <span>Total a cobrar</span>
+        <strong id="cash-checkout-total">Q 0.00</strong>
+      </div>
+      <label>
+        Efectivo recibido
+        <input id="cash-checkout-received" type="number" min="0" step="0.01" required>
+      </label>
+      <div class="change-box">
+        <span>Cambio a entregar</span>
+        <strong id="cash-checkout-change">Q 0.00</strong>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-cash-checkout-dialog">Cancelar</button>
+        <button type="button" class="btn primary" id="cash-final-print-btn">Cobro final e imprimir (F1)</button>
+        <button type="button" class="btn ghost" id="cash-final-no-print-btn">Cobro final sin imprimir (F2)</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="sale-dialog">
+    <div id="sale-detail"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn ghost" id="close-sale-dialog">Cerrar</button>
+      <button type="button" class="btn ghost" id="register-return-btn">Registrar devolucion</button>
+      <button type="button" class="btn ghost" id="print-receipt-btn">Imprimir ticket</button>
+      <button type="button" class="btn primary" id="download-xml-btn">Descargar XML FEL</button>
+    </div>
+  </dialog>
+
+  <dialog id="sale-return-dialog">
+    <form id="sale-return-form" method="dialog">
+      <h3>Registrar devolucion</h3>
+      <p id="sale-return-sale-label" class="hint"></p>
+      <div id="sale-return-lines" class="sale-return-lines"></div>
+      <label>
+        Motivo
+        <textarea id="sale-return-reason" rows="3" placeholder="Opcional: motivo de la devolucion"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-sale-return-dialog">Cancelar</button>
+        <button type="submit" class="btn primary" id="confirm-sale-return-btn">Emitir nota de credito</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="order-dialog">
+    <form id="order-form" method="dialog">
+      <h3>Nueva orden</h3>
+      <label>Cliente<input name="customer_name" required></label>
+      <label>WhatsApp<input name="customer_phone" placeholder="502XXXXXXXX"></label>
+      <label>Gmail<input name="customer_email" type="email"></label>
+      <label>Total estimado<input name="total_estimate" type="number" step="0.01" min="0" value="0"></label>
+      <label>Notas<textarea name="notes" rows="3"></textarea></label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-order-dialog">Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="login-dialog">
+    <form id="login-form" method="dialog">
+      <h3>Iniciar sesion</h3>
+      <label class="inline-option">
+        <input id="login-admin-mode" type="checkbox">
+        Entrar como admin (usuario + clave)
+      </label>
+      <div id="login-admin-fields" hidden>
+        <label>Usuario admin<input id="login-admin-username" name="username" placeholder="Ej. admin"></label>
+      </div>
+      <label>Clave<input name="password" type="password" required></label>
+      <p id="login-mode-hint" class="hint">
+        Cajero: solo clave (debe estar activo por admin). Admin: marca la opcion y usa usuario + clave.
+      </p>
+      <div class="dialog-actions">
+        <button type="submit" class="btn primary">Entrar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="post-login-dialog">
+    <form id="post-login-form" method="dialog">
+      <h3>Inicio de turno</h3>
+      <p id="post-login-cash-hint" class="hint"></p>
+      <div id="post-login-fund-section">
+        <label>
+          Fondo inicial
+          <input id="post-login-opening-amount" type="number" min="0" step="0.01" placeholder="Ingresa monto de fondo">
+        </label>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn primary" id="post-login-open-cash-btn">Agregar fondo</button>
+        <button type="button" class="btn danger" id="post-login-force-close-btn" hidden>Admin: desactivar y cuadrar fondo abierto</button>
+        <button type="button" class="btn ghost" id="post-login-logout-btn">Cambiar usuario</button>
+        <button type="button" class="btn ghost" id="post-login-enter-btn">Ingresar al sistema de venta</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="post-cash-close-dialog">
+    <form id="post-cash-close-form" method="dialog">
+      <h3>Caja cuadrada</h3>
+      <p class="hint">La sesion se cerro automaticamente. Puedes iniciar nuevo turno o cerrar el sistema.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="post-cash-login-btn">Ingresar de nuevo</button>
+        <button type="button" class="btn primary" id="post-cash-exit-btn">Cerrar sistema</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="cash-close-summary-dialog">
+    <form id="cash-close-summary-form" method="dialog">
+      <h3>Cuadrar fondo</h3>
+      <div class="change-box">
+        <span>Monto de apertura</span>
+        <strong id="cash-close-opening">Q 0.00</strong>
+      </div>
+      <div class="change-box">
+        <span>Total de ventas</span>
+        <strong id="cash-close-sales">Q 0.00</strong>
+      </div>
+      <div class="change-box" id="cash-close-returns-row" hidden>
+        <span>Devoluciones en efectivo</span>
+        <strong id="cash-close-returns">Q 0.00</strong>
+      </div>
+      <div class="change-box">
+        <span>Efectivo esperado</span>
+        <strong id="cash-close-expected">Q 0.00</strong>
+      </div>
+      <label>
+        Efectivo real contado
+        <input id="cash-close-counted" type="number" min="0" step="0.01" required>
+      </label>
+      <div class="change-box">
+        <span>Diferencia</span>
+        <strong id="cash-close-difference">Q 0.00</strong>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-cash-close-summary-dialog">Cancelar</button>
+        <button type="submit" class="btn primary">Confirmar cuadre</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="sale-password-dialog">
+    <form id="sale-password-form" method="dialog">
+      <h3>Iniciar venta</h3>
+      <p id="sale-password-hint" class="hint">Escribe tu clave. Se desbloqueara automaticamente.</p>
+      <label>
+        Clave de usuario
+        <input id="sale-password-input" type="password" autocomplete="current-password">
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-sale-password-dialog">Cancelar</button>
+        <button type="submit" class="btn primary" id="sale-password-submit-btn">Autorizar venta</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="mobile-qr-dialog">
+    <form id="mobile-qr-form" method="dialog">
+      <h3>Abrir app movil</h3>
+      <p class="hint">Escanea este QR desde el telefono para abrir conteo y verificacion de precios.</p>
+      <label>
+        IP o host de esta PC
+        <input id="mobile-qr-host" placeholder="Ej. 192.168.1.20" required>
+      </label>
+      <div class="change-box">
+        <span>URL movil</span>
+        <strong id="mobile-qr-url">-</strong>
+      </div>
+      <div class="qr-box">
+        <img id="mobile-qr-image" alt="QR app movil">
+      </div>
+      <p id="mobile-qr-detect-status" class="hint"></p>
+      <p class="hint">Si usas launcher en red local, ejecuta con FELPOS_BIND_HOST=0.0.0.0.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="mobile-qr-detect-ip-btn">Detectar mi IP</button>
+        <button type="button" class="btn ghost" id="mobile-qr-copy-btn">Copiar URL</button>
+        <button type="button" class="btn ghost" id="close-mobile-qr-dialog">Cerrar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="customer-dialog">
+    <form id="customer-form" method="dialog">
+      <h3 id="customer-dialog-title">Nuevo cliente</h3>
+      <label>NIT<input name="nit" required></label>
+      <label>Nombre<input name="name" required></label>
+      <label>Correo<input name="email" type="email"></label>
+      <label>Telefono<input name="phone"></label>
+      <label>Direccion<input name="address"></label>
+      <label>Limite de credito (Q)<input name="credit_limit" type="number" step="0.01" min="0" value="0"></label>
+      <label>Notas<textarea name="notes" rows="2"></textarea></label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-customer-dialog">Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="credit-payment-dialog">
+    <form id="credit-payment-form" method="dialog">
+      <h3>Registrar abono</h3>
+      <p id="credit-payment-customer" class="hint"></p>
+      <label>Monto (Q)<input name="amount" type="number" step="0.01" min="0.01" required></label>
+      <label>Metodo de pago
+        <select name="payment_method">
+          <option value="efectivo">Efectivo</option>
+          <option value="tarjeta">Tarjeta</option>
+          <option value="transferencia">Transferencia</option>
+        </select>
+      </label>
+      <label>Notas<textarea name="notes" rows="2"></textarea></label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-credit-payment-dialog">Cancelar</button>
+        <button type="submit" class="btn primary">Registrar abono</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="promotion-dialog">
+    <form id="promotion-form" method="dialog">
+      <h3>Nueva promocion</h3>
+      <label>Nombre<input name="name" required></label>
+      <label>Tipo
+        <select name="promo_type">
+          <option value="percent">Porcentaje</option>
+          <option value="fixed">Monto fijo por unidad</option>
+        </select>
+      </label>
+      <label>Valor<input name="value" type="number" step="0.01" min="0" required></label>
+      <label>Cantidad minima<input name="min_qty" type="number" step="0.01" min="0" value="0"></label>
+      <label>Producto (opcional)<select name="product_id" id="promotion-product-select"><option value="">Todos</option></select></label>
+      <label>Departamento (opcional)<select name="department_id" id="promotion-department-select"><option value="">Todos</option></select></label>
+      <label>Inicio<input name="start_at" type="datetime-local"></label>
+      <label>Fin<input name="end_at" type="datetime-local"></label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-promotion-dialog">Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
