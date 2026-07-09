@@ -34,27 +34,36 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/login-cashier", response_model=LoginResponse)
 def login_cashier(payload: CashierPasswordLoginRequest, db: Session = Depends(get_db)):
-    active_cashiers = (
+    active_users = (
         db.query(User)
-        .filter(User.role == "user", User.active == 1)
+        .filter(User.active == 1)
         .order_by(User.id.asc())
         .all()
     )
-    if not active_cashiers:
+    if not active_users:
         raise HTTPException(
             status_code=403,
-            detail="No hay cajero habilitado para cobrar. Solicita activacion al admin.",
+            detail="No hay usuarios activos en el sistema. Solicita activacion al administrador.",
         )
 
-    matched = [user for user in active_cashiers if verify_password(payload.password, user.password_hash)]
+    matched = [user for user in active_users if verify_password(payload.password, user.password_hash)]
     if not matched:
-        raise HTTPException(status_code=401, detail="Clave invalida o cajero no habilitado para cobrar.")
+        raise HTTPException(status_code=401, detail="Clave invalida.")
     if len(matched) > 1:
+        roles = {user.role for user in matched}
+        if roles == {"user"}:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "La clave coincide con varios cajeros activos. "
+                    "Pide al admin usar claves distintas o desactivar usuarios duplicados."
+                ),
+            )
         raise HTTPException(
             status_code=409,
             detail=(
-                "La clave coincide con varios cajeros activos. "
-                "Pide al admin usar claves distintas o desactivar usuarios duplicados."
+                "La clave coincide con varios usuarios activos. "
+                "Usa 'Entrar como administrador' e ingresa tu usuario."
             ),
         )
 
