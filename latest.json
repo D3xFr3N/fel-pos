@@ -1,7 +1,7 @@
 {
-    "version":  "0.3.9",
-    "build_date":  "2026-07-09 10:40:55",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.9/felpos-update-0.3.9.zip",
-    "sha256":  "7a84cd6d9e05551df7238c8d20c42a5c38c829f21bed2a9c186a74d4c22a892c",
-    "release_notes":  "Actualizacion FEL POS v0.3.9"
+    "version":  "0.3.10",
+    "build_date":  "2026-07-09 12:15:16",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.10/felpos-update-0.3.10.zip",
+    "sha256":  "2a27a13fc7fe662ed1d8d053e2a5a46798352c1eb7a0ea93802d77b6f8530a5a",
+    "release_notes":  "Actualizacion FEL POS v0.3.10"
 }
