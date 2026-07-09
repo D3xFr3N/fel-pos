@@ -43,6 +43,10 @@ def restart_after_update(user: User = Depends(require_roles("admin"))):
     from app.services.update_service import launch_pending_update_restart
 
     launch_pending_update_restart()
+    return {"ok": True}
+
+
+@router.get("/backups", response_model=list[BackupFileOut])
 def get_backups(
     user: User = Depends(require_roles("admin")),
 ):

@@ -58,8 +58,8 @@ if (-not $repoExists) {
     gh repo create $GitHubRepo --public --source . --remote origin --push --description "FEL POS Guatemala - punto de venta con facturacion electronica"
 } else {
     Write-Host "El repo $GitHubOwner/$GitHubRepo ya existe."
-    $hasOrigin = git remote get-url origin 2>$null
-    if (-not $hasOrigin) {
+    $originUrl = git remote get-url origin 2>$null
+    if (-not $originUrl) {
         git remote add origin "https://github.com/$GitHubOwner/$GitHubRepo.git" | Out-Host
     }
     git push -u origin main | Out-Host
