@@ -22,6 +22,7 @@ const state = {
   users: [],
   backups: [],
   config: null,
+  receiptPrinterConfig: null,
   currentCash: null,
   selectedSaleId: null,
   selectedSale: null,
@@ -4363,6 +4364,74 @@ function buildSaleSuccessMessage(sale, suffix = "") {
   return `Venta registrada. ${reference}.${suffix ? ` ${suffix}` : ""}`;
 }
 
+function renderReceiptPrinterSection() {
+  const cfg = state.receiptPrinterConfig;
+  if (!cfg) return "";
+  const defaultPrinter = cfg.default_printer || "ninguna detectada";
+  const activePrinter = cfg.active_printer || defaultPrinter;
+  const printerOptions = (cfg.available_printers || [])
+    .map((name) => {
+      const selected = cfg.printer_name === name ? "selected" : "";
+      return `<option value="${escapeHtml(name)}" ${selected}>${escapeHtml(name)}</option>`;
+    })
+    .join("");
+  const platformHint = cfg.platform_supported
+    ? "Si dejas predeterminada, usa la impresora por defecto de Windows."
+    : "La impresion directa de tickets solo esta disponible en Windows.";
+  return `
+    <h3 style="margin: 0.2rem 0 0;">Impresion de recibos</h3>
+    <p class="hint">
+      Configura la impresora termica para tickets de venta. ${platformHint}
+    </p>
+    <div class="row"><span>Impresora activa</span><strong>${escapeHtml(activePrinter)}</strong></div>
+    <div class="row"><span>Predeterminada Windows</span><strong>${escapeHtml(defaultPrinter)}</strong></div>
+    <form id="receipt-printer-form">
+      <label>
+        Impresora de tickets
+        <select name="printer_name" ${cfg.platform_supported ? "" : "disabled"}>
+          <option value="" ${!cfg.printer_name ? "selected" : ""}>
+            Predeterminada de Windows (${escapeHtml(defaultPrinter)})
+          </option>
+          ${printerOptions}
+        </select>
+      </label>
+      <label class="inline-option">
+        <input type="checkbox" name="print_on_checkout" ${cfg.print_on_checkout ? "checked" : ""}>
+        Imprimir ticket automaticamente al cobrar
+      </label>
+      <label class="inline-option">
+        <input type="checkbox" name="open_drawer_on_checkout" ${cfg.open_drawer_on_checkout ? "checked" : ""}>
+        Abrir cajon de dinero al cobrar
+      </label>
+      <label>
+        Ancho del ticket (caracteres)
+        <input
+          name="chars_per_line"
+          type="number"
+          min="32"
+          max="64"
+          step="1"
+          value="${Number(cfg.chars_per_line || 48)}"
+          required
+        >
+      </label>
+      <label>
+        Codificacion de caracteres
+        <select name="encoding">
+          <option value="cp850" ${cfg.encoding === "cp850" ? "selected" : ""}>cp850 (recomendado termica)</option>
+          <option value="cp437" ${cfg.encoding === "cp437" ? "selected" : ""}>cp437</option>
+          <option value="utf-8" ${cfg.encoding === "utf-8" ? "selected" : ""}>utf-8</option>
+        </select>
+      </label>
+      <div class="panel-actions">
+        <button class="btn primary" type="submit">Guardar impresora</button>
+        <button id="test-receipt-printer-btn" class="btn ghost" type="button">Imprimir prueba</button>
+      </div>
+    </form>
+    <hr style="border-color: var(--border); width: 100%;">
+  `;
+}
+
 function renderConfig() {
   const card = document.getElementById("config-card");
   if (!state.config) return;
@@ -4475,6 +4544,7 @@ function renderConfig() {
       Si no necesitas factura electronica SAT, elige <strong>Sin factura contable</strong> y el POS funcionara con ticket de venta normal.
     </p>
     <hr style="border-color: var(--border); width: 100%;">
+    ${renderReceiptPrinterSection()}
     <div class="row"><span>Empresa activa</span><strong>${escapeHtml(cfg.nombre_comercial)}</strong></div>
     <div class="row"><span>NIT activo</span><strong>${escapeHtml(cfg.nit)}</strong></div>
     <div class="row"><span>Tipo de tienda</span><strong>${profileLabel}</strong></div>
@@ -4659,6 +4729,37 @@ function renderConfig() {
       applyBusinessProfileUi();
       renderConfig();
       alert("Configuracion de tienda guardada correctamente.");
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.getElementById("receipt-printer-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const payload = {
+      printer_name: form.printer_name.value,
+      print_on_checkout: Boolean(form.print_on_checkout?.checked),
+      open_drawer_on_checkout: Boolean(form.open_drawer_on_checkout?.checked),
+      chars_per_line: Number(form.chars_per_line.value || 48),
+      encoding: form.encoding.value,
+    };
+    try {
+      state.receiptPrinterConfig = await api("/api/config/receipt-printer", {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      renderConfig();
+      alert("Configuracion de impresora guardada correctamente.");
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.getElementById("test-receipt-printer-btn")?.addEventListener("click", async () => {
+    try {
+      const result = await api("/api/config/receipt-printer/test", { method: "POST" });
+      alert(result?.message || "Ticket de prueba enviado.");
     } catch (error) {
       alert(error.message);
     }
@@ -4985,6 +5086,9 @@ async function loadData() {
   const updateCheckPromise = isAdmin
     ? api("/api/system/update/check").catch(() => null)
     : Promise.resolve(null);
+  const receiptPrinterPromise = isAdmin
+    ? api("/api/config/receipt-printer").catch(() => null)
+    : Promise.resolve(null);
   const [
     products,
     sales,
@@ -5011,6 +5115,7 @@ async function loadData() {
     pendingFelSales,
     branches,
     updateInfo,
+    receiptPrinterConfig,
   ] = await Promise.all([
     api("/api/products"),
     api("/api/sales"),
@@ -5037,6 +5142,7 @@ async function loadData() {
     pendingFelPromise,
     branchesPromise,
     updateCheckPromise,
+    receiptPrinterPromise,
   ]);
   state.products = products;
   state.suppliers = suppliers;
@@ -5063,6 +5169,7 @@ async function loadData() {
   state.pendingFelSales = pendingFelSales;
   state.branches = branches;
   state.updateInfo = updateInfo;
+  state.receiptPrinterConfig = receiptPrinterConfig;
   renderVersionLabel();
   renderSystemAlertsBar();
   populateCustomerSelect();

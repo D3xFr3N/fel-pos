@@ -163,6 +163,40 @@ begin
   ApplyEnvValue(EnvPath, 'FEL_MODE', GetSelectedFelMode());
 end;
 
+function GetEnvValue(const EnvPath, EnvKey: String): String;
+var
+  Lines: TStringList;
+  i: Integer;
+  Line, Prefix: String;
+begin
+  Result := '';
+  Lines := TStringList.Create;
+  try
+    if not FileExists(EnvPath) then
+      Exit;
+
+    Prefix := UpperCase(EnvKey) + '=';
+    Lines.LoadFromFile(EnvPath);
+    for i := 0 to Lines.Count - 1 do
+    begin
+      Line := Trim(Lines[i]);
+      if (Length(Line) > 0) and (Line[1] <> '#') and (Pos(Prefix, UpperCase(Line)) = 1) then
+      begin
+        Result := Copy(Line, Length(EnvKey) + 2, Length(Line));
+        Break;
+      end;
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
+
+procedure EnsureUpdateManifestUrl(const EnvPath: String);
+begin
+  if Trim(GetEnvValue(EnvPath, 'UPDATE_MANIFEST_URL')) = '' then
+    ApplyEnvValue(EnvPath, 'UPDATE_MANIFEST_URL', 'https://D3xFr3N.github.io/fel-pos/latest.json');
+end;
+
 procedure InitializeWizard();
 begin
   ProfilePage := CreateCustomPage(
@@ -243,6 +277,7 @@ begin
         ApplyBusinessProfileToEnv(EnvPath);
         ApplyFelModeToEnv(EnvPath);
       end;
+      EnsureUpdateManifestUrl(EnvPath);
     end;
   end;
 end;

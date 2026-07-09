@@ -5,6 +5,12 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.business_profiles import business_profile_label, normalize_business_profile
+from app.config import settings
+from app.services.printer_config_service import (
+    get_receipt_printer_config,
+    print_receipt_test_page,
+    update_receipt_printer_config,
+)
 from app.services.store_settings_service import (
     bootstrap_store_settings,
     store_settings_to_schema,
@@ -36,6 +42,9 @@ from app.schemas import (
     ProductCreate,
     ProductOut,
     ProductUpdate,
+    ReceiptPrinterConfigOut,
+    ReceiptPrinterConfigUpdateIn,
+    ReceiptPrinterTestOut,
     SupplierCreate,
     SupplierOut,
     SupplierUpdate,
@@ -762,3 +771,60 @@ def save_config(
     )
     db.commit()
     return store_settings_to_schema(row)
+
+
+@config_router.get("/receipt-printer", response_model=ReceiptPrinterConfigOut)
+def get_receipt_printer_config_route(
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    bootstrap_store_settings(db)
+    return ReceiptPrinterConfigOut(**get_receipt_printer_config())
+
+
+@config_router.put("/receipt-printer", response_model=ReceiptPrinterConfigOut)
+def save_receipt_printer_config_route(
+    payload: ReceiptPrinterConfigUpdateIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    bootstrap_store_settings(db)
+    try:
+        result = update_receipt_printer_config(
+            printer_name=payload.printer_name,
+            print_on_checkout=payload.print_on_checkout,
+            open_drawer_on_checkout=payload.open_drawer_on_checkout,
+            chars_per_line=payload.chars_per_line,
+            encoding=payload.encoding,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar .env: {exc}") from exc
+
+    log_action(
+        db,
+        user_id=user.id,
+        action="receipt_printer_updated",
+        entity_type="printer_config",
+        entity_id=1,
+        details=f"printer={result.get('active_printer') or '-'}",
+    )
+    db.commit()
+    return ReceiptPrinterConfigOut(**result)
+
+
+@config_router.post("/receipt-printer/test", response_model=ReceiptPrinterTestOut)
+def test_receipt_printer_route(
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    bootstrap_store_settings(db)
+    try:
+        printer_name = print_receipt_test_page(open_drawer=bool(settings.receipt_open_drawer_on_checkout))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    message = f"Ticket de prueba enviado a {printer_name}."
+    if settings.receipt_open_drawer_on_checkout:
+        message += " Se intento abrir el cajon."
+    return ReceiptPrinterTestOut(ok=True, message=message, printer_name=printer_name)

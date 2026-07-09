@@ -537,6 +537,32 @@ class PrintReceiptResponse(BaseModel):
     message: str
 
 
+class ReceiptPrinterConfigOut(BaseModel):
+    printer_name: str = ""
+    default_printer: str = ""
+    available_printers: list[str] = Field(default_factory=list)
+    active_printer: str = ""
+    print_on_checkout: bool = True
+    open_drawer_on_checkout: bool = True
+    chars_per_line: int = 48
+    encoding: str = "cp850"
+    platform_supported: bool = True
+
+
+class ReceiptPrinterConfigUpdateIn(BaseModel):
+    printer_name: str = Field(default="", max_length=200)
+    print_on_checkout: bool = True
+    open_drawer_on_checkout: bool = True
+    chars_per_line: int = Field(default=48, ge=32, le=64)
+    encoding: str = Field(default="cp850", max_length=20)
+
+
+class ReceiptPrinterTestOut(BaseModel):
+    ok: bool
+    message: str
+    printer_name: str = ""
+
+
 class BackupFileOut(BaseModel):
     name: str
     created_at: datetime
