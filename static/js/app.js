@@ -1389,8 +1389,11 @@ function closeCurrentSaleDraft() {
     mixedDialog.close();
   }
   resetSaleCustomerDefaults();
-  lockSaleSessionForNextSale();
   renderCart();
+  if (isCashierSaleLockEnabled() && state.saleSessionUnlocked) {
+    resetSaleSessionAutoLockTimer();
+    renderSaleSessionIndicator();
+  }
 }
 
 function updateCashCheckoutChange() {
