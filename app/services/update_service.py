@@ -17,7 +17,7 @@ import httpx
 from app.config import settings
 from app.data_paths import get_runtime_root
 from app.services.backup_service import create_backup
-from app.version import get_app_version
+from app.version import get_app_version, get_install_dir
 
 PENDING_UPDATE_SCRIPT = "apply_pending_update.bat"
 PENDING_UPDATE_META = "pending_update.json"
@@ -150,6 +150,52 @@ def _extract_update_zip(zip_path: Path, extract_dir: Path) -> dict[str, Path]:
     return found
 
 
+def _install_dir() -> Path:
+    return get_install_dir()
+
+
+def apply_pending_update_at_startup(install_dir: Path | None = None) -> dict | None:
+    root = (install_dir or _install_dir()).resolve()
+    pending_files = [name for name in UPDATE_FILES if (root / f"{name}.pending").exists()]
+    if not pending_files:
+        return None
+
+    applied: list[str] = []
+    errors: list[str] = []
+    for file_name in UPDATE_FILES:
+        pending_path = root / f"{file_name}.pending"
+        target_path = root / file_name
+        if not pending_path.exists():
+            continue
+        try:
+            os.replace(pending_path, target_path)
+            applied.append(file_name)
+        except OSError as exc:
+            errors.append(f"{file_name}: {exc}")
+
+    meta_path = root / PENDING_UPDATE_META
+    meta: dict[str, Any] = {}
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            meta = {}
+        meta_path.unlink(missing_ok=True)
+
+    script_path = root / PENDING_UPDATE_SCRIPT
+    script_path.unlink(missing_ok=True)
+
+    if errors and not applied:
+        raise RuntimeError("No se pudo aplicar la actualizacion pendiente: " + "; ".join(errors))
+
+    return {
+        "applied_files": applied,
+        "target_version": meta.get("target_version"),
+        "previous_version": meta.get("previous_version"),
+        "errors": errors,
+    }
+
+
 def _write_restart_script(install_dir: Path) -> Path:
     script_path = install_dir / PENDING_UPDATE_SCRIPT
     exe_name = "FELPOS.exe"
@@ -197,7 +243,7 @@ def prepare_update_apply() -> dict:
         raise ValueError(check.get("message") or "No hay actualizaciones disponibles.")
 
     manifest = _fetch_manifest(check["manifest_url"])
-    install_dir = get_runtime_root()
+    install_dir = _install_dir()
     os.environ["FELPOS_PRE_UPDATE_BACKUP"] = "1"
     backup = create_backup("pre_update")
 
@@ -247,17 +293,19 @@ def prepare_update_apply() -> dict:
 
 
 def launch_pending_update_restart() -> bool:
-    install_dir = get_runtime_root()
+    install_dir = _install_dir()
     script_path = install_dir / PENDING_UPDATE_SCRIPT
     if not script_path.exists():
         return False
-    import subprocess
 
-    subprocess.Popen(
-        ["cmd.exe", "/c", str(script_path)],
-        cwd=str(install_dir),
-        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        | getattr(subprocess, "DETACHED_PROCESS", 0),
-        close_fds=True,
-    )
+    if sys.platform.startswith("win"):
+        import subprocess
+        import time
+
+        subprocess.Popen(
+            ["cmd.exe", "/c", "start", '""', "/min", str(script_path)],
+            cwd=str(install_dir),
+            close_fds=True,
+        )
+        time.sleep(0.4)
     os._exit(0)

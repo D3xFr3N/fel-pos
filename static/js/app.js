@@ -4330,9 +4330,10 @@ async function checkSystemUpdates({ silent = false } = {}) {
 async function restartAfterSystemUpdate() {
   if (window.pywebview?.api?.restart_after_update) {
     await window.pywebview.api.restart_after_update();
-    return;
+    return true;
   }
   await api("/api/system/update/restart", { method: "POST" });
+  return true;
 }
 
 async function applySystemUpdate() {
@@ -4345,10 +4346,25 @@ async function applySystemUpdate() {
   }
   try {
     const result = await api("/api/system/update/apply", { method: "POST" });
-    alert(result.message || "Actualizacion lista. Reiniciando...");
-    await restartAfterSystemUpdate();
+    alert(
+      (result.message || "Actualizacion descargada.") +
+        " El programa se cerrara ahora para completar la instalacion."
+    );
+    try {
+      await restartAfterSystemUpdate();
+    } catch (restartError) {
+      alert(
+        "La actualizacion ya se descargo. Cierra FEL POS completamente y vuelve a abrirlo para terminar la instalacion."
+      );
+      throw restartError;
+    }
+    setTimeout(() => {
+      alert(
+        "Si FEL POS sigue abierto, cierralo manualmente y vuelve a abrirlo. La actualizacion se aplicara al iniciar."
+      );
+    }, 2500);
   } catch (error) {
-    alert(error.message);
+    if (error?.message) alert(error.message);
   }
 }
 

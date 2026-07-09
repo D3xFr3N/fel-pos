@@ -38,7 +38,13 @@ APP_VERSION = _read_version_from_disk()
 
 @lru_cache(maxsize=1)
 def get_app_version() -> str:
-    return APP_VERSION
+    return _read_version_from_disk()
+
+
+def refresh_app_version_cache() -> str:
+    get_app_version.cache_clear()
+    get_build_date.cache_clear()
+    return get_app_version()
 
 
 @lru_cache(maxsize=1)

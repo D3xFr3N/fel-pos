@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import sys
 from pathlib import Path
 
 LEGACY_DB_NAME = "fel_pos.db"
@@ -27,6 +28,8 @@ PROTECTED_ROOT_DIRS = (
 
 
 def get_runtime_root() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
     return Path.cwd().resolve()
 
 

@@ -96,9 +96,27 @@ def _run_server_mode(*, fastapi_app, bind_host: str, port: int) -> None:
     server.run()
 
 
+def _apply_pending_update_if_needed(runtime_root: Path) -> None:
+    try:
+        from app.services.update_service import apply_pending_update_at_startup
+
+        result = apply_pending_update_at_startup(runtime_root)
+        if result and result.get("applied_files"):
+            target = result.get("target_version") or "nueva"
+            print(f"[INFO] Actualizacion aplicada al iniciar: v{target}")
+    except Exception as exc:
+        log_path = runtime_root / "felpos-error.log"
+        log_path.write_text(
+            f"No se pudo aplicar actualizacion pendiente:\n{exc}\n",
+            encoding="utf-8",
+        )
+        print(f"[WARN] No se pudo aplicar actualizacion pendiente. Revisa: {log_path}")
+
+
 def main() -> None:
     runtime_root = _runtime_root()
     os.chdir(runtime_root)
+    _apply_pending_update_if_needed(runtime_root)
     mode = _resolve_mode()
     bind_host = _resolve_bind_host(mode)
     port = DEFAULT_PORT
