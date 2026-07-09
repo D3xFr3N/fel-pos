@@ -586,30 +586,35 @@
     </form>
   </dialog>
 
-  <dialog id="login-dialog">
+  <dialog id="login-dialog" class="startup-dialog">
     <form id="login-form" method="dialog">
-      <h3>Iniciar sesion</h3>
-      <label class="inline-option">
-        <input id="login-admin-mode" type="checkbox">
-        Entrar como admin (usuario + clave)
+      <h3 id="login-dialog-title">Iniciar sesion</h3>
+      <label>
+        Clave
+        <input name="password" type="password" required autocomplete="current-password" placeholder="Ingresa tu clave">
       </label>
-      <div id="login-admin-fields" hidden>
-        <label>Usuario admin<input id="login-admin-username" name="username" placeholder="Ej. admin"></label>
+      <div id="login-extra-options" class="login-extra-options" hidden>
+        <label class="inline-option">
+          <input id="login-admin-mode" type="checkbox">
+          Entrar como admin (usuario + clave)
+        </label>
+        <div id="login-admin-fields" hidden>
+          <label>Usuario admin<input id="login-admin-username" name="username" placeholder="Ej. admin"></label>
+        </div>
+        <p id="login-mode-hint" class="hint">
+          Admin: marca la opcion y usa usuario + clave.
+        </p>
       </div>
-      <label>Clave<input name="password" type="password" required></label>
-      <p id="login-mode-hint" class="hint">
-        Cajero: solo clave (debe estar activo por admin). Admin: marca la opcion y usa usuario + clave.
-      </p>
       <div class="dialog-actions">
         <button type="submit" class="btn primary">Entrar</button>
       </div>
     </form>
   </dialog>
 
-  <dialog id="post-login-dialog">
+  <dialog id="post-login-dialog" class="startup-dialog">
     <form id="post-login-form" method="dialog">
-      <h3>Inicio de turno</h3>
-      <p id="post-login-cash-hint" class="hint"></p>
+      <h3>Agregar fondo</h3>
+      <p id="post-login-cash-hint" class="hint">Ingresa el monto inicial de caja para comenzar a vender.</p>
       <div id="post-login-fund-section">
         <label>
           Fondo inicial
@@ -618,9 +623,9 @@
       </div>
       <div class="dialog-actions">
         <button type="button" class="btn primary" id="post-login-open-cash-btn">Agregar fondo</button>
-        <button type="button" class="btn danger" id="post-login-force-close-btn" hidden>Admin: desactivar y cuadrar fondo abierto</button>
-        <button type="button" class="btn ghost" id="post-login-logout-btn">Cambiar usuario</button>
-        <button type="button" class="btn ghost" id="post-login-enter-btn">Ingresar al sistema de venta</button>
+        <button type="button" class="btn danger post-login-extra-action" id="post-login-force-close-btn" hidden>Admin: desactivar y cuadrar fondo abierto</button>
+        <button type="button" class="btn ghost post-login-extra-action" id="post-login-logout-btn" hidden>Cambiar usuario</button>
+        <button type="button" class="btn ghost post-login-extra-action" id="post-login-enter-btn" hidden>Ingresar al sistema de venta</button>
       </div>
     </form>
   </dialog>
@@ -670,16 +675,16 @@
     </form>
   </dialog>
 
-  <dialog id="sale-password-dialog">
+  <dialog id="sale-password-dialog" class="startup-dialog">
     <form id="sale-password-form" method="dialog">
       <h3>Iniciar venta</h3>
-      <p id="sale-password-hint" class="hint">Escribe tu clave. Se desbloqueara automaticamente.</p>
+      <p id="sale-password-hint" class="hint">Escribe tu clave para comenzar a vender.</p>
       <label>
-        Clave de usuario
-        <input id="sale-password-input" type="password" autocomplete="current-password">
+        Clave
+        <input id="sale-password-input" type="password" autocomplete="current-password" placeholder="Ingresa tu clave">
       </label>
       <div class="dialog-actions">
-        <button type="button" class="btn ghost" id="close-sale-password-dialog">Cancelar</button>
+        <button type="button" class="btn ghost sale-password-extra-action" id="close-sale-password-dialog">Cancelar</button>
         <button type="submit" class="btn primary" id="sale-password-submit-btn">Autorizar venta</button>
       </div>
     </form>

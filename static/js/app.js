@@ -588,7 +588,10 @@ function applyRoleVisibility() {
 }
 
 function openLogin() {
+  switchToPosTab();
   setLoginAdminMode(false);
+  const loginExtras = document.getElementById("login-extra-options");
+  if (loginExtras) loginExtras.hidden = true;
   const loginForm = document.getElementById("login-form");
   if (loginForm) {
     loginForm.reset();
@@ -596,6 +599,10 @@ function openLogin() {
   const dialog = document.getElementById("login-dialog");
   if (!dialog.open) {
     dialog.showModal();
+  }
+  const passwordInput = loginForm?.querySelector('input[name="password"]');
+  if (passwordInput) {
+    setTimeout(() => passwordInput.focus(), 0);
   }
 }
 
@@ -615,10 +622,10 @@ function isAdminUser() {
 }
 
 function enterAppAfterLogin({ lockSaleSession = true } = {}) {
+  switchToPosTab();
   if (lockSaleSession) {
     lockSaleSessionForNextSale();
   }
-  switchToPosTab();
 }
 
 function setLoginAdminMode(enabled) {
@@ -626,7 +633,9 @@ function setLoginAdminMode(enabled) {
   const adminUserInput = document.getElementById("login-admin-username");
   const modeHint = document.getElementById("login-mode-hint");
   const modeCheckbox = document.getElementById("login-admin-mode");
+  const loginExtras = document.getElementById("login-extra-options");
   const isEnabled = Boolean(enabled);
+  if (loginExtras) loginExtras.hidden = !isEnabled;
   if (adminFields) adminFields.hidden = !isEnabled;
   if (adminUserInput) {
     adminUserInput.required = isEnabled;
@@ -636,7 +645,7 @@ function setLoginAdminMode(enabled) {
   if (modeHint) {
     modeHint.textContent = isEnabled
       ? "Modo admin activo: ingresa usuario y clave."
-      : "Modo cajero activo: ingresa solo tu clave (debes estar activo por admin).";
+      : "Admin: marca la opcion y usa usuario + clave.";
   }
 }
 
@@ -661,7 +670,9 @@ function lockSaleSessionForNextSale() {
   clearSaleSessionAutoLockTimer();
   state.saleSessionUnlocked = false;
   state.salePasswordPromptDismissed = false;
+  closeSalePasswordDialog();
   renderSaleSessionIndicator();
+  showSalePasswordGate();
 }
 
 function focusProductSearch() {
@@ -685,16 +696,33 @@ function shouldAutoPromptSalePassword() {
   );
 }
 
-function maybeAutoOpenSalePasswordDialog() {
-  if (!shouldAutoPromptSalePassword()) return;
+function closeSalePasswordDialog() {
+  const dialog = document.getElementById("sale-password-dialog");
+  if (dialog?.open) {
+    dialog.close();
+  }
+}
+
+function showSalePasswordGate() {
+  if (!isCashierSaleLockEnabled()) return;
+  if (!state.currentCash || !isCurrentCashOwnedByLoggedUser()) return;
+  if (state.saleSessionUnlocked) return;
+  state.salePasswordPromptDismissed = false;
+  renderSaleSessionIndicator();
   const dialog = document.getElementById("sale-password-dialog");
   if (dialog?.open || state.salePasswordAutoOpenPending) return;
   state.salePasswordAutoOpenPending = true;
   setTimeout(() => {
     state.salePasswordAutoOpenPending = false;
-    if (!shouldAutoPromptSalePassword()) return;
+    if (!isCashierSaleLockEnabled() || state.saleSessionUnlocked) return;
+    if (!state.currentCash || !isCurrentCashOwnedByLoggedUser()) return;
     void openSaleSessionWithPassword();
   }, 0);
+}
+
+function maybeAutoOpenSalePasswordDialog() {
+  if (!shouldAutoPromptSalePassword()) return;
+  showSalePasswordGate();
 }
 
 function getSaleInactivitySeconds() {
@@ -825,9 +853,11 @@ function resetSaleSessionAutoLockTimer() {
     state.saleSessionAutoLockTimerId = null;
     if (!isCashierSaleLockEnabled() || !state.saleSessionUnlocked) return;
     state.saleSessionUnlocked = false;
-    document.getElementById("cash-checkout-dialog")?.close();
     state.salePasswordPromptDismissed = false;
+    document.getElementById("cash-checkout-dialog")?.close();
+    document.getElementById("mixed-checkout-dialog")?.close();
     renderSaleSessionIndicator();
+    showSalePasswordGate();
   }, Number(state.saleSessionInactivityMs || 60000));
 }
 
@@ -5186,9 +5216,10 @@ function renderSaleSessionIndicator() {
   }
 
   if (state.saleSessionUnlocked) {
+    closeSalePasswordDialog();
     resetSaleSessionAutoLockTimer();
     indicator.classList.add("owner");
-    indicator.textContent = "Venta activa. Puedes agregar productos y cobrar.";
+    indicator.textContent = "Venta activa. Puedes agregar productos, cobrar o cerrar venta.";
     unlockBtn.disabled = true;
     if (clearBtn) clearBtn.disabled = false;
     if (closeDraftBtn) closeDraftBtn.disabled = false;
@@ -5200,27 +5231,15 @@ function renderSaleSessionIndicator() {
 
   indicator.classList.add("blocked");
   clearSaleSessionAutoLockTimer();
-  indicator.textContent = state.salePasswordPromptDismissed
-    ? "Venta bloqueada. Haz clic aqui para ingresar tu clave."
-    : "Venta bloqueada. Ingresa tu clave en la ventana emergente.";
-  if (state.salePasswordPromptDismissed) {
-    indicator.style.cursor = "pointer";
-    indicator.title = "Clic para ingresar clave";
-    indicator.onclick = () => {
-      state.salePasswordPromptDismissed = false;
-      maybeAutoOpenSalePasswordDialog();
-    };
-  }
-  unlockBtn.hidden = state.salePasswordPromptDismissed;
-  unlockBtn.textContent = "Iniciar venta (clave)";
-  unlockBtn.disabled = !state.salePasswordPromptDismissed;
+  indicator.textContent = "Ingresa tu clave para iniciar una nueva venta.";
+  unlockBtn.hidden = true;
+  unlockBtn.disabled = true;
   if (captureBtn) captureBtn.disabled = true;
   if (clearBtn) clearBtn.disabled = true;
   if (closeDraftBtn) closeDraftBtn.disabled = true;
   if (searchInput) searchInput.disabled = true;
   if (deptFilter) deptFilter.disabled = true;
   renderProducts();
-  maybeAutoOpenSalePasswordDialog();
 }
 
 function refreshPostLoginDialogState() {
@@ -5231,6 +5250,7 @@ function refreshPostLoginDialogState() {
   const openCashBtn = document.getElementById("post-login-open-cash-btn");
   const forceCloseBtn = document.getElementById("post-login-force-close-btn");
   const enterBtn = document.getElementById("post-login-enter-btn");
+  const logoutBtn = document.getElementById("post-login-logout-btn");
   if (!hint || !amountInput || !openCashBtn || !forceCloseBtn || !enterBtn) return;
 
   const hasCashOpen = Boolean(state.currentCash);
@@ -5239,9 +5259,10 @@ function refreshPostLoginDialogState() {
 
   forceCloseBtn.hidden = true;
   forceCloseBtn.disabled = false;
+  if (logoutBtn) logoutBtn.hidden = true;
+  enterBtn.hidden = true;
   openCashBtn.hidden = false;
   openCashBtn.textContent = "Agregar fondo";
-  enterBtn.textContent = "Ingresar al sistema de venta";
   amountInput.value = "";
   state.postLoginFundAdded = false;
   if (fundSection) fundSection.hidden = false;
@@ -5252,9 +5273,7 @@ function refreshPostLoginDialogState() {
     amountInput.disabled = true;
     openCashBtn.disabled = true;
     state.postLoginFundAdded = true;
-    enterBtn.disabled = false;
-    enterBtn.textContent = "Ingresar como admin (sin fondo)";
-    hint.textContent = "Admin puede ingresar sin agregar fondo. El fondo solo es obligatorio para cajero.";
+    hint.textContent = "Admin puede ingresar sin agregar fondo.";
     return;
   }
 
@@ -5263,8 +5282,7 @@ function refreshPostLoginDialogState() {
   if (!hasCashOpen) {
     amountInput.disabled = false;
     openCashBtn.disabled = false;
-    enterBtn.disabled = true;
-    hint.textContent = "Debes agregar fondo para habilitar el ingreso al sistema de venta.";
+    hint.textContent = "Ingresa el monto inicial de caja para comenzar a vender.";
     return;
   }
 
@@ -5274,9 +5292,7 @@ function refreshPostLoginDialogState() {
 
   if (ownsOpenCash) {
     state.postLoginFundAdded = true;
-    enterBtn.disabled = false;
-    enterBtn.textContent = "Volver a entrar al fondo abierto";
-    hint.textContent = `Tienes una caja abierta (#${state.currentCash.id}). Puedes volver a entrar y continuar con ese fondo.`;
+    hint.textContent = `Tu fondo #${state.currentCash.id} sigue abierto. Continuando...`;
     return;
   }
 
@@ -5284,27 +5300,33 @@ function refreshPostLoginDialogState() {
     if (fundSection) fundSection.hidden = true;
     openCashBtn.hidden = true;
     state.postLoginFundAdded = true;
-    enterBtn.disabled = false;
-    enterBtn.textContent = "Ingresar como admin";
     forceCloseBtn.hidden = false;
     hint.textContent =
       `Hay una caja abierta (#${state.currentCash.id}) de otro usuario. ` +
-      "Puedes ingresar como admin sin fondo o desactivarla para liberar turno.";
+      "Puedes desactivarla para liberar el turno.";
     return;
   }
 
-  enterBtn.disabled = true;
+  if (fundSection) fundSection.hidden = true;
+  openCashBtn.hidden = true;
   hint.textContent =
-    "Hay una caja abierta de otro usuario. Solicita a un admin desactivar y cuadrar ese fondo para iniciar tu turno.";
+    "Hay una caja abierta de otro usuario. Solicita a un admin liberar esa caja.";
 }
 
 function openPostLoginDialog() {
   if (!state.user) return;
+  refreshPostLoginDialogState();
+  if (state.postLoginFundAdded) {
+    return;
+  }
   const dialog = document.getElementById("post-login-dialog");
   if (!dialog) return;
-  refreshPostLoginDialogState();
   if (!dialog.open) {
     dialog.showModal();
+  }
+  const amountInput = document.getElementById("post-login-opening-amount");
+  if (amountInput && !amountInput.disabled) {
+    setTimeout(() => amountInput.focus(), 0);
   }
 }
 
@@ -5353,10 +5375,13 @@ function promptSalePassword(actionLabel = "autorizar venta", { autoVerify = fals
 
   const userLabel = state.user?.full_name || state.user?.username || "usuario actual";
   const defaultHint = autoVerify
-    ? `Usuario: ${userLabel}. Escribe tu clave y se desbloqueara automaticamente.`
+    ? "Escribe tu clave para comenzar a vender."
     : `Usuario activo: ${userLabel}. Ingresa la clave para ${actionLabel}.`;
 
   if (hint) hint.textContent = defaultHint;
+  document.querySelectorAll(".sale-password-extra-action").forEach((element) => {
+    element.hidden = autoVerify;
+  });
   if (submitBtn) submitBtn.hidden = autoVerify;
   input.value = "";
 
@@ -5371,6 +5396,9 @@ function promptSalePassword(actionLabel = "autorizar venta", { autoVerify = fals
       input.removeEventListener("input", onInput);
       input.removeEventListener("keydown", onKeyDown);
       if (debounceTimer) clearTimeout(debounceTimer);
+      document.querySelectorAll(".sale-password-extra-action").forEach((element) => {
+        element.hidden = false;
+      });
       if (submitBtn) submitBtn.hidden = false;
     };
 
@@ -5472,12 +5500,12 @@ async function openSaleSessionWithPassword() {
   if (!ensureCashOwnership("iniciar venta")) return false;
   const authorized = await confirmPasswordForAction("iniciar esta venta", { autoVerify: true });
   if (!authorized) {
-    state.salePasswordPromptDismissed = true;
-    renderSaleSessionIndicator();
+    showSalePasswordGate();
     return false;
   }
   state.saleSessionUnlocked = true;
   state.salePasswordPromptDismissed = false;
+  closeSalePasswordDialog();
   renderSaleSessionIndicator();
   focusProductSearch();
   return true;
@@ -5551,9 +5579,14 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
     });
     state.cart = [];
     resetSaleCustomerDefaults();
+    document.getElementById("cash-checkout-dialog")?.close();
+    document.getElementById("mixed-checkout-dialog")?.close();
+    document.getElementById("sale-dialog")?.close();
     lockSaleSessionForNextSale();
     await loadData();
-    openSaleDetail(sale.id);
+    if (!isCashierSaleLockEnabled()) {
+      openSaleDetail(sale.id);
+    }
     if (printTicket) {
       await printSaleReceipt(sale.id, false);
     }
@@ -6098,11 +6131,20 @@ async function login(event) {
     closeLogin();
     await loadData();
     if (isAdminUser()) {
-      state.postLoginFundAdded = true;
+      state.postLoginFundAdded = !state.currentCash || isCurrentCashOwnedByLoggedUser();
+      if (state.currentCash && !isCurrentCashOwnedByLoggedUser()) {
+        openPostLoginDialog();
+        return;
+      }
       enterAppAfterLogin();
       return;
     }
     state.postLoginFundAdded = false;
+    if (state.currentCash && isCurrentCashOwnedByLoggedUser()) {
+      state.postLoginFundAdded = true;
+      enterAppAfterLogin();
+      return;
+    }
     openPostLoginDialog();
   } catch (error) {
     alert(error.message);
@@ -6714,15 +6756,12 @@ function setupEvents() {
     try {
       await openCashSessionWithValues(amount, null);
       await loadData();
-      postLoginHint.textContent = "Fondo agregado. Ya puedes ingresar al sistema de venta.";
+      postLoginHint.textContent = "Fondo agregado. Ingresando al sistema de venta...";
       postLoginAmount.disabled = true;
       postLoginOpenCashBtn.disabled = true;
       state.postLoginFundAdded = true;
-      postLoginEnterBtn.disabled = false;
-      postLoginEnterBtn.textContent = "Ingresar al sistema de venta";
       postLoginDialog.close();
       enterAppAfterLogin();
-      alert("Fondo activado. Ventas habilitadas.");
     } catch (error) {
       state.postLoginFundAdded = false;
       alert(error.message);
@@ -6740,11 +6779,16 @@ function setupEvents() {
     if (!state.postLoginFundAdded) {
       event.preventDefault();
       if (state.currentCash && !isCurrentCashOwnedByLoggedUser()) {
-        alert("Debes liberar la caja abierta (admin) o cambiar de usuario para continuar.");
+        alert("Hay una caja abierta de otro usuario. Solicita a un admin liberar esa caja.");
       } else {
         alert("Debes agregar fondo para continuar.");
       }
     }
+  });
+
+  document.getElementById("login-dialog-title")?.addEventListener("dblclick", () => {
+    const extras = document.getElementById("login-extra-options");
+    setLoginAdminMode(Boolean(extras?.hidden));
   });
 
   const productDialog = document.getElementById("product-dialog");
@@ -6757,7 +6801,16 @@ function setupEvents() {
     cashCheckoutDialog.close();
   });
   document.getElementById("close-current-sale-btn").addEventListener("click", closeCurrentSaleDraft);
+  document.getElementById("sale-password-dialog")?.addEventListener("cancel", (event) => {
+    if (isCashierSaleLockEnabled() && !state.saleSessionUnlocked) {
+      event.preventDefault();
+    }
+  });
   document.getElementById("close-sale-password-dialog").addEventListener("click", () => {
+    if (isCashierSaleLockEnabled() && !state.saleSessionUnlocked) {
+      showSalePasswordGate();
+      return;
+    }
     state.salePasswordPromptDismissed = true;
     document.getElementById("sale-password-dialog")?.close();
     renderSaleSessionIndicator();
