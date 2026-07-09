@@ -7,6 +7,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,12 +16,12 @@ from typing import Any
 import httpx
 
 from app.config import settings
-from app.data_paths import get_runtime_root
 from app.services.backup_service import create_backup
 from app.version import get_app_version, get_install_dir
 
 PENDING_UPDATE_SCRIPT = "apply_pending_update.bat"
 PENDING_UPDATE_META = "pending_update.json"
+PENDING_UPDATE_LOG = "felpos-update.log"
 UPDATE_FILES = ("FELPOS.exe", "VERSION", "BUILD_DATE")
 HTTP_TIMEOUT_SECONDS = 45
 
@@ -150,23 +151,45 @@ def _extract_update_zip(zip_path: Path, extract_dir: Path) -> dict[str, Path]:
     return found
 
 
+def _append_update_log(install_dir: Path, message: str) -> None:
+    try:
+        log_path = install_dir / PENDING_UPDATE_LOG
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(f"[{timestamp}] {message}\n")
+    except OSError:
+        pass
+
+
 def _install_dir() -> Path:
     return get_install_dir()
 
 
-def apply_pending_update_at_startup(install_dir: Path | None = None) -> dict | None:
+def has_pending_executable_update(install_dir: Path | None = None) -> bool:
     root = (install_dir or _install_dir()).resolve()
-    pending_files = [name for name in UPDATE_FILES if (root / f"{name}.pending").exists()]
+    return (root / "FELPOS.exe.pending").exists()
+
+
+def apply_pending_update_at_startup(install_dir: Path | None = None) -> dict | None:
+    """
+    Solo aplica archivos que no son el ejecutable principal.
+    FELPOS.exe debe reemplazarse cuando el proceso ya no esta en ejecucion.
+    """
+    root = (install_dir or _install_dir()).resolve()
+    if has_pending_executable_update(root):
+        return None
+
+    pending_files = [
+        name for name in UPDATE_FILES if name != "FELPOS.exe" and (root / f"{name}.pending").exists()
+    ]
     if not pending_files:
         return None
 
     applied: list[str] = []
     errors: list[str] = []
-    for file_name in UPDATE_FILES:
+    for file_name in pending_files:
         pending_path = root / f"{file_name}.pending"
         target_path = root / file_name
-        if not pending_path.exists():
-            continue
         try:
             os.replace(pending_path, target_path)
             applied.append(file_name)
@@ -175,7 +198,7 @@ def apply_pending_update_at_startup(install_dir: Path | None = None) -> dict | N
 
     meta_path = root / PENDING_UPDATE_META
     meta: dict[str, Any] = {}
-    if meta_path.exists():
+    if meta_path.exists() and not has_pending_executable_update(root):
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
@@ -183,10 +206,14 @@ def apply_pending_update_at_startup(install_dir: Path | None = None) -> dict | N
         meta_path.unlink(missing_ok=True)
 
     script_path = root / PENDING_UPDATE_SCRIPT
-    script_path.unlink(missing_ok=True)
+    if script_path.exists() and not has_pending_executable_update(root):
+        script_path.unlink(missing_ok=True)
 
     if errors and not applied:
         raise RuntimeError("No se pudo aplicar la actualizacion pendiente: " + "; ".join(errors))
+
+    if applied:
+        _append_update_log(root, f"Archivos aplicados al iniciar: {', '.join(applied)}")
 
     return {
         "applied_files": applied,
@@ -199,30 +226,62 @@ def apply_pending_update_at_startup(install_dir: Path | None = None) -> dict | N
 def _write_restart_script(install_dir: Path) -> Path:
     script_path = install_dir / PENDING_UPDATE_SCRIPT
     exe_name = "FELPOS.exe"
+    log_name = PENDING_UPDATE_LOG
     lines = [
         "@echo off",
         "setlocal EnableExtensions",
         f'cd /d "{install_dir}"',
-        "echo Aplicando actualizacion de FEL POS...",
+        f'echo [%date% %time%] Iniciando actualizacion >> "{log_name}"',
+        "set /a tries=0",
         ":wait",
+        "set /a tries+=1",
         'tasklist /FI "IMAGENAME eq FELPOS.exe" 2>nul | find /I "FELPOS.exe" >nul',
         "if not errorlevel 1 (",
+        "  if %tries% GEQ 60 (",
+        '    echo [%date% %time%] Forzando cierre de FELPOS.exe >> "' + log_name + '"',
+        "    taskkill /F /IM FELPOS.exe /T >nul 2>&1",
+        "    timeout /t 2 >nul",
+        "    goto apply",
+        "  )",
         "  timeout /t 1 >nul",
         "  goto wait",
         ")",
+        ":apply",
     ]
     for file_name in UPDATE_FILES:
         pending_name = f"{file_name}.pending"
-        lines.extend(
-            [
-                f'if exist "{pending_name}" (',
-                f'  move /Y "{pending_name}" "{file_name}" >nul',
-                ")",
-            ]
-        )
+        backup_name = f"{file_name}.old"
+        if file_name == "FELPOS.exe":
+            lines.extend(
+                [
+                    f'if exist "{pending_name}" (',
+                    f'  echo [%date% %time%] Reemplazando {file_name} >> "{log_name}"',
+                    f'  if exist "{backup_name}" del /F /Q "{backup_name}" >nul 2>&1',
+                    f'  if exist "{file_name}" ren "{file_name}" "{backup_name}"',
+                    f'  ren "{pending_name}" "{file_name}"',
+                    "  if errorlevel 1 (",
+                    f'    echo [%date% %time%] ERROR al reemplazar {file_name} >> "{log_name}"',
+                    f'    if exist "{backup_name}" ren "{backup_name}" "{file_name}"',
+                    "  ) else (",
+                    f'    if exist "{backup_name}" del /F /Q "{backup_name}" >nul 2>&1',
+                    f'    echo [%date% %time%] {file_name} actualizado >> "{log_name}"',
+                    "  )",
+                    ")",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    f'if exist "{pending_name}" (',
+                    f'  move /Y "{pending_name}" "{file_name}" >nul',
+                    f'  echo [%date% %time%] {file_name} actualizado >> "{log_name}"',
+                    ")",
+                ]
+            )
     lines.extend(
         [
             f'if exist "{PENDING_UPDATE_META}" del /F /Q "{PENDING_UPDATE_META}" >nul',
+            f'echo [%date% %time%] Reiniciando FEL POS >> "{log_name}"',
             f'start "" "{install_dir}\\{exe_name}"',
             "del /F /Q \"%~f0\" >nul 2>&1",
             "endlocal",
@@ -230,6 +289,31 @@ def _write_restart_script(install_dir: Path) -> Path:
     )
     script_path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
     return script_path
+
+
+def _launch_updater_script(script_path: Path, install_dir: Path) -> None:
+    import subprocess
+
+    _append_update_log(install_dir, f"Ejecutando actualizador: {script_path.name}")
+    subprocess.Popen(
+        ["cmd.exe", "/c", "start", '""', "/min", str(script_path)],
+        cwd=str(install_dir),
+        close_fds=True,
+    )
+
+
+def delegate_pending_executable_update(install_dir: Path | None = None) -> bool:
+    root = (install_dir or _install_dir()).resolve()
+    if not has_pending_executable_update(root):
+        return False
+
+    script_path = root / PENDING_UPDATE_SCRIPT
+    if not script_path.exists():
+        script_path = _write_restart_script(root)
+
+    _launch_updater_script(script_path, root)
+    time.sleep(0.3)
+    os._exit(0)
 
 
 def prepare_update_apply() -> dict:
@@ -279,6 +363,10 @@ def prepare_update_apply() -> dict:
             encoding="utf-8",
         )
         script_path = _write_restart_script(install_dir)
+        _append_update_log(
+            install_dir,
+            f"Actualizacion {manifest.version} descargada. Archivos pendientes: {', '.join(staged_files)}",
+        )
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -298,14 +386,7 @@ def launch_pending_update_restart() -> bool:
     if not script_path.exists():
         return False
 
-    if sys.platform.startswith("win"):
-        import subprocess
-        import time
-
-        subprocess.Popen(
-            ["cmd.exe", "/c", "start", '""', "/min", str(script_path)],
-            cwd=str(install_dir),
-            close_fds=True,
-        )
-        time.sleep(0.4)
+    _append_update_log(install_dir, "Reinicio solicitado para aplicar actualizacion.")
+    _launch_updater_script(script_path, install_dir)
+    time.sleep(0.5)
     os._exit(0)

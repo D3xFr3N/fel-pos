@@ -98,12 +98,21 @@ def _run_server_mode(*, fastapi_app, bind_host: str, port: int) -> None:
 
 def _apply_pending_update_if_needed(runtime_root: Path) -> None:
     try:
-        from app.services.update_service import apply_pending_update_at_startup
+        from app.services.update_service import (
+            apply_pending_update_at_startup,
+            delegate_pending_executable_update,
+            has_pending_executable_update,
+        )
+
+        if has_pending_executable_update(runtime_root):
+            delegate_pending_executable_update(runtime_root)
 
         result = apply_pending_update_at_startup(runtime_root)
         if result and result.get("applied_files"):
             target = result.get("target_version") or "nueva"
             print(f"[INFO] Actualizacion aplicada al iniciar: v{target}")
+    except SystemExit:
+        raise
     except Exception as exc:
         log_path = runtime_root / "felpos-error.log"
         log_path.write_text(
@@ -150,6 +159,13 @@ def main() -> None:
         )
 
     if _is_port_in_use(WINDOW_HOST, port):
+        from app.services.update_service import has_pending_executable_update
+
+        if has_pending_executable_update(runtime_root):
+            raise RuntimeError(
+                "Hay una actualizacion pendiente y otra copia de FEL POS sigue activa. "
+                "Cierra todas las ventanas de FEL POS e intenta de nuevo."
+            )
         window = webview.create_window(
             "FEL POS",
             f"http://{WINDOW_HOST}:{port}",
