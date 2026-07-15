@@ -648,6 +648,44 @@ function closeLogin() {
   }
 }
 
+function mustChangePassword() {
+  return Number(state.user?.must_change_password) === 1;
+}
+
+function openPasswordChangeDialog() {
+  const dialog = document.getElementById("password-change-dialog");
+  const form = document.getElementById("password-change-form");
+  if (form) form.reset();
+  if (dialog && !dialog.open) {
+    dialog.showModal();
+  }
+  document.getElementById("password-change-current")?.focus();
+}
+
+function closePasswordChangeDialog() {
+  document.getElementById("password-change-dialog")?.close();
+}
+
+async function continueAfterLogin() {
+  await loadData();
+  if (isAdminUser()) {
+    state.postLoginFundAdded = !state.currentCash || isCurrentCashOwnedByLoggedUser();
+    if (state.currentCash && !isCurrentCashOwnedByLoggedUser()) {
+      openPostLoginDialog();
+      return;
+    }
+    enterAppAfterLogin();
+    return;
+  }
+  state.postLoginFundAdded = false;
+  if (state.currentCash && canUseCurrentCash()) {
+    state.postLoginFundAdded = true;
+    enterAppAfterLogin();
+    return;
+  }
+  openPostLoginDialog();
+}
+
 function switchToPosTab() {
   document.querySelector('.tab[data-tab="pos"]')?.click();
 }
@@ -6805,23 +6843,11 @@ async function login(event) {
     });
     setSession(result.access_token, result.user);
     closeLogin();
-    await loadData();
-    if (isAdminUser()) {
-      state.postLoginFundAdded = !state.currentCash || isCurrentCashOwnedByLoggedUser();
-      if (state.currentCash && !isCurrentCashOwnedByLoggedUser()) {
-        openPostLoginDialog();
-        return;
-      }
-      enterAppAfterLogin();
+    if (mustChangePassword()) {
+      openPasswordChangeDialog();
       return;
     }
-    state.postLoginFundAdded = false;
-    if (state.currentCash && canUseCurrentCash()) {
-      state.postLoginFundAdded = true;
-      enterAppAfterLogin();
-      return;
-    }
-    openPostLoginDialog();
+    await continueAfterLogin();
   } catch (error) {
     const message = String(error?.message || "No se pudo iniciar sesion.");
     if (!adminMode) {
@@ -6834,6 +6860,40 @@ async function login(event) {
   }
 }
 
+async function submitPasswordChange(event) {
+  event.preventDefault();
+  const form = event.target;
+  const currentPassword = String(form.current_password?.value || "");
+  const newPassword = String(form.new_password?.value || "");
+  const confirmPassword = String(form.confirm_password?.value || "");
+  if (!currentPassword || !newPassword) {
+    alert("Completa todos los campos.");
+    return;
+  }
+  if (newPassword.length < 8) {
+    alert("La clave nueva debe tener al menos 8 caracteres.");
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    alert("La confirmacion no coincide con la clave nueva.");
+    return;
+  }
+  try {
+    const result = await api("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+      }),
+    });
+    setSession(state.token, result.user);
+    closePasswordChangeDialog();
+    await continueAfterLogin();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
 async function loadCurrentUser() {
   if (!state.token) {
     openLogin();
@@ -6842,6 +6902,10 @@ async function loadCurrentUser() {
   try {
     const user = await api("/api/auth/me");
     setSession(state.token, user);
+    if (mustChangePassword()) {
+      openPasswordChangeDialog();
+      return;
+    }
     await loadData();
   } catch {
     openLogin();
@@ -7862,6 +7926,10 @@ function setupEvents() {
   document.getElementById("login-dialog").addEventListener("cancel", (event) => {
     event.preventDefault();
   });
+  document.getElementById("password-change-dialog")?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+  });
+  document.getElementById("password-change-form")?.addEventListener("submit", submitPasswordChange);
   document.getElementById("login-admin-mode").addEventListener("change", (event) => {
     setLoginAdminMode(event.target.checked);
   });

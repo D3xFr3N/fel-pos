@@ -68,7 +68,7 @@ def main() -> int:
         if not license_key:
             print("Debes ingresar una clave de licencia.", file=sys.stderr)
             return 1
-        result = verify_signed_license(license_key)
+        result = verify_signed_license(license_key, machine_fingerprint=get_install_fingerprint())
         if result.valid:
             return 0
         print(result.message or "Licencia invalida.", file=sys.stderr)

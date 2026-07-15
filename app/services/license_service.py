@@ -281,7 +281,7 @@ def _validation_from_signed(license_key: str, *, checked_at: str, fingerprint: s
 
     registry_url = get_license_registry_url() or None
 
-    signed = verify_signed_license(license_key)
+    signed = verify_signed_license(license_key, machine_fingerprint=fingerprint)
 
     if not signed.valid:
 

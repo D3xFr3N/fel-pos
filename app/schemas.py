@@ -421,8 +421,19 @@ class UserOut(BaseModel):
     full_name: str
     role: Literal["admin", "user"]
     active: int
+    must_change_password: int = 0
 
     model_config = {"from_attributes": True}
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class ChangePasswordResponse(BaseModel):
+    message: str = "Clave actualizada."
+    user: UserOut
 
 
 class UserCreate(BaseModel):

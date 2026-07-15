@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -10,8 +10,14 @@ from app.services.auth_service import decode_access_token
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
+PASSWORD_CHANGE_ALLOWLIST = frozenset({
+    "/api/auth/me",
+    "/api/auth/change-password",
+})
+
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
@@ -33,6 +39,11 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario no autorizado.",
+        )
+    if user.must_change_password and request.url.path not in PASSWORD_CHANGE_ALLOWLIST:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Debes cambiar tu clave antes de continuar.",
         )
     return user
 

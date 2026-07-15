@@ -22,6 +22,10 @@ param(
 
     [string]$Notes = ""
 
+
+
+    [string]$Fingerprint = ""
+
 )
 
 
@@ -48,7 +52,7 @@ switch ($Action) {
 
         $id = if ($StoreId.Trim()) { Normalize-StoreId $StoreId } else { Normalize-StoreId $StoreLabel }
 
-        $result = New-StoreActivation -StoreId $id -StoreLabel $StoreLabel -Notes $Notes
+        $result = New-StoreActivation -StoreId $id -StoreLabel $StoreLabel -Notes $Notes -Fingerprint $Fingerprint
 
         Write-Host ""
 
@@ -72,7 +76,7 @@ switch ($Action) {
 
         }
 
-        $result = Reissue-StoreLicense -StoreId $StoreId -Notes $Notes
+        $result = Reissue-StoreLicense -StoreId $StoreId -Notes $Notes -Fingerprint $Fingerprint
 
         Write-Host ""
 

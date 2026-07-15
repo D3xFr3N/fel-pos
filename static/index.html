@@ -615,6 +615,28 @@
     </form>
   </dialog>
 
+  <dialog id="password-change-dialog" class="startup-dialog">
+    <form id="password-change-form" method="dialog">
+      <h3>Cambiar clave</h3>
+      <p class="hint">Por seguridad debes cambiar la clave predeterminada antes de usar el sistema.</p>
+      <label>
+        Clave actual
+        <input id="password-change-current" name="current_password" type="password" required autocomplete="current-password">
+      </label>
+      <label>
+        Clave nueva
+        <input id="password-change-new" name="new_password" type="password" required minlength="8" autocomplete="new-password" placeholder="Minimo 8 caracteres">
+      </label>
+      <label>
+        Confirmar clave nueva
+        <input id="password-change-confirm" name="confirm_password" type="password" required minlength="8" autocomplete="new-password">
+      </label>
+      <div class="dialog-actions">
+        <button type="submit" class="btn primary">Guardar clave</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="post-login-dialog" class="startup-dialog">
     <form id="post-login-form" method="dialog">
       <h3>Agregar fondo</h3>

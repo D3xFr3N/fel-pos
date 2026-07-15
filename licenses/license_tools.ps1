@@ -25,16 +25,23 @@ function New-SignedLicenseKey {
     param(
         [Parameter(Mandatory = $true)][string]$StoreId,
         [Parameter(Mandatory = $true)][string]$StoreLabel,
-        [string]$Status = "active"
+        [string]$Status = "active",
+        [string]$Fingerprint = ""
     )
     Ensure-LicenseKeypair
     $python = Get-PythonExe
     $issuedAt = Get-Date -Format "yyyy-MM-dd"
-    $license = & $python $script:SigningScript sign `
-        --store-id $StoreId `
-        --store-label $StoreLabel `
-        --issued-at $issuedAt `
-        --status $Status
+    $args = @(
+        $script:SigningScript, "sign",
+        "--store-id", $StoreId,
+        "--store-label", $StoreLabel,
+        "--issued-at", $issuedAt,
+        "--status", $Status
+    )
+    if ($Fingerprint.Trim()) {
+        $args += @("--fingerprint", $Fingerprint.Trim().ToUpper())
+    }
+    $license = & $python @args
     if ($LASTEXITCODE -ne 0 -or -not $license) {
         throw "No se pudo firmar la licencia."
     }
@@ -103,7 +110,8 @@ function New-StoreActivation {
         [Parameter(Mandatory = $true)][string]$StoreId,
         [Parameter(Mandatory = $true)][string]$StoreLabel,
         [string]$Contact = "",
-        [string]$Notes = ""
+        [string]$Notes = "",
+        [string]$Fingerprint = ""
     )
 
     $registry = Read-PrivateRegistry
@@ -112,7 +120,7 @@ function New-StoreActivation {
         throw "Ya existe una tienda con ID $normalizedId. Usa otro ID o reemite la licencia."
     }
 
-    $license = New-SignedLicenseKey -StoreId $normalizedId -StoreLabel $StoreLabel.Trim()
+    $license = New-SignedLicenseKey -StoreId $normalizedId -StoreLabel $StoreLabel.Trim() -Fingerprint $Fingerprint
     $entry = [ordered]@{
         store_id = $normalizedId
         store_label = $StoreLabel.Trim()
@@ -121,6 +129,9 @@ function New-StoreActivation {
         issued_at = (Get-Date -Format "yyyy-MM-dd")
         contact = $Contact.Trim()
         notes = $Notes.Trim()
+    }
+    if ($Fingerprint.Trim()) {
+        $entry.fingerprint = $Fingerprint.Trim().ToUpper()
     }
     $registry.entries += $entry
     Save-PrivateRegistry $registry
@@ -136,7 +147,8 @@ function New-StoreActivation {
 function Reissue-StoreLicense {
     param(
         [Parameter(Mandatory = $true)][string]$StoreId,
-        [string]$Notes = ""
+        [string]$Notes = "",
+        [string]$Fingerprint = ""
     )
 
     $registry = Read-PrivateRegistry
@@ -149,7 +161,11 @@ function Reissue-StoreLicense {
         throw "La tienda esta revocada. Crea una activacion nueva con otro ID."
     }
 
-    $entry.license_key = New-SignedLicenseKey -StoreId $normalizedId -StoreLabel ([string]$entry.store_label)
+    $boundFingerprint = if ($Fingerprint.Trim()) { $Fingerprint.Trim().ToUpper() } else { [string]$entry.fingerprint }
+    $entry.license_key = New-SignedLicenseKey -StoreId $normalizedId -StoreLabel ([string]$entry.store_label) -Fingerprint $boundFingerprint
+    if ($boundFingerprint) {
+        $entry.fingerprint = $boundFingerprint
+    }
     $entry.issued_at = (Get-Date -Format "yyyy-MM-dd")
     $entry | Add-Member -NotePropertyName reissued_at -NotePropertyValue (Get-Date -Format "yyyy-MM-dd HH:mm:ss") -Force
     if ($Notes.Trim()) {
@@ -170,12 +186,16 @@ function Build-ActivationMessage {
     if ($Entry.contact) {
         $contactBlock = "`nContacto registrado: $($Entry.contact)"
     }
+    $fingerprintBlock = ""
+    if ($Entry.fingerprint) {
+        $fingerprintBlock = "`nID equipo vinculado: $($Entry.fingerprint)"
+    }
     return @"
 FEL POS - Activacion de tienda
 ==============================
 ID tienda: $($Entry.store_id)
 Nombre: $($Entry.store_label)
-Fecha: $($Entry.issued_at)$contactBlock
+Fecha: $($Entry.issued_at)$contactBlock$fingerprintBlock
 
 Clave de licencia (solo para esta tienda):
 $($Entry.license_key)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -6,6 +6,8 @@ from app.dependencies import get_current_user, require_roles
 from app.models import User
 from app.schemas import (
     CashierPasswordLoginRequest,
+    ChangePasswordRequest,
+    ChangePasswordResponse,
     LoginRequest,
     LoginResponse,
     PasswordConfirmRequest,
@@ -15,12 +17,41 @@ from app.schemas import (
     UserUpdate,
 )
 from app.services.auth_service import create_access_token, hash_password, verify_password
+from app.services.rate_limit_service import check_rate_limit, reset_rate_limit
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+LOGIN_RATE_LIMIT_ATTEMPTS = 5
+LOGIN_RATE_LIMIT_WINDOW_SECONDS = 300
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return "unknown"
+
+
+def _enforce_login_rate_limit(request: Request, scope: str) -> None:
+    key = f"{scope}:{_client_ip(request)}"
+    allowed, retry_after = check_rate_limit(
+        key,
+        max_attempts=LOGIN_RATE_LIMIT_ATTEMPTS,
+        window_seconds=LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Demasiados intentos. Espera {retry_after} segundos e intenta de nuevo.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
 
 @router.post("/login", response_model=LoginResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    _enforce_login_rate_limit(request, "login")
     username = payload.username.strip().lower()
     user = db.query(User).filter(User.username == username).first()
     if not user or not user.active:
@@ -28,12 +59,14 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     if not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Credenciales invalidas.")
 
+    reset_rate_limit(f"login:{_client_ip(request)}")
     token = create_access_token(user.id, user.role)
     return LoginResponse(access_token=token, user=UserOut.model_validate(user))
 
 
 @router.post("/login-cashier", response_model=LoginResponse)
-def login_cashier(payload: CashierPasswordLoginRequest, db: Session = Depends(get_db)):
+def login_cashier(payload: CashierPasswordLoginRequest, request: Request, db: Session = Depends(get_db)):
+    _enforce_login_rate_limit(request, "login-cashier")
     active_users = (
         db.query(User)
         .filter(User.active == 1)
@@ -67,6 +100,7 @@ def login_cashier(payload: CashierPasswordLoginRequest, db: Session = Depends(ge
             ),
         )
 
+    reset_rate_limit(f"login-cashier:{_client_ip(request)}")
     user = matched[0]
     token = create_access_token(user.id, user.role)
     return LoginResponse(access_token=token, user=UserOut.model_validate(user))
@@ -75,6 +109,24 @@ def login_cashier(payload: CashierPasswordLoginRequest, db: Session = Depends(ge
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
     return UserOut.model_validate(user)
+
+
+@router.post("/change-password", response_model=ChangePasswordResponse)
+def change_password(
+    payload: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=403, detail="Clave actual incorrecta.")
+    if payload.current_password == payload.new_password:
+        raise HTTPException(status_code=400, detail="La clave nueva debe ser distinta a la actual.")
+
+    user.password_hash = hash_password(payload.new_password)
+    user.must_change_password = 0
+    db.commit()
+    db.refresh(user)
+    return ChangePasswordResponse(user=UserOut.model_validate(user))
 
 
 @router.post("/confirm-password", response_model=PasswordConfirmResponse)
@@ -115,6 +167,7 @@ def create_user(
         role=payload.role,
         password_hash=hash_password(payload.password),
         active=payload.active,
+        must_change_password=0,
     )
     db.add(user)
     db.commit()
@@ -161,6 +214,7 @@ def update_user(
         user.active = updates["active"]
     if "password" in updates and updates["password"]:
         user.password_hash = hash_password(updates["password"])
+        user.must_change_password = 0
 
     db.commit()
     db.refresh(user)

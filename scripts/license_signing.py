@@ -66,6 +66,7 @@ def sign_license(
     store_label: str,
     issued_at: str,
     status: str = "active",
+    fingerprint: str | None = None,
 ) -> str:
     payload = {
         "i": store_id.strip().upper(),
@@ -73,6 +74,9 @@ def sign_license(
         "d": issued_at.strip(),
         "s": status.strip().lower() or "active",
     }
+    bound_fp = str(fingerprint or "").strip().upper()
+    if bound_fp:
+        payload["f"] = bound_fp
     payload_bytes = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     signature = _load_private_key().sign(payload_bytes)
     return f"{LICENSE_PREFIX}{_b64url_encode(payload_bytes)}.{_b64url_encode(signature)}"
@@ -89,6 +93,7 @@ def main() -> int:
     sign_parser.add_argument("--store-label", required=True)
     sign_parser.add_argument("--issued-at", required=True)
     sign_parser.add_argument("--status", default="active")
+    sign_parser.add_argument("--fingerprint", default="", help="ID de equipo (16 chars) para vincular licencia")
 
     args = parser.parse_args()
 
@@ -103,6 +108,7 @@ def main() -> int:
                     store_label=args.store_label,
                     issued_at=args.issued_at,
                     status=args.status,
+                    fingerprint=args.fingerprint or None,
                 )
             )
             return 0

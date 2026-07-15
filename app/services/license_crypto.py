@@ -20,6 +20,7 @@ class SignedLicenseInfo:
     store_label: str | None = None
     issued_at: str | None = None
     status: str = "unknown"
+    machine_fingerprint: str | None = None
     message: str = ""
 
 
@@ -57,7 +58,11 @@ def _load_public_key() -> Ed25519PublicKey:
     return key
 
 
-def verify_signed_license(license_key: str) -> SignedLicenseInfo:
+def verify_signed_license(
+    license_key: str,
+    *,
+    machine_fingerprint: str | None = None,
+) -> SignedLicenseInfo:
     text = (license_key or "").strip()
     if not is_signed_license_key(text):
         return SignedLicenseInfo(valid=False, message="Formato de licencia firmada invalido.")
@@ -88,9 +93,33 @@ def verify_signed_license(license_key: str) -> SignedLicenseInfo:
     store_label = str(payload.get("n") or "").strip() or None
     issued_at = str(payload.get("d") or "").strip() or None
     status = str(payload.get("s") or "active").strip().lower() or "active"
+    bound_fingerprint = str(payload.get("f") or "").strip().upper() or None
 
     if not store_id:
         return SignedLicenseInfo(valid=False, message="Licencia sin ID de tienda.")
+
+    if bound_fingerprint:
+        current_fingerprint = str(machine_fingerprint or "").strip().upper()
+        if not current_fingerprint:
+            return SignedLicenseInfo(
+                valid=False,
+                store_id=store_id,
+                store_label=store_label,
+                issued_at=issued_at,
+                status=status,
+                machine_fingerprint=bound_fingerprint,
+                message="Licencia vinculada a equipo; no se pudo leer el ID de equipo.",
+            )
+        if bound_fingerprint != current_fingerprint:
+            return SignedLicenseInfo(
+                valid=False,
+                store_id=store_id,
+                store_label=store_label,
+                issued_at=issued_at,
+                status=status,
+                machine_fingerprint=bound_fingerprint,
+                message="Licencia no valida para este equipo.",
+            )
 
     if status != "active":
         return SignedLicenseInfo(
@@ -108,5 +137,6 @@ def verify_signed_license(license_key: str) -> SignedLicenseInfo:
         store_label=store_label,
         issued_at=issued_at,
         status=status,
+        machine_fingerprint=bound_fingerprint,
         message="Licencia firmada valida.",
     )

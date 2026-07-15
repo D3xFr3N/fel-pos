@@ -216,6 +216,13 @@ def ensure_schema_updates() -> None:
                 "ALTER TABLE stock_count_sessions ADD COLUMN department_id INTEGER"
             )
 
+    if "users" in table_names:
+        user_columns = {col["name"] for col in inspector.get_columns("users")}
+        if "must_change_password" not in user_columns:
+            alter_statements.append(
+                "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
+            )
+
     if not alter_statements:
         return
 
@@ -301,15 +308,30 @@ def initialize_app_data():
                         full_name="Administrador",
                         role="admin",
                         password_hash=hash_password("admin123"),
+                        must_change_password=1,
                     ),
                     User(
                         username="cajero",
                         full_name="Usuario Caja",
                         role="user",
                         password_hash=hash_password("cajero123"),
+                        must_change_password=1,
                     ),
                 ]
             )
+            db.commit()
+
+        from app.services.auth_service import verify_password
+
+        default_passwords = {"admin": "admin123", "cajero": "cajero123"}
+        flagged = False
+        for username, default_password in default_passwords.items():
+            user = db.query(User).filter(User.username == username).first()
+            if user and verify_password(default_password, user.password_hash):
+                if not user.must_change_password:
+                    user.must_change_password = 1
+                    flagged = True
+        if flagged:
             db.commit()
     finally:
         db.close()
