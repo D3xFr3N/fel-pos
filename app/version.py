@@ -5,6 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 
 APP_NAME = "FEL POS Guatemala"
+APP_CREATOR = "D3xFr3N"
 VERSION_FILE = "VERSION"
 BUILD_DATE_FILE = "BUILD_DATE"
 DEFAULT_VERSION = "0.0.0"

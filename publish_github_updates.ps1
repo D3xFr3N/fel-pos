@@ -4,6 +4,8 @@ param(
 
     [string]$GitHubRepo = "fel-pos",
 
+    [int]$KeepVersionCount = 4,
+
     [switch]$SkipBuild
 )
 
@@ -21,6 +23,33 @@ function Require-Command {
 
 Require-Command git
 Require-Command gh
+
+function Remove-OldGhPagesVersions {
+    param(
+        [Parameter(Mandatory = $true)][string]$PagesWorktree,
+        [Parameter(Mandatory = $true)][int]$KeepCount
+    )
+    if ($KeepCount -lt 1) {
+        return
+    }
+
+    $versionDirs = Get-ChildItem $PagesWorktree -Directory | Where-Object {
+        $_.Name -match '^\d+\.\d+\.\d+$'
+    }
+    if ($versionDirs.Count -le $KeepCount) {
+        return
+    }
+
+    $sorted = $versionDirs | Sort-Object {
+        [version]$_.Name
+    } -Descending
+
+    $toRemove = $sorted | Select-Object -Skip $KeepCount
+    foreach ($dir in $toRemove) {
+        Write-Host "  Eliminando version antigua en gh-pages: $($dir.Name)"
+        Remove-Item $dir.FullName -Recurse -Force
+    }
+}
 
 if (-not $SkipBuild) {
     & (Join-Path $root "build_update_release.ps1") -GitHubOwner $GitHubOwner -GitHubRepo $GitHubRepo
@@ -84,6 +113,8 @@ if (Test-Path $targetVersionDir) {
     Remove-Item $targetVersionDir -Recurse -Force
 }
 Copy-Item $versionSourceDir $targetVersionDir -Recurse -Force
+
+Remove-OldGhPagesVersions -PagesWorktree $pagesWorktree -KeepCount $KeepVersionCount
 
 Set-Location $pagesWorktree
 git add -A

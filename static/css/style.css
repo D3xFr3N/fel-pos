@@ -50,6 +50,7 @@ body {
 }
 .brand h1 { margin: 0; font-size: 1.2rem; }
 .brand p { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.85rem; }
+.brand .app-creator { margin: 0.1rem 0 0; font-size: 0.72rem; color: var(--muted); opacity: 0.85; }
 
 .tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .session-box { display: flex; align-items: center; gap: 0.6rem; }

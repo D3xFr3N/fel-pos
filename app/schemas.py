@@ -640,6 +640,7 @@ class VersionHistoryEntry(BaseModel):
 
 class AppVersionOut(BaseModel):
     app_name: str
+    creator: str = "D3xFr3N"
     version: str
     build_date: str | None = None
     previous_version: str | None = None

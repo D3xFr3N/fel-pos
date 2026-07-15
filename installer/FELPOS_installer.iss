@@ -5,7 +5,7 @@
 #ifndef MyAppVersion
 #define MyAppVersion "0.0.0"
 #endif
-#define MyAppPublisher "FEL POS"
+#define MyAppPublisher "D3xFr3N"
 #define MyAppExeName "FELPOS.exe"
 
 [Setup]

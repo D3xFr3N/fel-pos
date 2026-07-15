@@ -4374,6 +4374,7 @@ function renderVersionLabel() {
   label.textContent = `v${info.version}`;
   label.title = [
     info.app_name,
+    info.creator ? `Creado por ${info.creator}` : null,
     info.build_date ? `Compilada: ${info.build_date}` : null,
     info.updated_at ? `Actualizada: ${info.updated_at}` : null,
   ]
@@ -4404,6 +4405,7 @@ function renderVersionHistorySection() {
   return `
     <h3 style="margin: 0.2rem 0 0;">Version del sistema</h3>
     <p class="hint">Se muestra la version actual y hasta 3 anteriores.</p>
+    <div class="row"><span>Creador</span><strong>${escapeHtml(info.creator || "D3xFr3N")}</strong></div>
     <div class="row"><span>Version actual</span><strong>v${escapeHtml(info.version)}</strong></div>
     ${
       info.previous_version

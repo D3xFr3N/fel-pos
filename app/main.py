@@ -61,12 +61,13 @@ from app.services.auth_service import hash_password
 from app.services.backup_service import create_backup, ensure_daily_auto_backup, ensure_recoverable_database_on_startup
 from app.services.store_settings_service import bootstrap_store_settings
 from app.services.version_service import sync_installed_version
-from app.version import APP_VERSION
+from app.version import APP_CREATOR, APP_VERSION
 
 app = FastAPI(
     title="FEL POS Guatemala",
     description="Punto de venta tipo Eleventa con facturacion electronica FEL",
     version=APP_VERSION,
+    contact={"name": APP_CREATOR},
 )
 
 app.include_router(products_router)

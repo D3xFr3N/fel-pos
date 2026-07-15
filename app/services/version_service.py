@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.data_paths import get_data_dir
-from app.version import APP_NAME, get_app_version, get_build_date
+from app.version import APP_CREATOR, APP_NAME, get_app_version, get_build_date
 
 VERSION_STATE_FILE = "app_version.json"
 
@@ -82,6 +82,7 @@ def _public_payload(state: dict, build_date: str | None, *, changed: bool) -> di
     visible_history = history[-4:]
     return {
         "app_name": APP_NAME,
+        "creator": APP_CREATOR,
         "version": get_app_version(),
         "build_date": build_date,
         "previous_version": state.get("previous_version"),
