@@ -25,6 +25,7 @@ const state = {
   receiptPrinterConfig: null,
   systemConfig: null,
   notificationConfig: null,
+  scannerBridgeConfig: null,
   licenseConfig: null,
   runtimeConfig: { nit_lookup_configured: false },
   currentCash: null,
@@ -1974,12 +1975,19 @@ async function refreshLowStockProducts() {
 }
 
 async function refreshStockCountData() {
-  const [current, sessions] = await Promise.all([
+  const requests = [
     api("/api/stock-count/sessions/current"),
     api("/api/stock-count/sessions"),
-  ]);
-  state.stockCountCurrent = current;
-  state.stockCountSessions = sessions;
+  ];
+  if (state.user?.role === "admin") {
+    requests.push(api("/api/config/scanner-bridge").catch(() => null));
+  }
+  const results = await Promise.all(requests);
+  state.stockCountCurrent = results[0];
+  state.stockCountSessions = results[1];
+  if (state.user?.role === "admin") {
+    state.scannerBridgeConfig = results[2];
+  }
 }
 
 function stockCountStatusLabel(status) {
@@ -2061,10 +2069,11 @@ function renderStockCountPanel() {
     const hasDepartments = state.departments.length > 0;
     container.innerHTML = `
       <div class="stock-count-layout">
+        ${renderStockCountScannerBridgeQuick()}
         <p class="hint">
           Debes crear una orden de conteo con codigo y departamento para habilitar escaneo.
         </p>
-        <p class="hint">App celular: abre <strong>/mobile</strong> (ej. http://IP-DE-TU-PC:8000/mobile).</p>
+        <p class="hint">App celular: abre <strong>/mobile</strong> o usa la APK con lector de camara.</p>
         ${
           hasDepartments
             ? `
@@ -2114,6 +2123,7 @@ function renderStockCountPanel() {
       </div>
     `;
     document.getElementById("stock-count-order-form")?.addEventListener("submit", startStockCountSession);
+    bindStockCountScannerBridgeActions(container);
     return;
   }
 
@@ -2126,6 +2136,7 @@ function renderStockCountPanel() {
     .slice(0, 60);
   container.innerHTML = `
     <div class="stock-count-layout">
+      ${renderStockCountScannerBridgeQuick()}
       <div class="row">
         <span>Sesion actual</span>
         <strong>#${current.id} · ${stockCountStatusLabel(current.status)}</strong>
@@ -2168,7 +2179,7 @@ function renderStockCountPanel() {
               ? '<p class="hint">Como admin puedes cerrar conteo y ajustar, o mandar reconteo.</p>'
               : '<p class="hint">Solo admin puede cerrar conteo con ajuste o mandar reconteo.</p>'
           }
-          <p class="hint">Para telefono usa: http://IP-DE-TU-PC:8000/mobile</p>
+          <p class="hint">Para telefono usa la APK o ${escapeHtml(state.scannerBridgeConfig?.mobile_url_hint || "http://IP-DE-TU-PC:8000/mobile")}</p>
         `
           : `<p class="hint">Esta sesion ya fue aplicada. Inicia una nueva para seguir contando.</p>`
       }
@@ -2374,6 +2385,7 @@ function renderStockCountPanel() {
     const skuInput = document.getElementById("stock-count-scan-sku");
     skuInput?.focus();
   }
+  bindStockCountScannerBridgeActions(container);
 }
 
 function focusStockCountOrderCreation() {
@@ -4507,6 +4519,133 @@ function buildSaleSuccessMessage(sale, suffix = "") {
   return `Venta registrada. ${reference}.${suffix ? ` ${suffix}` : ""}`;
 }
 
+function renderScannerBridgeSection() {
+  const cfg = state.scannerBridgeConfig || {
+    enabled: false,
+    running: false,
+    port: 18765,
+    username: "admin",
+    password_configured: false,
+    com_port: "",
+    listen_address: "",
+    mobile_url_hint: "",
+  };
+  const statusClass = cfg.running ? "status-pill ok" : cfg.enabled ? "status-pill warning" : "status-pill";
+  const statusLabel = cfg.running ? "Activo" : cfg.enabled ? "Activado (sin escuchar)" : "Inactivo";
+  const toggleLabel = cfg.enabled ? "Desactivar puente" : "Activar puente";
+  const toggleClass = cfg.enabled ? "btn ghost" : "btn primary";
+  return `
+    <h3 style="margin: 0.2rem 0 0;">App movil — Puente scanner</h3>
+    <p class="hint">
+      Permite que la APK Android envie escaneos por Bluetooth/TCP al PC durante conteo de inventario.
+      El modo WiFi de la app sigue funcionando sin activar esto.
+    </p>
+    <div class="row">
+      <span>Estado del puente</span>
+      <span class="${statusClass}">${statusLabel}</span>
+    </div>
+    <div class="row"><span>Escucha en</span><strong>${escapeHtml(cfg.listen_address || `0.0.0.0:${cfg.port || 18765}`)}</strong></div>
+    <div class="row"><span>URL app movil</span><strong>${escapeHtml(cfg.mobile_url_hint || "-")}</strong></div>
+    <div class="panel-actions">
+      <button id="scanner-bridge-toggle-btn" class="${toggleClass}" type="button">${toggleLabel}</button>
+      <button id="scanner-bridge-refresh-btn" class="btn ghost" type="button">Actualizar estado</button>
+    </div>
+    <form id="scanner-bridge-config-form">
+      <label>
+        <input id="scanner-bridge-enabled" name="enabled" type="checkbox" ${cfg.enabled ? "checked" : ""}>
+        Puente scanner habilitado al guardar
+      </label>
+      <label>
+        Puerto TCP del puente
+        <input name="port" type="number" min="1024" max="65535" value="${Number(cfg.port || 18765)}" required>
+      </label>
+      <label>
+        Usuario del puente (login interno)
+        <input name="username" value="${escapeHtml(cfg.username || "admin")}" required>
+      </label>
+      <label>
+        Clave del puente
+        <input name="password" type="password" placeholder="${cfg.password_configured ? "Configurada (dejar vacio para conservar)" : "Clave del usuario"}">
+      </label>
+      <label>
+        Puerto COM Bluetooth (opcional, Windows)
+        <input name="com_port" value="${escapeHtml(cfg.com_port || "")}" placeholder="Ej. COM5">
+      </label>
+      <button class="btn primary" type="submit">Guardar puente scanner</button>
+    </form>
+    <p class="hint">
+      Empareja el celular con la PC por Bluetooth y usa modo <strong>Bluetooth</strong> en la APK.
+      Si Bluetooth falla, la app intenta el mismo puente por TCP en la red local.
+    </p>
+  `;
+}
+
+function renderStockCountScannerBridgeQuick() {
+  if (state.user?.role !== "admin") {
+    return "";
+  }
+  const cfg = state.scannerBridgeConfig || {
+    enabled: false,
+    running: false,
+    port: 18765,
+    listen_address: "",
+    mobile_url_hint: "",
+  };
+  const statusClass = cfg.running ? "status-pill ok" : cfg.enabled ? "status-pill warning" : "status-pill";
+  const statusLabel = cfg.running ? "Puente activo" : cfg.enabled ? "Activado (sin escuchar)" : "Puente inactivo";
+  const toggleLabel = cfg.enabled ? "Desactivar puente movil" : "Activar puente movil";
+  const toggleClass = cfg.enabled ? "btn ghost" : "btn primary";
+  return `
+    <div class="stock-count-scanner-bridge">
+      <div class="row">
+        <strong>App movil / puente scanner</strong>
+        <span class="${statusClass}">${statusLabel}</span>
+      </div>
+      <p class="hint">
+        Escucha: <strong>${escapeHtml(cfg.listen_address || `0.0.0.0:${cfg.port || 18765}`)}</strong>
+        · App: <strong>${escapeHtml(cfg.mobile_url_hint || "/mobile")}</strong>
+      </p>
+      <div class="panel-actions">
+        <button id="stock-count-scanner-bridge-toggle-btn" class="${toggleClass}" type="button">${toggleLabel}</button>
+        <button id="stock-count-scanner-bridge-refresh-btn" class="btn ghost" type="button">Actualizar puente</button>
+      </div>
+      <p class="hint">Usa la APK en modo WiFi o Bluetooth. Configuracion completa en Configuracion.</p>
+    </div>
+  `;
+}
+
+function bindStockCountScannerBridgeActions(container) {
+  if (state.user?.role !== "admin" || !container) return;
+
+  container.querySelector("#stock-count-scanner-bridge-toggle-btn")?.addEventListener("click", async () => {
+    try {
+      state.scannerBridgeConfig = await api("/api/config/scanner-bridge/toggle", { method: "POST" });
+      renderStockCountPanel();
+      alert(state.scannerBridgeConfig?.running ? "Puente scanner activo para la app movil." : "Puente scanner detenido.");
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  container.querySelector("#stock-count-scanner-bridge-refresh-btn")?.addEventListener("click", async () => {
+    try {
+      state.scannerBridgeConfig = await api("/api/config/scanner-bridge");
+      renderStockCountPanel();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+}
+
+async function refreshScannerBridgeConfig() {
+  if (state.user?.role !== "admin") return;
+  try {
+    state.scannerBridgeConfig = await api("/api/config/scanner-bridge");
+  } catch {
+    state.scannerBridgeConfig = null;
+  }
+}
+
 function renderReceiptPrinterSection() {
   const cfg = state.receiptPrinterConfig || DEFAULT_RECEIPT_PRINTER_CONFIG;
   const configWarning = state.receiptPrinterConfig
@@ -4781,6 +4920,8 @@ function renderConfig() {
     <div class="row"><span>Facturacion</span><strong>${escapeHtml(felModeLabel)}</strong></div>
     ${showFelCertifierFields ? `<div class="row"><span>Certificador</span><strong>${escapeHtml(cfg.certificador)}</strong></div>` : ""}
     <hr style="border-color: var(--border); width: 100%;">
+    ${renderScannerBridgeSection()}
+    <hr style="border-color: var(--border); width: 100%;">
     <h3 style="margin: 0.2rem 0 0;">Panel administracion de fondos abiertos</h3>
     <p class="hint">Cada cajero tiene su propio fondo. Aqui puedes ver todos los fondos abiertos, transferir turnos y hacer arqueos.</p>
     <div id="admin-cash-monitor-card" class="config-card" style="padding: 0.2rem 0;"></div>
@@ -5053,6 +5194,47 @@ function renderConfig() {
       });
       renderConfig();
       alert("Configuracion de notificaciones guardada.");
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.getElementById("scanner-bridge-config-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    try {
+      state.scannerBridgeConfig = await api("/api/config/scanner-bridge", {
+        method: "PUT",
+        body: JSON.stringify({
+          enabled: Boolean(form.enabled?.checked),
+          port: Number(form.port.value || 18765),
+          username: form.username.value.trim(),
+          password: form.password.value,
+          com_port: form.com_port.value.trim(),
+        }),
+      });
+      renderConfig();
+      alert("Configuracion del puente scanner guardada.");
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.getElementById("scanner-bridge-toggle-btn")?.addEventListener("click", async () => {
+    try {
+      state.scannerBridgeConfig = await api("/api/config/scanner-bridge/toggle", { method: "POST" });
+      renderConfig();
+      const label = state.scannerBridgeConfig?.running ? "Puente scanner activo." : "Puente scanner detenido.";
+      alert(label);
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.getElementById("scanner-bridge-refresh-btn")?.addEventListener("click", async () => {
+    try {
+      state.scannerBridgeConfig = await api("/api/config/scanner-bridge");
+      renderConfig();
     } catch (error) {
       alert(error.message);
     }
@@ -5435,6 +5617,9 @@ async function loadData() {
   const notificationConfigPromise = isAdmin
     ? api("/api/config/notifications").catch(() => null)
     : Promise.resolve(null);
+  const scannerBridgeConfigPromise = isAdmin
+    ? api("/api/config/scanner-bridge").catch(() => null)
+    : Promise.resolve(null);
   const licenseConfigPromise = isAdmin ? api("/api/config/license").catch(() => null) : Promise.resolve(null);
   const [
     products,
@@ -5465,6 +5650,7 @@ async function loadData() {
     receiptPrinterConfig,
     systemConfig,
     notificationConfig,
+    scannerBridgeConfig,
     licenseConfig,
   ] = await Promise.all([
     api("/api/products"),
@@ -5495,6 +5681,7 @@ async function loadData() {
     receiptPrinterPromise,
     systemConfigPromise,
     notificationConfigPromise,
+    scannerBridgeConfigPromise,
     licenseConfigPromise,
   ]);
   state.products = products;
@@ -5528,6 +5715,7 @@ async function loadData() {
   state.receiptPrinterConfig = receiptPrinterConfig;
   state.systemConfig = systemConfig;
   state.notificationConfig = notificationConfig;
+  state.scannerBridgeConfig = scannerBridgeConfig;
   state.licenseConfig = licenseConfig;
   renderVersionLabel();
   renderSystemAlertsBar();

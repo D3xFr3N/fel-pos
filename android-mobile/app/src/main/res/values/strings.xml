@@ -5,5 +5,21 @@
     <string name="server_hint">Ingresa la URL base del servidor FEL POS en tu red local.</string>
     <string name="server_placeholder">http://192.168.1.20:8000</string>
     <string name="save_server">Guardar servidor</string>
-    <string name="open_mobile">Abrir app movil</string>
+    <string name="open_mobile">App web movil</string>
+    <string name="open_scanner">Lector con camara</string>
+    <string name="username_hint">Usuario</string>
+    <string name="password_hint">Clave</string>
+    <string name="connection_mode">Modo de conexion</string>
+    <string name="mode_wifi">WiFi (recomendado)</string>
+    <string name="mode_bluetooth">Bluetooth (respaldo)</string>
+    <string name="pc_bluetooth_mac">MAC Bluetooth de la PC</string>
+    <string name="pc_bluetooth_mac_hint">Ej: 00:11:22:33:44:55</string>
+    <string name="scanner_title">Lector de inventario</string>
+    <string name="scanner_order_none">Sin orden de conteo activa</string>
+    <string name="scanner_order_active">Orden activa: %1$s</string>
+    <string name="scanner_last_scan">Ultimo: %1$s</string>
+    <string name="scanner_waiting">Apunta la camara al codigo de barras</string>
+    <string name="scanner_qty">Cantidad por escaneo</string>
+    <string name="permission_camera_required">Se necesita permiso de camara para escanear.</string>
+    <string name="permission_bluetooth_required">Se necesita Bluetooth para el modo respaldo.</string>
 </resources>

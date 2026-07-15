@@ -50,6 +50,8 @@ from app.schemas import (
     NotificationConfigOut,
     NotificationConfigUpdateIn,
     NotificationTestIn,
+    ScannerBridgeConfigOut,
+    ScannerBridgeConfigUpdateIn,
     LicenseConfigOut,
     LicenseConfigUpdateIn,
     SupplierCreate,
@@ -943,6 +945,76 @@ def save_notification_config_route(
     )
     db.commit()
     return NotificationConfigOut(**result)
+
+
+@config_router.get("/scanner-bridge", response_model=ScannerBridgeConfigOut)
+def get_scanner_bridge_config_route(
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    from app.services.scanner_bridge_config_service import get_scanner_bridge_config
+
+    bootstrap_store_settings(db)
+    return ScannerBridgeConfigOut(**get_scanner_bridge_config())
+
+
+@config_router.put("/scanner-bridge", response_model=ScannerBridgeConfigOut)
+def save_scanner_bridge_config_route(
+    payload: ScannerBridgeConfigUpdateIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    from app.services.audit_service import log_action
+    from app.services.scanner_bridge_config_service import update_scanner_bridge_config
+
+    bootstrap_store_settings(db)
+    try:
+        result = update_scanner_bridge_config(
+            enabled=payload.enabled,
+            port=payload.port,
+            username=payload.username.strip(),
+            password=payload.password,
+            com_port=payload.com_port,
+        )
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar .env: {exc}") from exc
+
+    log_action(
+        db,
+        user_id=user.id,
+        action="scanner_bridge_config_updated",
+        entity_type="scanner_bridge",
+        entity_id=1,
+        details=f"enabled={result['enabled']}; running={result['running']}; port={result['port']}",
+    )
+    db.commit()
+    return ScannerBridgeConfigOut(**result)
+
+
+@config_router.post("/scanner-bridge/toggle", response_model=ScannerBridgeConfigOut)
+def toggle_scanner_bridge_route(
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    from app.services.audit_service import log_action
+    from app.services.scanner_bridge_config_service import toggle_scanner_bridge
+
+    bootstrap_store_settings(db)
+    try:
+        result = toggle_scanner_bridge()
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar .env: {exc}") from exc
+
+    log_action(
+        db,
+        user_id=user.id,
+        action="scanner_bridge_toggled",
+        entity_type="scanner_bridge",
+        entity_id=1,
+        details=f"enabled={result['enabled']}; running={result['running']}",
+    )
+    db.commit()
+    return ScannerBridgeConfigOut(**result)
 
 
 @config_router.post("/notifications/test/whatsapp")

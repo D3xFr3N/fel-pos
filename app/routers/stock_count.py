@@ -220,7 +220,7 @@ def list_stock_count_sessions(
 @router.get("/sessions/current", response_model=StockCountSessionOut | None)
 def get_current_stock_count_session(
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_roles("admin", "user")),
 ):
     current = (
         db.query(StockCountSession)
@@ -310,7 +310,7 @@ def scan_stock_count_item(
     session_id: int,
     payload: StockCountScanIn,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_roles("admin", "user")),
 ):
     session = _fetch_session(db, session_id)
     if not session:

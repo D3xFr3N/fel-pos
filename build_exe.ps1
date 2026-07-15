@@ -28,6 +28,7 @@ if (-not (Test-Path ".\dist")) {
 }
 
 Write-Host "Generando EXE..."
+$iconPath = Join-Path $root "installer\assets\felpos.ico"
 $args = @(
   "-m", "PyInstaller",
   "--noconfirm",
@@ -39,6 +40,9 @@ $args = @(
   "--name", "FELPOS",
   "--add-data", "static;static"
 )
+if (Test-Path $iconPath) {
+  $args += @("--icon", $iconPath)
+}
 if (Test-Path ".\app\license_public.pem") {
   $args += @("--add-data", "app\license_public.pem;app")
 }

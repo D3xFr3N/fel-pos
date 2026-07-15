@@ -1042,6 +1042,27 @@ class SystemConfigUpdateIn(BaseModel):
     cash_shared_session: bool = False
 
 
+class ScannerBridgeConfigOut(BaseModel):
+    enabled: bool = False
+    running: bool = False
+    host: str = "0.0.0.0"
+    port: int = 18765
+    api_base: str = "http://127.0.0.1:8000"
+    username: str = "admin"
+    password_configured: bool = False
+    com_port: str = ""
+    listen_address: str = ""
+    mobile_url_hint: str = ""
+
+
+class ScannerBridgeConfigUpdateIn(BaseModel):
+    enabled: bool = False
+    port: int = Field(default=18765, ge=1024, le=65535)
+    username: str = Field(default="admin", min_length=1, max_length=60)
+    password: str = ""
+    com_port: str = ""
+
+
 class NotificationConfigOut(BaseModel):
     gmail_sender: str = ""
     gmail_app_password_configured: bool = False

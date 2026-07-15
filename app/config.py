@@ -88,5 +88,13 @@ class Settings(BaseSettings):
 
     app_timezone: str = "America/Guatemala"
 
+    scanner_bridge_enabled: bool = False
+    scanner_bridge_host: str = "0.0.0.0"
+    scanner_bridge_port: int = 18765
+    scanner_bridge_api_base: str = "http://127.0.0.1:8000"
+    scanner_bridge_username: str = "admin"
+    scanner_bridge_password: str = ""
+    scanner_bridge_com_port: str = ""
+
 
 settings = Settings()

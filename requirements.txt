@@ -12,3 +12,4 @@ pywin32
 pywebview
 tzdata
 cryptography
+pyserial

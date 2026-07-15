@@ -55,6 +55,7 @@ from app.routers.reports import router as reports_router
 from app.routers.sales import router as sales_router
 from app.routers.stock_count import router as stock_count_router
 from app.routers.system import router as system_router
+from app.config import settings
 from app.data_paths import ensure_persistent_layout
 from app.services.auth_service import hash_password
 from app.services.backup_service import create_backup, ensure_daily_auto_backup, ensure_recoverable_database_on_startup
@@ -312,3 +313,15 @@ def initialize_app_data():
             db.commit()
     finally:
         db.close()
+
+    if settings.scanner_bridge_enabled:
+        try:
+            from app.services.scanner_bridge_service import start_scanner_bridge
+
+            start_scanner_bridge()
+            print(
+                f"[INFO] Puente scanner activo en {settings.scanner_bridge_host}:"
+                f"{settings.scanner_bridge_port}"
+            )
+        except Exception as exc:
+            print(f"[WARN] No se pudo iniciar puente scanner: {exc}")

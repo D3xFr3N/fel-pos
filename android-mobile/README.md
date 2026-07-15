@@ -1,83 +1,116 @@
-# APK Android directo (sin scripts)
+# APK Android — Lector de inventario con camara
 
-Esta carpeta contiene una app Android nativa (`WebView`) para abrir `http://TU_IP:8000/mobile` y usar:
+App nativa para escanear codigos de barras con la camara del telefono y registrar conteos en FEL POS.
 
-- Conteo fisico
-- Verificacion de precios
+## Modos de conexion
 
-## Compilar APK desde Android Studio (sin comandos)
+| Modo | Cuando usarlo | Como funciona |
+|------|---------------|---------------|
+| **WiFi (recomendado)** | PC y celular en la misma red | La app llama directo al API del servidor (`/api/stock-count/.../scan`) |
+| **Bluetooth (respaldo)** | Sin WiFi o conexion inestable | La app envia escaneos al **puente scanner** del PC por Bluetooth o TCP `:18765` |
 
-1. Abre Android Studio.
-2. Click en `Open` y selecciona la carpeta:
-   - `C:\Users\D3xFr3N\source\fel-pos\android-mobile`
-3. Espera a que termine `Gradle Sync`.
-4. Ve a menu:
-   - `Build` -> `Build Bundle(s) / APK(s)` -> `Build APK(s)`
-5. Al terminar, Android Studio mostrara un link `locate`.
+## Compilar APK
 
-Ruta esperada del APK:
+### Android Studio
+
+1. Abre la carpeta `android-mobile` en Android Studio.
+2. Espera `Gradle Sync`.
+3. `Build` → `Build Bundle(s) / APK(s)` → `Build APK(s)`.
+
+APK debug:
 
 - `android-mobile\app\build\outputs\apk\debug\app-debug.apk`
 
-## Compilar APK con un click (CMD)
-
-Puedes usar:
-
-- `android-mobile\build_apk_android.bat`
-
-Tambien por linea de comando:
+### CMD (un click)
 
 ```cmd
 cd /d C:\Users\D3xFr3N\source\fel-pos\android-mobile
 build_apk_android.bat
 ```
 
-## APK release firmada (recomendada para distribuir)
+## Configurar el PC (servidor FEL POS)
 
-1) Crear keystore y archivo de firma:
+### WiFi
 
-```cmd
-cd /d C:\Users\D3xFr3N\source\fel-pos\android-mobile
-create_release_keystore.bat
-```
-
-2) Compilar release firmada:
+1. El servidor debe escuchar en la red local:
 
 ```cmd
-cd /d C:\Users\D3xFr3N\source\fel-pos\android-mobile
-build_apk_release.bat
+set FELPOS_BIND_HOST=0.0.0.0
 ```
 
-APK release esperada:
+2. Crea una **orden de conteo** en el sistema principal (Inventario → Conteo fisico).
+3. Anota la IP del PC, por ejemplo `http://192.168.1.20:8000`.
 
-- `android-mobile\app\build\outputs\apk\release\app-release.apk`
+### Puente scanner (Bluetooth / respaldo TCP)
 
-El script tambien copia una version al escritorio como:
+Puedes activarlo desde el **desktop de FEL POS**:
 
-- `FELPOS-Mobile-release.apk`
+**Configuracion → App movil — Puente scanner → Activar puente**
+
+Tambien puedes definirlo en `.env`:
+
+```env
+FELPOS_SCANNER_BRIDGE_ENABLED=true
+FELPOS_SCANNER_BRIDGE_PORT=18765
+FELPOS_SCANNER_BRIDGE_USERNAME=admin
+FELPOS_SCANNER_BRIDGE_PASSWORD=tu_clave
+```
+
+Opcional — puerto COM de Bluetooth en Windows:
+
+```env
+FELPOS_SCANNER_BRIDGE_COM_PORT=COM5
+```
+
+Reinicia FEL POS. Veras en consola:
+
+```text
+[INFO] Puente scanner activo en 0.0.0.0:18765
+```
+
+Tambien puedes ejecutarlo aparte:
+
+```cmd
+cd /d C:\Users\D3xFr3N\source\fel-pos
+python scripts/scanner_bridge.py
+```
+
+**Protocolo del puente** (linea UTF-8):
+
+```text
+SCAN|FEL000123|1
+→ OK|Nombre producto|5|4
+→ ERR|mensaje de error
+```
+
+### Emparejar Bluetooth (modo respaldo)
+
+1. En Windows: Configuracion → Bluetooth → empareja el celular.
+2. Copia la **MAC Bluetooth de la PC** (formato `AA:BB:CC:DD:EE:FF`).
+3. Si la conexion SPP directa no funciona, el puente TCP en `:18765` actua como respaldo en la misma red.
 
 ## Uso en el telefono
 
-1. Instala la APK en Android.
-2. Abre la app `FEL POS Movil`.
-3. Escribe la URL base de tu servidor:
-   - `http://192.168.X.X:8000`
-4. Pulsa `Abrir app movil`.
+1. Instala la APK (`FEL POS Movil` v1.1.0).
+2. Configura:
+   - URL del servidor (`http://192.168.X.X:8000`)
+   - Usuario y clave (admin o cajero)
+   - Modo: **WiFi** o **Bluetooth**
+   - MAC Bluetooth de la PC (solo modo Bluetooth)
+3. Pulsa **Lector con camara**.
+4. Apunta al codigo de barras — cada escaneo se registra en la orden activa del PC.
+5. Ajusta **Cantidad por escaneo** si cuentas por cajas/unidades multiples.
 
-## Importante
+La app web movil (`App web movil`) sigue disponible para consulta de precios sin camara.
 
-- Tu servidor principal debe estar corriendo en LAN:
-  - `FELPOS_BIND_HOST=0.0.0.0`
-- Celular y PC deben estar en la misma red WiFi.
-- Si aparece `JAVA_HOME is not set`, ejecuta en CMD:
+## Requisitos
 
-```cmd
-set "JAVA_HOME=C:\Program Files\Android\Android Studio\jbr"
-set "PATH=%JAVA_HOME%\bin;%PATH%"
-build_apk_android.bat
-```
+- Android 7+ (API 24+)
+- Camara trasera
+- Bluetooth (solo modo respaldo)
+- Misma red WiFi (modo WiFi) o puente activo en el PC (modo Bluetooth)
 
 ## Seguridad
 
-- `release-signing.properties` y `keystore/` son archivos sensibles y quedan en local.
-- Guarda una copia de tu keystore en un lugar seguro; si la pierdes, no podras actualizar la app firmada existente.
+- Usa usuarios con clave propia; no compartas la cuenta admin en bodega.
+- El puente scanner solo debe estar activo en la red local de la tienda.
