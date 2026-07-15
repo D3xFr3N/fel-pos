@@ -393,7 +393,7 @@ class CompanyConfigUpdateIn(BaseModel):
 class BusinessProfileConfigOut(BaseModel):
     business_profile: BusinessProfile
     business_profile_label: str
-    cash_shared_session: bool = True
+    cash_shared_session: bool = False
     nit_lookup_configured: bool = False
 
 
@@ -1034,12 +1034,12 @@ class CashSessionTransferIn(BaseModel):
 
 
 class SystemConfigOut(BaseModel):
-    cash_shared_session: bool = True
+    cash_shared_session: bool = False
     nit_lookup_configured: bool = False
 
 
 class SystemConfigUpdateIn(BaseModel):
-    cash_shared_session: bool = True
+    cash_shared_session: bool = False
 
 
 class NotificationConfigOut(BaseModel):

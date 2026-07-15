@@ -26,7 +26,7 @@ const state = {
   systemConfig: null,
   notificationConfig: null,
   licenseConfig: null,
-  runtimeConfig: { cash_shared_session: true, nit_lookup_configured: false },
+  runtimeConfig: { nit_lookup_configured: false },
   currentCash: null,
   selectedSaleId: null,
   selectedSale: null,
@@ -51,9 +51,7 @@ const state = {
   salePasswordPromptDismissed: false,
   salePasswordAutoOpenPending: false,
   adminCashMonitor: {
-    session: null,
-    movements: [],
-    metrics: null,
+    sessions: [],
     updatedAt: null,
     error: null,
   },
@@ -554,9 +552,7 @@ function setSession(token, user) {
   }
   state.saleSessionUnlocked = false;
   state.adminCashMonitor = {
-    session: null,
-    movements: [],
-    metrics: null,
+    sessions: [],
     updatedAt: null,
     error: null,
   };
@@ -825,7 +821,7 @@ function summarizeCashMonitor(session, movements = []) {
     if (!Number.isFinite(amount) || amount <= 0) return;
     const isSaleMovement = Number(movement?.sale_id || 0) > 0;
     if (isSaleMovement) {
-      if (movement.movement_type === "income") {
+      if (movement.movement_type === "sale" || movement.movement_type === "income") {
         salesCashTotal += amount;
         saleIds.add(Number(movement.sale_id));
         if (!lastSaleAt || new Date(movement.created_at) > new Date(lastSaleAt)) {
@@ -861,34 +857,24 @@ function summarizeCashMonitor(session, movements = []) {
 async function refreshAdminCashMonitorData() {
   if (state.user?.role !== "admin") return;
   try {
-    const session = await api("/api/cash/sessions/current");
-    state.currentCash = session;
-    renderCashOwnerIndicator();
-    renderSaleSessionIndicator();
-    if (!session) {
-      state.adminCashMonitor = {
-        session: null,
-        movements: [],
-        metrics: null,
-        updatedAt: new Date().toISOString(),
-        error: null,
-      };
-      return;
+    const openSessions = await api("/api/cash/sessions/open");
+    const sessions = [];
+    for (const session of openSessions || []) {
+      const movements = await api(`/api/cash/sessions/${session.id}/movements`);
+      sessions.push({
+        session,
+        movements,
+        metrics: summarizeCashMonitor(session, movements),
+      });
     }
-
-    const movements = await api(`/api/cash/sessions/${session.id}/movements`);
     state.adminCashMonitor = {
-      session,
-      movements,
-      metrics: summarizeCashMonitor(session, movements),
+      sessions,
       updatedAt: new Date().toISOString(),
       error: null,
     };
   } catch (error) {
     state.adminCashMonitor = {
-      session: null,
-      movements: [],
-      metrics: null,
+      sessions: [],
       updatedAt: new Date().toISOString(),
       error: error?.message || "No se pudo actualizar monitor de caja.",
     };
@@ -4149,10 +4135,13 @@ function printAdminCashAuditReceipt({
   return true;
 }
 
-async function runAdminCashAudit() {
-  const monitor = state.adminCashMonitor || {};
-  const session = monitor.session;
-  const metrics = monitor.metrics;
+async function runAdminCashAudit(entry = null) {
+  const selected =
+    entry ||
+    (state.adminCashMonitor?.sessions || [])[0] ||
+    null;
+  const session = selected?.session;
+  const metrics = selected?.metrics;
   if (!session || !metrics) {
     alert("No hay caja activa para arqueo.");
     return;
@@ -4206,10 +4195,11 @@ function renderAdminCashMonitorCard() {
     return;
   }
 
-  if (!monitor.session || !monitor.metrics) {
+  const entries = monitor.sessions || [];
+  if (!entries.length) {
     container.innerHTML = `
-      <div class="row"><span>Estado caja</span><strong>Sin cajero activo</strong></div>
-      <p class="hint">No hay fondo abierto en este momento.</p>
+      <div class="row"><span>Estado caja</span><strong>Sin cajeros con fondo abierto</strong></div>
+      <p class="hint">Cada cajero abre su propio fondo de forma independiente.</p>
       <div class="panel-actions">
         <button id="admin-cash-monitor-refresh-btn" class="btn ghost" type="button">Actualizar estado</button>
       </div>
@@ -4221,31 +4211,43 @@ function renderAdminCashMonitorCard() {
     return;
   }
 
-  const session = monitor.session;
-  const metrics = monitor.metrics;
   const updatedAt = monitor.updatedAt ? new Date(monitor.updatedAt).toLocaleTimeString("es-GT") : "-";
-  const lastSaleAt = metrics.lastSaleAt ? new Date(metrics.lastSaleAt).toLocaleString("es-GT") : "Sin ventas";
+  const cards = entries
+    .map((entry, index) => {
+      const session = entry.session;
+      const metrics = entry.metrics;
+      const lastSaleAt = metrics.lastSaleAt ? new Date(metrics.lastSaleAt).toLocaleString("es-GT") : "Sin ventas";
+      const cashierName =
+        session.opened_by_full_name || session.opened_by_username || `ID ${session.opened_by_user_id}`;
+      return `
+      <div class="config-card" style="margin-bottom: 0.75rem; padding: 0.55rem 0.65rem; border: 1px solid var(--border); border-radius: 10px;">
+        <div class="row"><span>Cajero</span><strong>${escapeHtml(cashierName)}</strong></div>
+        <div class="row"><span>Caja</span><strong>#${session.id}</strong></div>
+        <div class="row"><span>Apertura</span><strong>${new Date(session.opened_at).toLocaleString("es-GT")}</strong></div>
+        <div class="row"><span>Monto apertura</span><strong>${money(metrics.openingAmount)}</strong></div>
+        <div class="row"><span>Ventas en efectivo</span><strong>${money(metrics.salesCashTotal)}</strong></div>
+        <div class="row"><span>Devoluciones efectivo</span><strong>${money(metrics.returnsCashTotal)}</strong></div>
+        <div class="row"><span>Total ventas (neto)</span><strong>${money(metrics.netSalesCash)}</strong></div>
+        <div class="row"><span>Cantidad ventas</span><strong>${metrics.salesCount}</strong></div>
+        <div class="row"><span>Ingresos manuales</span><strong>${money(metrics.manualIncomeTotal)}</strong></div>
+        <div class="row"><span>Egresos manuales</span><strong>${money(metrics.manualExpenseTotal)}</strong></div>
+        <div class="row"><span>Efectivo esperado</span><strong>${money(metrics.expectedAmount)}</strong></div>
+        <div class="row"><span>Ultima venta</span><strong>${lastSaleAt}</strong></div>
+        <div class="panel-actions">
+          <button class="btn ghost admin-cash-transfer-btn" type="button" data-session-id="${session.id}">Transferir turno</button>
+          <button class="btn ghost admin-cash-force-close-btn" type="button" data-session-id="${session.id}" data-expected="${Number(session.expected_amount || 0)}">Cerrar fondo</button>
+          <button class="btn primary admin-cash-audit-btn" type="button" data-index="${index}">Hacer arqueo</button>
+        </div>
+      </div>`;
+    })
+    .join("");
 
   container.innerHTML = `
-    <div class="row"><span>Cajero activo</span><strong>${escapeHtml(
-      session.opened_by_full_name || session.opened_by_username || `ID ${session.opened_by_user_id}`
-    )}</strong></div>
-    <div class="row"><span>Caja</span><strong>#${session.id}</strong></div>
-    <div class="row"><span>Apertura</span><strong>${new Date(session.opened_at).toLocaleString("es-GT")}</strong></div>
-    <div class="row"><span>Monto apertura</span><strong>${money(metrics.openingAmount)}</strong></div>
-    <div class="row"><span>Ventas en efectivo</span><strong>${money(metrics.salesCashTotal)}</strong></div>
-    <div class="row"><span>Devoluciones efectivo</span><strong>${money(metrics.returnsCashTotal)}</strong></div>
-    <div class="row"><span>Total ventas (neto)</span><strong>${money(metrics.netSalesCash)}</strong></div>
-    <div class="row"><span>Cantidad ventas</span><strong>${metrics.salesCount}</strong></div>
-    <div class="row"><span>Ingresos manuales</span><strong>${money(metrics.manualIncomeTotal)}</strong></div>
-    <div class="row"><span>Egresos manuales</span><strong>${money(metrics.manualExpenseTotal)}</strong></div>
-    <div class="row"><span>Efectivo esperado</span><strong>${money(metrics.expectedAmount)}</strong></div>
-    <div class="row"><span>Ultima venta</span><strong>${lastSaleAt}</strong></div>
+    <div class="row"><span>Fondos abiertos</span><strong>${entries.length}</strong></div>
     <p class="hint">Actualizado: ${updatedAt}</p>
+    ${cards}
     <div class="panel-actions">
       <button id="admin-cash-monitor-refresh-btn" class="btn ghost" type="button">Actualizar estado</button>
-      <button id="admin-cash-transfer-btn" class="btn ghost" type="button">Transferir turno</button>
-      <button id="admin-cash-audit-btn" class="btn primary" type="button">Hacer arqueo de efectivo</button>
     </div>
   `;
 
@@ -4253,9 +4255,50 @@ function renderAdminCashMonitorCard() {
     await refreshAdminCashMonitorData();
     renderAdminCashMonitorCard();
   });
-  document.getElementById("admin-cash-audit-btn")?.addEventListener("click", runAdminCashAudit);
-  document.getElementById("admin-cash-transfer-btn")?.addEventListener("click", () => {
-    transferCashSessionToUser(session.id);
+  container.querySelectorAll(".admin-cash-audit-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const index = Number(btn.getAttribute("data-index"));
+      runAdminCashAudit(entries[index]);
+    });
+  });
+  container.querySelectorAll(".admin-cash-transfer-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const sessionId = Number(btn.getAttribute("data-session-id"));
+      transferCashSessionToUser(sessionId);
+    });
+  });
+  container.querySelectorAll(".admin-cash-force-close-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const sessionId = Number(btn.getAttribute("data-session-id"));
+      const expected = Number(btn.getAttribute("data-expected") || 0);
+      const countedRaw = prompt(
+        `Conteo fisico para cerrar fondo #${sessionId}:`,
+        expected.toFixed(2)
+      );
+      if (countedRaw === null) return;
+      const countedAmount = Number(countedRaw);
+      if (!Number.isFinite(countedAmount) || countedAmount < 0) {
+        alert("Ingresa un monto valido.");
+        return;
+      }
+      const reason =
+        prompt("Motivo (opcional) del cierre administrativo:", "Cierre por admin") || "";
+      try {
+        await api(`/api/cash/sessions/${sessionId}/close`, {
+          method: "POST",
+          body: JSON.stringify({
+            counted_amount: countedAmount,
+            notes: `CIERRE ADMINISTRATIVO.${reason.trim() ? ` Motivo: ${reason.trim()}` : ""}`,
+          }),
+        });
+        await loadData();
+        await refreshAdminCashMonitorData();
+        renderAdminCashMonitorCard();
+        alert(`Fondo #${sessionId} cerrado.`);
+      } catch (error) {
+        alert(error.message);
+      }
+    });
   });
 }
 
@@ -4738,19 +4781,9 @@ function renderConfig() {
     <div class="row"><span>Facturacion</span><strong>${escapeHtml(felModeLabel)}</strong></div>
     ${showFelCertifierFields ? `<div class="row"><span>Certificador</span><strong>${escapeHtml(cfg.certificador)}</strong></div>` : ""}
     <hr style="border-color: var(--border); width: 100%;">
-    <h3 style="margin: 0.2rem 0 0;">Panel administracion caja activa</h3>
-    <p class="hint">Monitorea en tiempo real al cajero activo, control de ventas y arqueo de efectivo.</p>
+    <h3 style="margin: 0.2rem 0 0;">Panel administracion de fondos abiertos</h3>
+    <p class="hint">Cada cajero tiene su propio fondo. Aqui puedes ver todos los fondos abiertos, transferir turnos y hacer arqueos.</p>
     <div id="admin-cash-monitor-card" class="config-card" style="padding: 0.2rem 0;"></div>
-    <hr style="border-color: var(--border); width: 100%;">
-    <h3 style="margin: 0.2rem 0 0;">Caja compartida</h3>
-    <p class="hint">Si esta activa, cualquier cajero puede vender con la caja abierta (util en tiendas pequeñas).</p>
-    <form id="system-config-form">
-      <label>
-        <input type="checkbox" name="cash_shared_session" ${state.systemConfig?.cash_shared_session !== false ? "checked" : ""}>
-        Permitir que cualquier cajero use la caja abierta
-      </label>
-      <button class="btn primary" type="submit">Guardar caja compartida</button>
-    </form>
     <hr style="border-color: var(--border); width: 100%;">
     <h3 style="margin: 0.2rem 0 0;">Notificaciones de ordenes</h3>
     <p class="hint">Configura envio real por Gmail (SMTP) y WhatsApp Cloud API. Sin credenciales, el sistema queda en modo simulado.</p>
@@ -4997,27 +5030,6 @@ function renderConfig() {
     try {
       const result = await api("/api/config/receipt-printer/test", { method: "POST" });
       alert(result?.message || "Ticket de prueba enviado.");
-    } catch (error) {
-      alert(error.message);
-    }
-  });
-
-  document.getElementById("system-config-form")?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    try {
-      state.systemConfig = await api("/api/config/system", {
-        method: "PUT",
-        body: JSON.stringify({ cash_shared_session: Boolean(form.cash_shared_session?.checked) }),
-      });
-      state.runtimeConfig = {
-        ...state.runtimeConfig,
-        cash_shared_session: state.systemConfig.cash_shared_session !== false,
-      };
-      renderConfig();
-      renderCashOwnerIndicator();
-      renderSaleSessionIndicator();
-      alert("Configuracion de caja guardada.");
     } catch (error) {
       alert(error.message);
     }
@@ -5492,7 +5504,6 @@ async function loadData() {
   state.sales = sales;
   state.businessProfile = String(profileInfo?.business_profile || state.businessProfile || "abarrotes").toLowerCase();
   state.runtimeConfig = {
-    cash_shared_session: profileInfo?.cash_shared_session !== false,
     nit_lookup_configured: Boolean(profileInfo?.nit_lookup_configured),
   };
   state.config = config;
@@ -5557,29 +5568,20 @@ function isCurrentCashOwnedByLoggedUser() {
   return Number(state.currentCash.opened_by_user_id) === Number(state.user.id);
 }
 
-function isCashSharedSessionEnabled() {
-  return state.runtimeConfig?.cash_shared_session !== false;
-}
-
 function canUseCurrentCash() {
   if (!state.currentCash || !state.user) return false;
   if (state.user.role === "admin") return true;
-  if (isCashSharedSessionEnabled()) return true;
   return isCurrentCashOwnedByLoggedUser();
 }
 
 function ensureCashOwnership(actionLabel = "operar caja") {
   if (!state.currentCash) {
-    alert("Debes abrir caja antes de continuar.");
+    alert("Debes abrir tu fondo antes de continuar.");
     return false;
   }
   if (!canUseCurrentCash()) {
-    const ownerName =
-      state.currentCash.opened_by_full_name ||
-      state.currentCash.opened_by_username ||
-      `usuario ID ${state.currentCash.opened_by_user_id}`;
     alert(
-      `No puedes ${actionLabel}. La caja #${state.currentCash.id} esta asignada a ${ownerName}. Pide al admin activar caja compartida o transferir el turno.`
+      `No puedes ${actionLabel}. Debes usar el fondo que abriste con tu usuario.`
     );
     return false;
   }
@@ -5602,27 +5604,21 @@ function renderCashOwnerIndicator() {
 
   if (!state.currentCash) {
     indicator.textContent = isAdminUser()
-      ? "Sin caja activa. Como admin, abrir fondo es opcional."
-      : "Sin caja activa. Debes agregar fondo para comenzar.";
+      ? "Sin tu fondo activo. Como admin, abrir fondo es opcional."
+      : "Sin tu fondo activo. Debes agregar fondo para comenzar.";
     if (captureBtn) captureBtn.disabled = true;
     if (closeShiftBtn) closeShiftBtn.disabled = true;
     return;
   }
 
-  const ownerName =
-    state.currentCash.opened_by_full_name ||
-    state.currentCash.opened_by_username ||
-    `usuario ID ${state.currentCash.opened_by_user_id}`;
   const ownsCash = isCurrentCashOwnedByLoggedUser();
   const canUseCash = canUseCurrentCash();
   if (canUseCash) {
     indicator.classList.add("owner");
     if (ownsCash) {
-      indicator.textContent = `Caja #${state.currentCash.id} asignada a ti (${ownerName}). Puedes cobrar con esta caja.`;
-    } else if (isCashSharedSessionEnabled()) {
-      indicator.textContent = `Caja #${state.currentCash.id} abierta por ${ownerName}. Modo compartido: puedes cobrar con esta caja.`;
+      indicator.textContent = `Tu fondo #${state.currentCash.id} esta abierto. Puedes cobrar con esta caja.`;
     } else {
-      indicator.textContent = `Caja #${state.currentCash.id} (admin). Puedes cobrar con esta caja.`;
+      indicator.textContent = `Fondo #${state.currentCash.id} (admin). Puedes cobrar con esta caja.`;
     }
     if (captureBtn) captureBtn.disabled = !canUseCash;
     if (closeShiftBtn) closeShiftBtn.disabled = !ownsCash && state.user?.role !== "admin";
@@ -5630,7 +5626,7 @@ function renderCashOwnerIndicator() {
   }
 
   indicator.classList.add("blocked");
-  indicator.textContent = `Caja #${state.currentCash.id} asignada a ${ownerName}. No puedes cobrar con esta caja.`;
+  indicator.textContent = `No puedes cobrar: el fondo abierto no pertenece a tu usuario.`;
   if (captureBtn) captureBtn.disabled = true;
   if (closeShiftBtn) closeShiftBtn.disabled = true;
 }
@@ -5684,11 +5680,7 @@ function renderSaleSessionIndicator() {
     state.saleSessionUnlocked = false;
     clearSaleSessionAutoLockTimer();
     indicator.classList.add("blocked");
-    const ownerName =
-      state.currentCash.opened_by_full_name ||
-      state.currentCash.opened_by_username ||
-      `usuario ID ${state.currentCash.opened_by_user_id}`;
-    indicator.textContent = `Venta bloqueada. La caja pertenece a ${ownerName}.`;
+    indicator.textContent = "Venta bloqueada. Debes abrir tu propio fondo para vender.";
     unlockBtn.disabled = true;
     if (captureBtn) captureBtn.disabled = true;
     if (clearBtn) clearBtn.disabled = true;
@@ -5737,13 +5729,11 @@ function refreshPostLoginDialogState() {
   const logoutBtn = document.getElementById("post-login-logout-btn");
   if (!hint || !amountInput || !openCashBtn || !forceCloseBtn || !enterBtn) return;
 
-  const hasCashOpen = Boolean(state.currentCash);
-  const ownsOpenCash = isCurrentCashOwnedByLoggedUser();
-  const canUseOpenCash = canUseCurrentCash();
+  const hasOwnCashOpen = Boolean(state.currentCash) && isCurrentCashOwnedByLoggedUser();
   const isAdmin = isAdminUser();
 
   forceCloseBtn.hidden = true;
-  forceCloseBtn.disabled = false;
+  forceCloseBtn.disabled = true;
   if (logoutBtn) logoutBtn.hidden = true;
   enterBtn.hidden = true;
   openCashBtn.hidden = false;
@@ -5752,7 +5742,7 @@ function refreshPostLoginDialogState() {
   state.postLoginFundAdded = false;
   if (fundSection) fundSection.hidden = false;
 
-  if (isAdmin && !hasCashOpen) {
+  if (isAdmin && !hasOwnCashOpen) {
     if (fundSection) fundSection.hidden = true;
     openCashBtn.hidden = true;
     amountInput.disabled = true;
@@ -5764,46 +5754,18 @@ function refreshPostLoginDialogState() {
 
   openCashBtn.hidden = false;
 
-  if (!hasCashOpen) {
+  if (!hasOwnCashOpen) {
     amountInput.disabled = false;
     openCashBtn.disabled = false;
-    hint.textContent = "Ingresa el monto inicial de caja para comenzar a vender.";
+    hint.textContent = "Ingresa el monto inicial de tu fondo para comenzar a vender.";
     return;
   }
 
   amountInput.disabled = true;
   openCashBtn.disabled = true;
   openCashBtn.textContent = "Fondo ya abierto";
-
-  if (canUseOpenCash) {
-    state.postLoginFundAdded = true;
-    if (ownsOpenCash) {
-      hint.textContent = `Tu fondo #${state.currentCash.id} sigue abierto. Continuando...`;
-    } else {
-      const ownerName =
-        state.currentCash.opened_by_full_name ||
-        state.currentCash.opened_by_username ||
-        `usuario ID ${state.currentCash.opened_by_user_id}`;
-      hint.textContent = `Caja compartida activa (#${state.currentCash.id}, abierta por ${ownerName}). Puedes continuar.`;
-    }
-    return;
-  }
-
-  if (isAdmin) {
-    if (fundSection) fundSection.hidden = true;
-    openCashBtn.hidden = true;
-    state.postLoginFundAdded = true;
-    forceCloseBtn.hidden = false;
-    hint.textContent =
-      `Hay una caja abierta (#${state.currentCash.id}) de otro usuario. ` +
-      "Puedes desactivarla para liberar el turno.";
-    return;
-  }
-
-  if (fundSection) fundSection.hidden = true;
-  openCashBtn.hidden = true;
-  hint.textContent =
-    "Hay una caja abierta de otro usuario. Solicita a un admin liberar esa caja.";
+  state.postLoginFundAdded = true;
+  hint.textContent = `Tu fondo #${state.currentCash.id} sigue abierto. Continuando...`;
 }
 
 function openPostLoginDialog() {
@@ -6392,43 +6354,62 @@ async function quickCloseCashSession() {
 }
 
 async function forceCloseOpenCashFromPostLogin() {
-  if (!state.currentCash) {
-    alert("No hay caja abierta para desactivar.");
-    refreshPostLoginDialogState();
-    return;
-  }
   if (state.user?.role !== "admin") {
-    alert("Solo admin puede desactivar una caja ajena.");
+    alert("Solo admin puede cerrar un fondo ajeno.");
     return;
   }
-  if (isCurrentCashOwnedByLoggedUser()) {
-    alert("Esta caja ya pertenece a tu usuario. Usa Volver a entrar.");
-    refreshPostLoginDialogState();
-    return;
-  }
-
-  const suggested = Number(state.currentCash.expected_amount || 0).toFixed(2);
-  const countedRaw = prompt(
-    `Conteo fisico para cuadrar caja #${state.currentCash.id} y liberar el turno:`,
-    suggested
-  );
-  if (countedRaw === null) return;
-
-  const countedAmount = Number(countedRaw);
-  if (!Number.isFinite(countedAmount) || countedAmount < 0) {
-    alert("Ingresa un monto valido para cuadrar caja.");
-    return;
-  }
-
-  const reason =
-    prompt(
-      "Motivo (opcional) de desactivacion del fondo abierto:",
-      "Fondo dejado abierto por cambio de cajero"
-    ) || "";
-  const note = `CIERRE ADMINISTRATIVO PARA LIBERAR TURNO.${reason.trim() ? ` Motivo: ${reason.trim()}` : ""}`;
-
   try {
-    await api(`/api/cash/sessions/${state.currentCash.id}/close`, {
+    const openSessions = await api("/api/cash/sessions/open");
+    const foreign = (openSessions || []).filter(
+      (session) => Number(session.opened_by_user_id) !== Number(state.user.id)
+    );
+    if (!foreign.length) {
+      alert("No hay fondos de otros cajeros para cerrar.");
+      refreshPostLoginDialogState();
+      return;
+    }
+
+    const options = foreign
+      .map((session, index) => {
+        const name =
+          session.opened_by_full_name ||
+          session.opened_by_username ||
+          `usuario ${session.opened_by_user_id}`;
+        return `${index + 1}) #${session.id} - ${name} (esperado ${Number(session.expected_amount || 0).toFixed(2)})`;
+      })
+      .join("\n");
+    const choiceRaw = prompt(
+      `Fondos abiertos de otros cajeros:\n${options}\n\nEscribe el numero del fondo a cuadrar:`,
+      "1"
+    );
+    if (choiceRaw === null) return;
+    const choice = Number(choiceRaw);
+    if (!Number.isInteger(choice) || choice < 1 || choice > foreign.length) {
+      alert("Seleccion invalida.");
+      return;
+    }
+    const target = foreign[choice - 1];
+    const suggested = Number(target.expected_amount || 0).toFixed(2);
+    const countedRaw = prompt(
+      `Conteo fisico para cuadrar caja #${target.id} y liberar el turno:`,
+      suggested
+    );
+    if (countedRaw === null) return;
+
+    const countedAmount = Number(countedRaw);
+    if (!Number.isFinite(countedAmount) || countedAmount < 0) {
+      alert("Ingresa un monto valido para cuadrar caja.");
+      return;
+    }
+
+    const reason =
+      prompt(
+        "Motivo (opcional) de desactivacion del fondo abierto:",
+        "Cierre administrativo de fondo ajeno"
+      ) || "";
+    const note = `CIERRE ADMINISTRATIVO PARA LIBERAR TURNO.${reason.trim() ? ` Motivo: ${reason.trim()}` : ""}`;
+
+    await api(`/api/cash/sessions/${target.id}/close`, {
       method: "POST",
       body: JSON.stringify({
         counted_amount: countedAmount,
@@ -6436,8 +6417,10 @@ async function forceCloseOpenCashFromPostLogin() {
       }),
     });
     await loadData();
+    await refreshAdminCashMonitorData();
+    renderAdminCashMonitorCard();
     refreshPostLoginDialogState();
-    alert("Caja anterior desactivada y cuadrada. Ya puedes agregar nuevo fondo.");
+    alert(`Caja #${target.id} desactivada y cuadrada.`);
   } catch (error) {
     alert(error.message);
   }
@@ -7292,11 +7275,7 @@ function setupEvents() {
     }
 
     if (!state.postLoginFundAdded) {
-      if (state.currentCash && !canUseCurrentCash()) {
-        alert("Hay una caja abierta de otro usuario. Un admin debe desactivarla o activar caja compartida.");
-      } else {
-        alert("Debes presionar Agregar fondo con una cantidad valida antes de ingresar.");
-      }
+      alert("Debes presionar Agregar fondo con una cantidad valida antes de ingresar.");
       return;
     }
     postLoginDialog.close();
@@ -7309,20 +7288,11 @@ function setupEvents() {
     openLogin();
   });
   postLoginOpenCashBtn.addEventListener("click", async () => {
-    if (state.currentCash) {
-      if (canUseCurrentCash()) {
-        state.postLoginFundAdded = true;
-        const ownerText = isCurrentCashOwnedByLoggedUser()
-          ? "Tu fondo sigue abierto."
-          : "Caja compartida activa.";
-        postLoginHint.textContent = `${ownerText} Presiona Ingresar al sistema de venta para continuar.`;
-        postLoginEnterBtn.disabled = false;
-        postLoginEnterBtn.textContent = "Volver a entrar al fondo abierto";
-      } else if (state.user?.role === "admin") {
-        alert("Hay una caja abierta de otro usuario. Usa el boton Admin para desactivar y cuadrar ese fondo.");
-      } else {
-        alert("Hay una caja abierta de otro usuario. Solicita a un admin liberar esa caja.");
-      }
+    if (state.currentCash && isCurrentCashOwnedByLoggedUser()) {
+      state.postLoginFundAdded = true;
+      postLoginHint.textContent = "Tu fondo sigue abierto. Presiona Ingresar al sistema de venta para continuar.";
+      postLoginEnterBtn.disabled = false;
+      postLoginEnterBtn.textContent = "Volver a entrar al fondo abierto";
       return;
     }
     const amount = Number(postLoginAmount.value || 0);
@@ -7355,11 +7325,7 @@ function setupEvents() {
     }
     if (!state.postLoginFundAdded) {
       event.preventDefault();
-      if (state.currentCash && !canUseCurrentCash()) {
-        alert("Hay una caja abierta de otro usuario. Solicita a un admin liberar esa caja o activar caja compartida.");
-      } else {
-        alert("Debes agregar fondo para continuar.");
-      }
+      alert("Debes agregar fondo para continuar.");
     }
   });
 

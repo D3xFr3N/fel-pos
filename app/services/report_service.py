@@ -98,18 +98,28 @@ def build_top_products(
     return result
 
 
-def build_cash_cut_report(db: Session, session_id: int | None = None) -> dict | None:
+def build_cash_cut_report(
+    db: Session,
+    session_id: int | None = None,
+    user_id: int | None = None,
+) -> dict | None:
     session = None
     if session_id:
-        session = db.get(CashSession, session_id)
-    else:
         session = (
             db.query(CashSession)
             .options(joinedload(CashSession.opened_by), joinedload(CashSession.movements))
-            .filter(CashSession.status == "open")
-            .order_by(CashSession.opened_at.desc())
+            .filter(CashSession.id == session_id)
             .first()
         )
+    else:
+        query = (
+            db.query(CashSession)
+            .options(joinedload(CashSession.opened_by), joinedload(CashSession.movements))
+            .filter(CashSession.status == "open")
+        )
+        if user_id is not None:
+            query = query.filter(CashSession.opened_by_user_id == user_id)
+        session = query.order_by(CashSession.opened_at.desc()).first()
     if not session:
         return None
     movements = session.movements or []

@@ -10,6 +10,7 @@ from app.services.cash_service import (
     can_use_cash_session,
     close_cash_session,
     get_open_cash_session,
+    list_open_cash_sessions,
     open_cash_session,
     transfer_cash_session,
 )
@@ -22,7 +23,15 @@ def get_current_cash_session(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles("admin", "user")),
 ):
-    return get_open_cash_session(db)
+    return get_open_cash_session(db, user_id=user.id)
+
+
+@router.get("/sessions/open", response_model=list[CashSessionOut])
+def list_open_sessions(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles("admin")),
+):
+    return list_open_cash_sessions(db)
 
 
 @router.get("/sessions", response_model=list[CashSessionOut])
@@ -84,9 +93,9 @@ def create_movement(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles("admin", "user")),
 ):
-    session = get_open_cash_session(db)
+    session = get_open_cash_session(db, user_id=user.id)
     if not session:
-        raise HTTPException(status_code=400, detail="No hay caja abierta.")
+        raise HTTPException(status_code=400, detail="Debes abrir tu fondo antes de registrar movimientos.")
     if not can_use_cash_session(user, session):
         raise HTTPException(
             status_code=403,

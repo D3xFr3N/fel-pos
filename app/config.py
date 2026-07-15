@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     license_registry_url: str = ""
     license_required_for_updates: bool = True
 
+    # Deprecado: cada cajero abre su propio fondo. Se conserva por compatibilidad de .env.
     cash_shared_session: bool = True
 
     app_timezone: str = "America/Guatemala"

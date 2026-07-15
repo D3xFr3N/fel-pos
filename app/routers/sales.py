@@ -42,17 +42,13 @@ def register_sale(
     user: User = Depends(require_roles("admin", "user")),
 ):
     try:
-        open_session = get_open_cash_session(db)
+        open_session = get_open_cash_session(db, user_id=user.id)
         if not open_session:
-            raise ValueError("Debes abrir caja antes de registrar ventas.")
+            raise ValueError("Debes abrir tu fondo antes de registrar ventas.")
         if not can_use_cash_session(user, open_session):
-            owner_hint = "otro usuario"
             raise HTTPException(
                 status_code=403,
-                detail=(
-                    f"La caja esta asignada a {owner_hint}. "
-                    "Activa caja compartida en Configuracion o pide al admin transferir el turno."
-                ),
+                detail="Debes usar el fondo que abriste con tu usuario.",
             )
         sale = create_sale(db, payload, user_id=user.id)
         if not payload.is_credit:
@@ -90,16 +86,13 @@ def register_sale_return(
     user: User = Depends(require_roles("admin", "user")),
 ):
     try:
-        open_session = get_open_cash_session(db)
+        open_session = get_open_cash_session(db, user_id=user.id)
         if not open_session:
-            raise ValueError("Debes abrir caja antes de registrar devoluciones.")
+            raise ValueError("Debes abrir tu fondo antes de registrar devoluciones.")
         if not can_use_cash_session(user, open_session):
             raise HTTPException(
                 status_code=403,
-                detail=(
-                    "La caja esta asignada a otro usuario. "
-                    "Activa caja compartida en Configuracion o pide al admin transferir el turno."
-                ),
+                detail="Debes usar el fondo que abriste con tu usuario.",
             )
 
         sale_return = create_sale_return(

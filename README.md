@@ -76,11 +76,12 @@ Configuracion de tipo de tienda:
 - `BUSINESS_PROFILE=abarrotes` (opciones: `abarrotes`, `farmacia`, `libreria`, `ferreteria`, `restaurante`, `boutique`)
 - El perfil ajusta etiquetas de pestañas, nombres de botones y textos de trabajo para que el sistema se adapte al giro.
 
-Configuracion de caja compartida:
+Configuracion de fondos de caja:
 
-- `CASH_SHARED_SESSION=true` (por defecto): cualquier cajero puede vender con la caja abierta.
-- `CASH_SHARED_SESSION=false`: solo el cajero que abrio el fondo puede vender (modo estricto).
-- En Configuracion (admin) puedes cambiar este modo y transferir el turno de caja a otro usuario.
+- Cada cajero abre **su propio fondo** (independiente por usuario).
+- Varias cajas pueden estar abiertas a la vez; cada venta afecta solo al fondo del cajero logueado.
+- Admin puede ver todos los fondos abiertos, transferir un turno o cerrar un fondo ajeno desde Configuracion.
+- `CASH_SHARED_SESSION` queda deprecada y ya no se usa (se conserva en `.env` por compatibilidad).
 
 Configuracion de notificaciones (ordenes y compras):
 
@@ -156,10 +157,10 @@ Roles:
 - `admin`: acceso completo a configuraciones, proveedores, productos, compras, ventas, caja y ordenes.
 - `admin`: tambien puede crear/editar departamentos para clasificar productos (ej. Lacteos, Bebidas, etc.).
 - `user` (cajero): vender, cobrar (incluyendo mayoreo), registrar ingreso de inventario y consultar productos con inventario bajo.
-- La caja queda amarrada al cajero que abrio el fondo en modo estricto (`CASH_SHARED_SESSION=false`).
-- Con caja compartida activa (por defecto), cualquier cajero puede vender con la caja abierta.
-- Admin puede transferir el turno de caja a otro usuario desde Configuracion.
-- En POS se muestra un indicador visual de caja asignada para evitar cobros en usuario equivocado.
+- Cada cajero abre y cierra **su propio fondo**; no puede tocar el fondo de otros cajeros.
+- Varios cajeros pueden vender al mismo tiempo (modo servidor o distintas sesiones), cada uno con su fondo.
+- Admin puede transferir el turno de un fondo a otro usuario desde Configuracion (si el destino no tiene fondo abierto).
+- En POS se muestra un indicador del fondo propio del cajero.
 - En Configuracion (admin) puedes crear usuarios cajero para que cada persona inicie sesion con su propia cuenta.
 - En Configuracion (admin) hay filtros de usuarios por busqueda, rol y estado (incluye vista rapida de cajeros activos).
 - En Configuracion (admin) puedes crear respaldo manual y restaurar un respaldo con un clic (la restauracion crea un respaldo de seguridad previo).

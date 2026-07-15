@@ -66,10 +66,11 @@ def payment_methods(
 @router.get("/cash-cut", response_model=CashCutReportOut | None)
 def cash_cut(
     session_id: int | None = Query(default=None),
+    user_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(require_roles("admin")),
 ):
-    report = build_cash_cut_report(db, session_id=session_id)
+    report = build_cash_cut_report(db, session_id=session_id, user_id=user_id)
     if not report:
         return None
     return CashCutReportOut(**report)

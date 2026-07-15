@@ -1,13 +1,25 @@
 from datetime import datetime
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from app.config import settings
 from app.models import CashMovement, CashSession, User
 
 
-def get_open_cash_session(db: Session) -> CashSession | None:
-    return db.query(CashSession).filter(CashSession.status == "open").first()
+def get_open_cash_session(db: Session, user_id: int | None = None) -> CashSession | None:
+    query = db.query(CashSession).filter(CashSession.status == "open")
+    if user_id is not None:
+        query = query.filter(CashSession.opened_by_user_id == user_id)
+    return query.order_by(CashSession.opened_at.desc()).first()
+
+
+def list_open_cash_sessions(db: Session) -> list[CashSession]:
+    return (
+        db.query(CashSession)
+        .options(joinedload(CashSession.opened_by))
+        .filter(CashSession.status == "open")
+        .order_by(CashSession.opened_at.desc())
+        .all()
+    )
 
 
 def can_use_cash_session(user: User, session: CashSession | None) -> bool:
@@ -15,15 +27,13 @@ def can_use_cash_session(user: User, session: CashSession | None) -> bool:
         return False
     if user.role == "admin":
         return True
-    if settings.cash_shared_session:
-        return True
     return session.opened_by_user_id == user.id
 
 
 def open_cash_session(db: Session, user_id: int, opening_amount: float, notes: str | None) -> CashSession:
-    existing = get_open_cash_session(db)
+    existing = get_open_cash_session(db, user_id=user_id)
     if existing:
-        raise ValueError("Ya existe una caja abierta.")
+        raise ValueError("Ya tienes un fondo abierto.")
 
     cash_session = CashSession(
         opened_by_user_id=user_id,
@@ -54,9 +64,9 @@ def add_cash_movement(
     description: str | None = None,
     sale_id: int | None = None,
 ) -> CashMovement:
-    session = get_open_cash_session(db)
+    session = get_open_cash_session(db, user_id=user_id)
     if not session:
-        raise ValueError("No hay caja abierta.")
+        raise ValueError("Debes abrir tu fondo antes de registrar movimientos.")
     if amount <= 0:
         raise ValueError("El monto debe ser mayor a 0.")
 
@@ -122,6 +132,13 @@ def transfer_cash_session(
         raise ValueError("Usuario destino no encontrado.")
     if not target.active:
         raise ValueError("El usuario destino esta inactivo.")
+
+    existing_target = get_open_cash_session(db, user_id=target_user_id)
+    if existing_target and existing_target.id != session.id:
+        raise ValueError(
+            f"El cajero {target.username} ya tiene un fondo abierto (# {existing_target.id}). "
+            "Cierralo antes de transferir."
+        )
 
     session.opened_by_user_id = target_user_id
     note = f"Transferida a {target.username} ({datetime.utcnow().strftime('%Y-%m-%d %H:%M')})"
