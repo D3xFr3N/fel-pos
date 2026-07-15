@@ -51,7 +51,7 @@ def send_whatsapp(recipient: str, message: str) -> tuple[str, str]:
         return "error", "Numero de WhatsApp invalido."
 
     if settings.whatsapp_token and settings.whatsapp_phone_id:
-        endpoint = f"{settings.whatsapp_api_url}/{settings.whatsapp_phone_id}/messages"
+        endpoint = f"{settings.whatsapp_api_url.rstrip('/')}/{settings.whatsapp_phone_id}/messages"
         payload = {
             "messaging_product": "whatsapp",
             "to": cleaned_recipient,
@@ -62,10 +62,20 @@ def send_whatsapp(recipient: str, message: str) -> tuple[str, str]:
             "Authorization": f"Bearer {settings.whatsapp_token}",
             "Content-Type": "application/json",
         }
-        response = httpx.post(endpoint, headers=headers, json=payload, timeout=12.0)
+        try:
+            response = httpx.post(endpoint, headers=headers, json=payload, timeout=12.0)
+        except httpx.HTTPError as exc:
+            return "error", f"Error de red WhatsApp: {exc}"
         if response.is_success:
             return "sent", response.text
-        return "error", response.text
+        detail = response.text
+        try:
+            body = response.json()
+            if isinstance(body, dict):
+                detail = body.get("error", {}).get("message", detail) if isinstance(body.get("error"), dict) else detail
+        except Exception:
+            pass
+        return "error", detail
 
     preview_url = f"https://wa.me/{cleaned_recipient}?text={quote(message)}"
     return "queued", json.dumps(
@@ -88,10 +98,15 @@ def send_gmail(recipient: str, subject: str, message: str) -> tuple[str, str]:
         email["Subject"] = subject
         email.set_content(message)
 
-        with smtplib.SMTP(settings.gmail_smtp_host, settings.gmail_smtp_port, timeout=12) as server:
-            server.starttls()
-            server.login(settings.gmail_sender, settings.gmail_app_password)
-            server.send_message(email)
+        try:
+            with smtplib.SMTP(settings.gmail_smtp_host, settings.gmail_smtp_port, timeout=12) as server:
+                server.starttls()
+                server.login(settings.gmail_sender, settings.gmail_app_password)
+                server.send_message(email)
+        except smtplib.SMTPException as exc:
+            return "error", f"Error SMTP: {exc}"
+        except OSError as exc:
+            return "error", f"Error de red Gmail: {exc}"
         return "sent", '{"provider":"gmail","status":"sent"}'
 
     return "queued", json.dumps(

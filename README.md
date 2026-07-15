@@ -26,7 +26,7 @@ Punto de venta estilo **Eleventa** con facturacion electronica **FEL** para SAT 
 - Generador de codigo de barras por producto y impresion de etiquetas (todas las tiendas/perfiles)
 - Modo **demo** sin certificador (para probar)
 - Adaptador preparado para certificador **Infile** en produccion
-- Perfil de tienda configurable: **abarrotes**, **farmacia** o **libreria** (libreria orientada a utiles escolares; adapta textos y flujo visual)
+- Perfil de tienda configurable: **abarrotes**, **farmacia**, **libreria**, **ferreteria**, **restaurante** o **boutique** (adapta textos y flujo visual)
 - En perfil **libreria**, productos incluyen campos escolares: categoria, grado, marca y variante/modelo
 
 ## Requisitos
@@ -73,8 +73,37 @@ Configuracion de impresion de etiquetas (codigo de barras):
 
 Configuracion de tipo de tienda:
 
-- `BUSINESS_PROFILE=abarrotes` (opciones: `abarrotes`, `farmacia`, `libreria`)
+- `BUSINESS_PROFILE=abarrotes` (opciones: `abarrotes`, `farmacia`, `libreria`, `ferreteria`, `restaurante`, `boutique`)
 - El perfil ajusta etiquetas de pestañas, nombres de botones y textos de trabajo para que el sistema se adapte al giro.
+
+Configuracion de caja compartida:
+
+- `CASH_SHARED_SESSION=true` (por defecto): cualquier cajero puede vender con la caja abierta.
+- `CASH_SHARED_SESSION=false`: solo el cajero que abrio el fondo puede vender (modo estricto).
+- En Configuracion (admin) puedes cambiar este modo y transferir el turno de caja a otro usuario.
+
+Configuracion de notificaciones (ordenes y compras):
+
+- Gmail: `GMAIL_SENDER`, `GMAIL_APP_PASSWORD`, `GMAIL_SMTP_HOST`, `GMAIL_SMTP_PORT`
+- WhatsApp Cloud API: `WHATSAPP_PHONE_ID`, `WHATSAPP_TOKEN`, `WHATSAPP_API_URL`
+- Sin credenciales, el envio queda en modo simulado (cola con vista previa).
+- En Configuracion (admin) puedes guardar credenciales y probar envio.
+
+Configuracion de ticket (personalizacion completa):
+
+- `RECEIPT_BOTTOM_FEED_LINES=8` — espacio antes del corte de papel
+- `RECEIPT_HEADER_LINE_1`, `RECEIPT_HEADER_LINE_2`, `RECEIPT_HEADER_LINE_3`
+- `RECEIPT_FOOTER_MESSAGE`, `RECEIPT_FOOTER_EXTRA`, `RECEIPT_TICKET_LABEL`
+- `RECEIPT_SHOW_COMPANY_NIT`, `RECEIPT_SHOW_ADDRESS`, `RECEIPT_SHOW_CUSTOMER`, `RECEIPT_SHOW_DATE`
+- `RECEIPT_SHOW_SUBTOTAL`, `RECEIPT_SHOW_TAX`, `RECEIPT_SHOW_PAYMENTS`, `RECEIPT_SHOW_FEL`
+- Tambien configurable desde Configuracion → Impresion de recibos (admin).
+
+Consulta automatica de NIT:
+
+- `NIT_LOOKUP_URL` — el sistema consulta `{URL}/{NIT}` y autocompleta nombre en primera compra.
+- `NIT_LOOKUP_TOKEN` — opcional, si tu proveedor requiere autenticacion Bearer.
+- `NIT_LOOKUP_TIMEOUT_SECONDS=8`
+- La API debe responder JSON con campos como `name`/`nombre`/`razon_social`.
 
 Configuracion de respaldo automatico:
 
@@ -127,7 +156,9 @@ Roles:
 - `admin`: acceso completo a configuraciones, proveedores, productos, compras, ventas, caja y ordenes.
 - `admin`: tambien puede crear/editar departamentos para clasificar productos (ej. Lacteos, Bebidas, etc.).
 - `user` (cajero): vender, cobrar (incluyendo mayoreo), registrar ingreso de inventario y consultar productos con inventario bajo.
-- La caja queda amarrada al cajero que abrio el fondo: solo ese usuario puede vender, devolver y registrar movimientos de caja.
+- La caja queda amarrada al cajero que abrio el fondo en modo estricto (`CASH_SHARED_SESSION=false`).
+- Con caja compartida activa (por defecto), cualquier cajero puede vender con la caja abierta.
+- Admin puede transferir el turno de caja a otro usuario desde Configuracion.
 - En POS se muestra un indicador visual de caja asignada para evitar cobros en usuario equivocado.
 - En Configuracion (admin) puedes crear usuarios cajero para que cada persona inicie sesion con su propia cuenta.
 - En Configuracion (admin) hay filtros de usuarios por busqueda, rol y estado (incluye vista rapida de cajeros activos).
@@ -360,6 +391,63 @@ UPDATE_MANIFEST_URL=https://D3xFr3N.github.io/fel-pos/latest.json
 
 6. Cuando publiques una version nueva, incrementa `VERSION`, vuelve a ejecutar `publish_github_updates.ps1` y las tiendas veran **Actualizar ahora**.
 
+### Licencias por tienda (control de actualizaciones)
+
+Cada tienda recibe una **clave firmada** (`FELPOS-v1...`). La validacion es **local y privada**: no se publica ningun registro de tiendas en GitHub ni en internet.
+
+### Asistente de activacion (recomendado)
+
+Doble clic o desde CMD:
+
+```cmd
+cd C:\Users\D3xFr3N\source\fel-pos
+activar_tienda.bat
+```
+
+Menu del asistente:
+
+1. **Activar nueva tienda** — pide ID (ej. `T001`), nombre, contacto; genera licencia firmada y carta para enviar
+2. **Ver tiendas registradas**
+3. **Reenviar carta de activacion** por ID
+4. **Revocar tienda** (solo en tu registro local)
+5. **Reemitir licencia firmada** (clave nueva para la tienda legitima)
+
+Las cartas se guardan en `licenses\activaciones\` (no se suben a Git).
+
+### Crear licencia manual (CLI)
+
+```powershell
+.\manage_licenses.ps1 -Action New -StoreLabel "Tienda Centro"
+```
+
+Guarda la clave firmada que imprime y entregala solo a esa tienda.
+
+**Reemitir licencia (licencia antigua o copia robada):**
+
+```powershell
+.\manage_licenses.ps1 -Action Reissue -StoreId T001
+```
+
+**Revocar en tu registro local:**
+
+```powershell
+.\manage_licenses.ps1 -Action Revoke -StoreId T001
+```
+
+**En cada tienda** (`.env` o Configuracion → Licencia de tienda):
+
+```env
+STORE_LICENSE_KEY=FELPOS-v1...
+LICENSE_REQUIRED_FOR_UPDATES=true
+```
+
+El archivo privado `licenses/private-registry.json` y la clave de firma `licenses/license_signing_private.pem` **no se suben a Git**.
+
+**Notas:**
+- El POS sigue funcionando sin licencia; solo se bloquean las **actualizaciones**.
+- Las licencias antiguas (`FELPOS-XXXX-...`) ya no funcionan sin registro publico; reemite con `-Action Reissue`.
+- Sin internet, una validacion exitosa reciente se conserva en cache local por 7 dias.
+
 **Automatico con GitHub Actions:** al crear un tag `v0.3.6` o ejecutar el workflow **Publish FEL POS update** manualmente, se compila el EXE y se publica en GitHub Pages.
 
 ## Generar EXE (Windows)
@@ -414,6 +502,9 @@ Resultado:
 
 El instalador:
 
+- **Pide licencia obligatoria** al instalar (muestra el ID de la computadora)
+- Sin licencia valida **no permite continuar** la instalacion
+- Guarda `STORE_LICENSE_KEY` en `.env` automaticamente
 - Copia la app a `Program Files\FEL POS`
 - Crea `data\` y `data\backups\` para conservar la base de datos
 - Crea `.env` solo si no existe (no sobrescribe en actualizaciones)

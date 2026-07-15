@@ -8,6 +8,9 @@ build/
 dist/
 *.spec
 .gh-pages-worktree/
+licenses/private-registry.json
+licenses/activaciones/
+licenses/license_signing_private.pem
 
 # Datos locales de desarrollo
 data/

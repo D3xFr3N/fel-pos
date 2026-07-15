@@ -61,12 +61,32 @@ if ($hasGhPages) {
     Set-Location $root
 }
 
-Get-ChildItem $pagesWorktree -Force | Where-Object { $_.Name -ne ".git" } | Remove-Item -Recurse -Force
-Copy-Item (Join-Path $releaseDir "*") $pagesWorktree -Recurse -Force
+Get-ChildItem $pagesWorktree -Force | Where-Object { $_.Name -ne ".git" } | ForEach-Object {
+    if ($_.Name -eq "latest.json") {
+        Remove-Item $_.FullName -Force
+    }
+}
+
+$version = (Get-Content (Join-Path $root "VERSION") -Raw).Trim()
+$versionSourceDir = Join-Path $releaseDir $version
+if (-not (Test-Path $versionSourceDir)) {
+    throw "No existe dist\release\$version. Ejecuta build_update_release.ps1 primero."
+}
+
+Copy-Item (Join-Path $releaseDir "latest.json") $pagesWorktree -Force
+$legacyRegistry = Join-Path $pagesWorktree "license-registry.json"
+if (Test-Path $legacyRegistry) {
+    Remove-Item $legacyRegistry -Force
+    Write-Host "  Registro publico de licencias eliminado (ahora privado)."
+}
+$targetVersionDir = Join-Path $pagesWorktree $version
+if (Test-Path $targetVersionDir) {
+    Remove-Item $targetVersionDir -Recurse -Force
+}
+Copy-Item $versionSourceDir $targetVersionDir -Recurse -Force
 
 Set-Location $pagesWorktree
 git add -A
-$version = (Get-Content (Join-Path $root "VERSION") -Raw).Trim()
 $status = git status --porcelain
 if (-not $status) {
     Write-Host "No hay cambios nuevos para publicar."
@@ -88,6 +108,12 @@ if (Test-Path $pagesWorktree) {
 Write-Host ""
 Write-Host "Configura en cada tienda (.env o Configuracion):"
 Write-Host "  UPDATE_MANIFEST_URL=$manifestUrl"
+Write-Host "  STORE_LICENSE_KEY=<clave entregada por tienda>"
+Write-Host ""
+Write-Host "Gestion de licencias (solo desarrollador):"
+Write-Host "  .\manage_licenses.ps1 -Action New -StoreLabel `"Tienda Centro`""
+Write-Host "  .\manage_licenses.ps1 -Action Revoke -LicenseKey FELPOS-XXXX-XXXX-XXXX-XXXX"
+Write-Host "  .\manage_licenses.ps1 -Action Publish"
 Write-Host ""
 Write-Host "Si es la primera vez, activa GitHub Pages en el repo:"
 Write-Host "  Settings -> Pages -> Branch: gh-pages / (root)"

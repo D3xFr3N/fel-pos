@@ -20,11 +20,14 @@ Entra como admin y ve a Configuracion para crear usuarios reales.
 
 PRIMER USO
 ----------
-1. Durante la instalacion, elige el tipo de negocio y si deseas factura contable (FEL).
-2. Abre FEL POS desde el acceso directo.
-3. Inicia sesion como admin (admin / admin123).
-4. Ve a Configuracion y completa tu NIT y empresa (y certificador si usas FEL).
-5. Configura productos e inventario.
+1. Durante la instalacion, ingresa la licencia de tu tienda (FELPOS-v1...) y anota el ID de equipo si necesitas reactivacion.
+2. Elige el tipo de negocio y si deseas factura contable (FEL).
+3. Abre FEL POS desde el acceso directo.
+4. Inicia sesion como admin (admin / admin123).
+5. Ve a Configuracion y completa tu NIT y empresa (y certificador si usas FEL).
+6. Agrega departamentos, proveedores y productos. El inventario inicia vacio en instalaciones nuevas.
+7. Si reinstalas en un equipo que ya tiene productos, NO marques "Instalacion limpia" para conservar el inventario.
+8. Solo marca "Instalacion limpia" si quieres borrar productos, ventas y caja de esa carpeta.
 
 FACTURACION CONTABLE (FEL)
 --------------------------

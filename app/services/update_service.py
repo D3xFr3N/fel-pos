@@ -16,6 +16,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.services.license_service import assert_license_allows_updates, validate_license
 from app.services.backup_service import create_backup
 from app.version import get_app_version, get_install_dir
 
@@ -23,6 +24,13 @@ PENDING_UPDATE_SCRIPT = "apply_pending_update.bat"
 PENDING_UPDATE_META = "pending_update.json"
 PENDING_UPDATE_LOG = "felpos-update.log"
 UPDATE_FILES = ("FELPOS.exe", "VERSION", "BUILD_DATE")
+UPDATE_SUPPORT_FILES = (
+    "Aplicar_actualizacion_pendiente.bat",
+    "Reparar_instalacion.bat",
+    "Iniciar_FELPOS.bat",
+    "Limpiar_actualizacion_pendiente.bat",
+    "Diagnostico_instalacion.bat",
+)
 HTTP_TIMEOUT_SECONDS = 45
 
 
@@ -77,12 +85,33 @@ def _fetch_manifest(url: str) -> UpdateManifest:
 def check_for_updates() -> dict:
     manifest_url = get_update_manifest_url()
     current_version = get_app_version()
+    license_info = validate_license()
+    license_payload = {
+        "license_required": license_info.required,
+        "license_valid": license_info.valid,
+        "license_status": license_info.status,
+        "license_store_label": license_info.store_label,
+        "license_store_id": license_info.store_id,
+        "license_message": license_info.message,
+        "license_cached": license_info.cached,
+    }
     if not manifest_url:
         return {
             "enabled": False,
             "current_version": current_version,
             "update_available": False,
             "message": "Actualizaciones automaticas no configuradas.",
+            **license_payload,
+        }
+
+    if license_info.required and not license_info.valid:
+        return {
+            "enabled": True,
+            "current_version": current_version,
+            "update_available": False,
+            "manifest_url": manifest_url,
+            "message": license_info.message or "Licencia no valida para actualizaciones.",
+            **license_payload,
         }
 
     try:
@@ -95,6 +124,7 @@ def check_for_updates() -> dict:
             "manifest_url": manifest_url,
             "error": str(exc),
             "message": f"No se pudo consultar actualizaciones: {exc}",
+            **license_payload,
         }
 
     available = is_newer_version(manifest.version, current_version)
@@ -112,6 +142,7 @@ def check_for_updates() -> dict:
             if available
             else "El sistema ya esta en la ultima version publicada."
         ),
+        **license_payload,
     }
 
 
@@ -151,6 +182,21 @@ def _extract_update_zip(zip_path: Path, extract_dir: Path) -> dict[str, Path]:
     return found
 
 
+def _stage_support_files(install_dir: Path, extract_dir: Path) -> list[str]:
+    assets_dir = Path(__file__).resolve().parent.parent.parent / "installer" / "assets"
+    staged: list[str] = []
+    for file_name in UPDATE_SUPPORT_FILES:
+        source_candidates = [extract_dir / file_name, assets_dir / file_name]
+        source_candidates.extend(extract_dir.rglob(file_name))
+        source_path = next((path for path in source_candidates if path.exists()), None)
+        if not source_path:
+            continue
+        target_path = install_dir / file_name
+        shutil.copy2(source_path, target_path)
+        staged.append(file_name)
+    return staged
+
+
 def _append_update_log(install_dir: Path, message: str) -> None:
     try:
         log_path = install_dir / PENDING_UPDATE_LOG
@@ -165,9 +211,75 @@ def _install_dir() -> Path:
     return get_install_dir()
 
 
+def clear_pending_update_artifacts(install_dir: Path | None = None) -> list[str]:
+    root = (install_dir or _install_dir()).resolve()
+    removed: list[str] = []
+    for name in (
+        "FELPOS.exe.pending",
+        "FELPOS.exe.old",
+        "VERSION.pending",
+        "BUILD_DATE.pending",
+        PENDING_UPDATE_META,
+        PENDING_UPDATE_SCRIPT,
+    ):
+        path = root / name
+        if not path.exists():
+            continue
+        try:
+            path.unlink()
+            removed.append(name)
+        except OSError:
+            pass
+    if removed:
+        _append_update_log(root, f"Archivos de actualizacion limpiados: {', '.join(removed)}")
+    return removed
+
+
+def cleanup_stale_pending_update(install_dir: Path | None = None) -> list[str]:
+    """
+    Elimina restos de una actualizacion interrumpida cuando FELPOS.exe ya funciona.
+    """
+    root = (install_dir or _install_dir()).resolve()
+    pending_exe = root / "FELPOS.exe.pending"
+    current_exe = root / "FELPOS.exe"
+    if not pending_exe.exists() or not current_exe.exists():
+        return []
+
+    meta_path = root / PENDING_UPDATE_META
+    target_version: str | None = None
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            target_version = str(meta.get("target_version") or "").strip() or None
+        except (json.JSONDecodeError, OSError):
+            target_version = None
+
+    current_version = get_app_version()
+    if target_version and not is_newer_version(target_version, current_version):
+        return clear_pending_update_artifacts(root)
+
+    try:
+        if pending_exe.stat().st_mtime <= current_exe.stat().st_mtime:
+            return clear_pending_update_artifacts(root)
+    except OSError:
+        pass
+
+    return []
+
+
 def has_pending_executable_update(install_dir: Path | None = None) -> bool:
     root = (install_dir or _install_dir()).resolve()
-    return (root / "FELPOS.exe.pending").exists()
+    cleanup_stale_pending_update(root)
+    pending_exe = root / "FELPOS.exe.pending"
+    current_exe = root / "FELPOS.exe"
+    if not pending_exe.exists():
+        return False
+    if not current_exe.exists():
+        return True
+    try:
+        return pending_exe.stat().st_mtime > current_exe.stat().st_mtime
+    except OSError:
+        return True
 
 
 def apply_pending_update_at_startup(install_dir: Path | None = None) -> dict | None:
@@ -225,12 +337,11 @@ def apply_pending_update_at_startup(install_dir: Path | None = None) -> dict | N
 
 def _write_restart_script(install_dir: Path) -> Path:
     script_path = install_dir / PENDING_UPDATE_SCRIPT
-    exe_name = "FELPOS.exe"
     log_name = PENDING_UPDATE_LOG
     lines = [
         "@echo off",
         "setlocal EnableExtensions",
-        f'cd /d "{install_dir}"',
+        "pushd \"%~dp0\"",
         f'echo [%date% %time%] Iniciando actualizacion >> "{log_name}"',
         "set /a tries=0",
         ":wait",
@@ -282,7 +393,14 @@ def _write_restart_script(install_dir: Path) -> Path:
         [
             f'if exist "{PENDING_UPDATE_META}" del /F /Q "{PENDING_UPDATE_META}" >nul',
             f'echo [%date% %time%] Reiniciando FEL POS >> "{log_name}"',
-            f'start "" "{install_dir}\\{exe_name}"',
+            'if not exist "FELPOS.exe" (',
+            f'  echo [%date% %time%] ERROR: FELPOS.exe no existe despues de actualizar >> "{log_name}"',
+            "  popd",
+            "  endlocal",
+            "  exit /b 1",
+            ")",
+            'start "" "%~dp0FELPOS.exe"',
+            "popd",
             "del /F /Q \"%~f0\" >nul 2>&1",
             "endlocal",
         ]
@@ -295,9 +413,11 @@ def _launch_updater_script(script_path: Path, install_dir: Path) -> None:
     import subprocess
 
     _append_update_log(install_dir, f"Ejecutando actualizador: {script_path.name}")
+    creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
     subprocess.Popen(
-        ["cmd.exe", "/c", "start", '""', "/min", str(script_path)],
+        ["cmd.exe", "/c", str(script_path)],
         cwd=str(install_dir),
+        creationflags=creationflags,
         close_fds=True,
     )
 
@@ -319,6 +439,8 @@ def delegate_pending_executable_update(install_dir: Path | None = None) -> bool:
 def prepare_update_apply() -> dict:
     if not sys.platform.startswith("win"):
         raise ValueError("Las actualizaciones automaticas solo estan disponibles en Windows.")
+
+    assert_license_allows_updates()
 
     check = check_for_updates()
     if not check.get("enabled"):
@@ -347,6 +469,7 @@ def prepare_update_apply() -> dict:
             pending_target = install_dir / f"{file_name}.pending"
             shutil.copy2(source_path, pending_target)
             staged_files.append(file_name)
+        staged_files.extend(_stage_support_files(install_dir, extract_dir))
 
         meta_path = install_dir / PENDING_UPDATE_META
         meta_path.write_text(

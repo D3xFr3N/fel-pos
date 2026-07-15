@@ -45,6 +45,13 @@ from app.schemas import (
     ReceiptPrinterConfigOut,
     ReceiptPrinterConfigUpdateIn,
     ReceiptPrinterTestOut,
+    SystemConfigOut,
+    SystemConfigUpdateIn,
+    NotificationConfigOut,
+    NotificationConfigUpdateIn,
+    NotificationTestIn,
+    LicenseConfigOut,
+    LicenseConfigUpdateIn,
     SupplierCreate,
     SupplierOut,
     SupplierUpdate,
@@ -734,11 +741,16 @@ config_router = APIRouter(prefix="/api/config", tags=["config"])
 
 @config_router.get("/profile", response_model=BusinessProfileConfigOut)
 def get_business_profile(db: Session = Depends(get_db), user=Depends(require_roles("admin", "user"))):
+    from app.services.system_config_service import get_system_config
+
     row = bootstrap_store_settings(db)
     profile = normalize_business_profile(row.business_profile)
+    runtime = get_system_config()
     return BusinessProfileConfigOut(
         business_profile=profile,
         business_profile_label=business_profile_label(profile),
+        cash_shared_session=runtime["cash_shared_session"],
+        nit_lookup_configured=runtime["nit_lookup_configured"],
     )
 
 
@@ -795,7 +807,26 @@ def save_receipt_printer_config_route(
             print_on_checkout=payload.print_on_checkout,
             open_drawer_on_checkout=payload.open_drawer_on_checkout,
             chars_per_line=payload.chars_per_line,
+            bottom_feed_lines=payload.bottom_feed_lines,
             encoding=payload.encoding,
+            header_line_1=payload.header_line_1,
+            header_line_2=payload.header_line_2,
+            header_line_3=payload.header_line_3,
+            show_company_nit=payload.show_company_nit,
+            show_address=payload.show_address,
+            center_header=payload.center_header,
+            footer_message=payload.footer_message,
+            footer_extra=payload.footer_extra,
+            ticket_label=payload.ticket_label,
+            separator_char=payload.separator_char,
+            show_customer=payload.show_customer,
+            show_date=payload.show_date,
+            show_subtotal=payload.show_subtotal,
+            show_tax=payload.show_tax,
+            show_payments=payload.show_payments,
+            show_fel=payload.show_fel,
+            show_wholesale_savings=payload.show_wholesale_savings,
+            show_item_detail=payload.show_item_detail,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -828,3 +859,170 @@ def test_receipt_printer_route(
     if settings.receipt_open_drawer_on_checkout:
         message += " Se intento abrir el cajon."
     return ReceiptPrinterTestOut(ok=True, message=message, printer_name=printer_name)
+
+
+@config_router.get("/system", response_model=SystemConfigOut)
+def get_system_config_route(
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    from app.services.system_config_service import get_system_config
+
+    bootstrap_store_settings(db)
+    return SystemConfigOut(**get_system_config())
+
+
+@config_router.put("/system", response_model=SystemConfigOut)
+def save_system_config_route(
+    payload: SystemConfigUpdateIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    from app.services.audit_service import log_action
+    from app.services.system_config_service import update_system_config
+
+    bootstrap_store_settings(db)
+    try:
+        result = update_system_config(cash_shared_session=payload.cash_shared_session)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar .env: {exc}") from exc
+
+    log_action(
+        db,
+        user_id=user.id,
+        action="system_config_updated",
+        entity_type="system_config",
+        entity_id=1,
+        details=f"cash_shared_session={payload.cash_shared_session}",
+    )
+    db.commit()
+    return SystemConfigOut(**result)
+
+
+@config_router.get("/notifications", response_model=NotificationConfigOut)
+def get_notification_config_route(
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    from app.services.notification_config_service import get_notification_config
+
+    bootstrap_store_settings(db)
+    return NotificationConfigOut(**get_notification_config())
+
+
+@config_router.put("/notifications", response_model=NotificationConfigOut)
+def save_notification_config_route(
+    payload: NotificationConfigUpdateIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    from app.services.audit_service import log_action
+    from app.services.notification_config_service import update_notification_config
+
+    bootstrap_store_settings(db)
+    try:
+        result = update_notification_config(
+            gmail_sender=payload.gmail_sender,
+            gmail_app_password=payload.gmail_app_password,
+            gmail_smtp_host=payload.gmail_smtp_host,
+            gmail_smtp_port=payload.gmail_smtp_port,
+            whatsapp_phone_id=payload.whatsapp_phone_id,
+            whatsapp_token=payload.whatsapp_token,
+            whatsapp_api_url=payload.whatsapp_api_url,
+        )
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar .env: {exc}") from exc
+
+    log_action(
+        db,
+        user_id=user.id,
+        action="notification_config_updated",
+        entity_type="notification_config",
+        entity_id=1,
+        details=f"gmail_ready={result['gmail_ready']}; whatsapp_ready={result['whatsapp_ready']}",
+    )
+    db.commit()
+    return NotificationConfigOut(**result)
+
+
+@config_router.post("/notifications/test/whatsapp")
+def test_whatsapp_notification_route(
+    payload: NotificationTestIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    from app.services.order_notification_service import send_whatsapp
+
+    bootstrap_store_settings(db)
+    status, response = send_whatsapp(payload.recipient, "Prueba FEL POS: WhatsApp configurado correctamente.")
+    if status == "error":
+        raise HTTPException(status_code=400, detail=response)
+    return {"status": status, "response": response}
+
+
+@config_router.post("/notifications/test/gmail")
+def test_gmail_notification_route(
+    payload: NotificationTestIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    from app.services.order_notification_service import send_gmail
+
+    bootstrap_store_settings(db)
+    status, response = send_gmail(
+        payload.recipient,
+        subject="Prueba FEL POS",
+        message="Prueba FEL POS: Gmail configurado correctamente.",
+    )
+    if status == "error":
+        raise HTTPException(status_code=400, detail=response)
+    return {"status": status, "response": response}
+
+
+@config_router.get("/license", response_model=LicenseConfigOut)
+def get_license_config_route(
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    from app.services.license_config_service import get_license_config
+
+    bootstrap_store_settings(db)
+    return LicenseConfigOut(**get_license_config())
+
+
+@config_router.put("/license", response_model=LicenseConfigOut)
+def save_license_config_route(
+    payload: LicenseConfigUpdateIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    from app.services.audit_service import log_action
+    from app.services.license_config_service import update_license_config
+    from app.services.license_service import normalize_license_key
+
+    bootstrap_store_settings(db)
+    license_key = normalize_license_key(payload.store_license_key)
+    if payload.license_required_for_updates and len(license_key) < 12:
+        raise HTTPException(
+            status_code=400,
+            detail="Debes indicar una licencia valida para recibir actualizaciones.",
+        )
+    try:
+        result = update_license_config(
+            store_license_key=license_key,
+            license_registry_url=payload.license_registry_url,
+            license_required_for_updates=payload.license_required_for_updates,
+        )
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar .env: {exc}") from exc
+
+    log_action(
+        db,
+        user_id=user.id,
+        action="license_config_updated",
+        entity_type="license_config",
+        entity_id=1,
+        details=f"status={result.get('status')}; store={result.get('store_label') or '-'}",
+    )
+    db.commit()
+    return LicenseConfigOut(**result)

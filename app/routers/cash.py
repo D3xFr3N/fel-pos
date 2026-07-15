@@ -4,8 +4,15 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.dependencies import require_roles
 from app.models import CashMovement, CashSession, User
-from app.schemas import CashMovementCreate, CashMovementOut, CashSessionClose, CashSessionOpen, CashSessionOut
-from app.services.cash_service import add_cash_movement, close_cash_session, get_open_cash_session, open_cash_session
+from app.schemas import CashMovementCreate, CashMovementOut, CashSessionClose, CashSessionOpen, CashSessionOut, CashSessionTransferIn
+from app.services.cash_service import (
+    add_cash_movement,
+    can_use_cash_session,
+    close_cash_session,
+    get_open_cash_session,
+    open_cash_session,
+    transfer_cash_session,
+)
 
 router = APIRouter(prefix="/api/cash", tags=["cash"])
 
@@ -80,10 +87,10 @@ def create_movement(
     session = get_open_cash_session(db)
     if not session:
         raise HTTPException(status_code=400, detail="No hay caja abierta.")
-    if session.opened_by_user_id != user.id:
+    if not can_use_cash_session(user, session):
         raise HTTPException(
             status_code=403,
-            detail="Solo el cajero que abrio el fondo puede registrar movimientos de caja.",
+            detail="No tienes permiso para registrar movimientos en esta caja.",
         )
 
     try:
@@ -123,3 +130,21 @@ def list_movements(
         .order_by(CashMovement.created_at.desc())
         .all()
     )
+
+
+@router.post("/sessions/{session_id}/transfer", response_model=CashSessionOut)
+def transfer_session(
+    session_id: int,
+    payload: CashSessionTransferIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles("admin")),
+):
+    try:
+        session = transfer_cash_session(
+            db,
+            session_id=session_id,
+            target_user_id=payload.target_user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return session

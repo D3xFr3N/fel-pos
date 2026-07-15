@@ -50,7 +50,7 @@ def restart_after_update(user: User = Depends(require_roles("admin"))):
 def get_backups(
     user: User = Depends(require_roles("admin")),
 ):
-    return list_backups(limit=100)
+    return list_backups(limit=3)
 
 
 @router.post("/backups", response_model=BackupCreateOut, status_code=201)

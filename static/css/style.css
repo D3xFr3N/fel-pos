@@ -480,6 +480,12 @@ th { color: var(--muted); font-size: 0.85rem; }
 .inline-option input[type="checkbox"] {
   width: auto;
 }
+.inline-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.35rem 0.75rem;
+  margin: 0.5rem 0 0.75rem;
+}
 .sale-inactivity-presets {
   display: flex;
   gap: 0.45rem;

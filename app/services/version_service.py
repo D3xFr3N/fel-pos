@@ -77,7 +77,9 @@ def get_version_info() -> dict:
 
 
 def _public_payload(state: dict, build_date: str | None, *, changed: bool) -> dict:
-    history = state.get("history") or []
+    history = list(state.get("history") or [])
+    # Actual + 3 anteriores (la entrada mas reciente del historial es la version actual).
+    visible_history = history[-4:]
     return {
         "app_name": APP_NAME,
         "version": get_app_version(),
@@ -85,6 +87,6 @@ def _public_payload(state: dict, build_date: str | None, *, changed: bool) -> di
         "previous_version": state.get("previous_version"),
         "installed_at": state.get("installed_at"),
         "updated_at": state.get("updated_at"),
-        "history": history[-10:],
+        "history": visible_history,
         "changed_on_startup": changed,
     }

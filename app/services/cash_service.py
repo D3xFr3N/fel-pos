@@ -2,11 +2,22 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models import CashMovement, CashSession
+from app.config import settings
+from app.models import CashMovement, CashSession, User
 
 
 def get_open_cash_session(db: Session) -> CashSession | None:
     return db.query(CashSession).filter(CashSession.status == "open").first()
+
+
+def can_use_cash_session(user: User, session: CashSession | None) -> bool:
+    if not session:
+        return False
+    if user.role == "admin":
+        return True
+    if settings.cash_shared_session:
+        return True
+    return session.opened_by_user_id == user.id
 
 
 def open_cash_session(db: Session, user_id: int, opening_amount: float, notes: str | None) -> CashSession:
@@ -89,6 +100,32 @@ def close_cash_session(
         base_notes = session.notes or ""
         session.notes = f"{base_notes}\nCIERRE: {notes}".strip()
 
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+def transfer_cash_session(
+    db: Session,
+    *,
+    session_id: int,
+    target_user_id: int,
+) -> CashSession:
+    session = db.get(CashSession, session_id)
+    if not session:
+        raise ValueError("Caja no encontrada.")
+    if session.status != "open":
+        raise ValueError("La caja ya fue cerrada.")
+
+    target = db.get(User, target_user_id)
+    if not target:
+        raise ValueError("Usuario destino no encontrado.")
+    if not target.active:
+        raise ValueError("El usuario destino esta inactivo.")
+
+    session.opened_by_user_id = target_user_id
+    note = f"Transferida a {target.username} ({datetime.utcnow().strftime('%Y-%m-%d %H:%M')})"
+    session.notes = f"{session.notes or ''}\n{note}".strip()
     db.commit()
     db.refresh(session)
     return session

@@ -23,6 +23,10 @@ const state = {
   backups: [],
   config: null,
   receiptPrinterConfig: null,
+  systemConfig: null,
+  notificationConfig: null,
+  licenseConfig: null,
+  runtimeConfig: { cash_shared_session: true, nit_lookup_configured: false },
   currentCash: null,
   selectedSaleId: null,
   selectedSale: null,
@@ -40,7 +44,7 @@ const state = {
   lowStockReport: [],
   stockCountCurrent: null,
   stockCountSessions: [],
-  salePasswordRequiredPerSale: true,
+  salePasswordRequiredPerSale: false,
   saleSessionUnlocked: false,
   saleSessionInactivityMs: getConfiguredSaleInactivitySeconds() * 1000,
   saleSessionAutoLockTimerId: null,
@@ -69,6 +73,38 @@ const state = {
   businessProfile: "abarrotes",
   user: null,
   token: localStorage.getItem("felpos_token") || "",
+};
+
+const DEFAULT_RECEIPT_PRINTER_CONFIG = {
+  printer_name: "",
+  default_printer: "",
+  available_printers: [],
+  active_printer: "",
+  print_on_checkout: true,
+  open_drawer_on_checkout: true,
+  chars_per_line: 48,
+  bottom_feed_lines: 8,
+  encoding: "cp850",
+  platform_supported: true,
+  header_line_1: "",
+  header_line_2: "",
+  header_line_3: "",
+  show_company_nit: true,
+  show_address: false,
+  center_header: false,
+  footer_message: "Gracias por su compra",
+  footer_extra: "",
+  ticket_label: "TICKET #{id}",
+  separator_char: "-",
+  show_customer: true,
+  show_date: true,
+  show_subtotal: true,
+  show_tax: true,
+  show_payments: true,
+  show_fel: true,
+  show_wholesale_savings: true,
+  show_item_detail: true,
+  preview_text: "",
 };
 
 const money = (value) => `Q ${Number(value || 0).toFixed(2)}`;
@@ -623,11 +659,19 @@ function isAdminUser() {
   return state.user?.role === "admin";
 }
 
-function enterAppAfterLogin({ lockSaleSession = true } = {}) {
+function enterAppAfterLogin({ lockSaleSession = false } = {}) {
   switchToPosTab();
-  if (lockSaleSession) {
+  if (lockSaleSession && isCashierSaleLockEnabled()) {
     lockSaleSessionForNextSale();
+    return;
   }
+  // Tras login / fondo, entrar directo a vender sin pedir clave otra vez.
+  state.saleSessionUnlocked = true;
+  state.salePasswordPromptDismissed = false;
+  closeSalePasswordDialog();
+  clearSaleSessionAutoLockTimer();
+  renderSaleSessionIndicator();
+  focusProductSearch();
 }
 
 function setLoginAdminMode(enabled) {
@@ -706,7 +750,7 @@ function shouldAutoPromptSalePassword() {
     isCashierSaleLockEnabled() &&
     !state.saleSessionUnlocked &&
     Boolean(state.currentCash) &&
-    isCurrentCashOwnedByLoggedUser() &&
+    canUseCurrentCash() &&
     !state.salePasswordPromptDismissed
   );
 }
@@ -720,7 +764,7 @@ function closeSalePasswordDialog() {
 
 function showSalePasswordGate() {
   if (!isCashierSaleLockEnabled()) return;
-  if (!state.currentCash || !isCurrentCashOwnedByLoggedUser()) return;
+  if (!state.currentCash || !canUseCurrentCash()) return;
   if (state.saleSessionUnlocked) return;
   state.salePasswordPromptDismissed = false;
   renderSaleSessionIndicator();
@@ -730,7 +774,7 @@ function showSalePasswordGate() {
   setTimeout(() => {
     state.salePasswordAutoOpenPending = false;
     if (!isCashierSaleLockEnabled() || state.saleSessionUnlocked) return;
-    if (!state.currentCash || !isCurrentCashOwnedByLoggedUser()) return;
+    if (!state.currentCash || !canUseCurrentCash()) return;
     void openSaleSessionWithPassword();
   }, 0);
 }
@@ -3710,8 +3754,11 @@ function renderCashCard() {
     return;
   }
 
+  const ownerName =
+    cash.opened_by_full_name || cash.opened_by_username || `usuario ID ${cash.opened_by_user_id}`;
   card.innerHTML = `
     <h3>Caja #${cash.id} abierta</h3>
+    <div class="row"><span>Responsable</span><strong>${escapeHtml(ownerName)}</strong></div>
     <div class="row"><span>Monto inicial</span><strong>${money(cash.opening_amount)}</strong></div>
     <div class="row"><span>Esperado actual</span><strong>${money(cash.expected_amount)}</strong></div>
     <div class="row"><span>Apertura</span><strong>${new Date(cash.opened_at).toLocaleString("es-GT")}</strong></div>
@@ -3764,7 +3811,7 @@ function openSaleDetail(saleId) {
     state.currentCash?.opened_by_full_name ||
     state.currentCash?.opened_by_username ||
     (state.currentCash ? `usuario ID ${state.currentCash.opened_by_user_id}` : "");
-  const canUseCash = isCurrentCashOwnedByLoggedUser();
+  const canUseCash = canUseCurrentCash();
   const cashGuardHint = state.currentCash
     ? canUseCash
       ? '<p class="hint">Caja activa asignada a tu usuario. Puedes registrar devoluciones.</p>'
@@ -3820,7 +3867,7 @@ function openSaleDetail(saleId) {
   `;
   const returnBtn = document.getElementById("register-return-btn");
   if (returnBtn) {
-    returnBtn.disabled = !getReturnableSaleLines(sale).length || !isCurrentCashOwnedByLoggedUser();
+    returnBtn.disabled = !getReturnableSaleLines(sale).length || !canUseCurrentCash();
   }
   document.getElementById("sale-dialog").showModal();
 }
@@ -4197,6 +4244,7 @@ function renderAdminCashMonitorCard() {
     <p class="hint">Actualizado: ${updatedAt}</p>
     <div class="panel-actions">
       <button id="admin-cash-monitor-refresh-btn" class="btn ghost" type="button">Actualizar estado</button>
+      <button id="admin-cash-transfer-btn" class="btn ghost" type="button">Transferir turno</button>
       <button id="admin-cash-audit-btn" class="btn primary" type="button">Hacer arqueo de efectivo</button>
     </div>
   `;
@@ -4206,6 +4254,9 @@ function renderAdminCashMonitorCard() {
     renderAdminCashMonitorCard();
   });
   document.getElementById("admin-cash-audit-btn")?.addEventListener("click", runAdminCashAudit);
+  document.getElementById("admin-cash-transfer-btn")?.addEventListener("click", () => {
+    transferCashSessionToUser(session.id);
+  });
 }
 
 function ensureAdminCashMonitorAutoRefresh() {
@@ -4245,10 +4296,13 @@ function renderVersionHistorySection() {
   const historyRows = (info.history || [])
     .slice()
     .reverse()
+    .slice(0, 4)
     .map(
       (entry) => `
         <tr>
-          <td>v${escapeHtml(entry.version)}</td>
+          <td>v${escapeHtml(entry.version)}${
+            entry.version === info.version ? ' <span class="badge success">actual</span>' : ""
+          }</td>
           <td>${entry.installed_at ? new Date(entry.installed_at).toLocaleString("es-GT") : "-"}</td>
         </tr>
       `
@@ -4256,7 +4310,7 @@ function renderVersionHistorySection() {
     .join("");
   return `
     <h3 style="margin: 0.2rem 0 0;">Version del sistema</h3>
-    <p class="hint">Al actualizar, FEL POS registra la version anterior y la nueva en data/app_version.json.</p>
+    <p class="hint">Se muestra la version actual y hasta 3 anteriores.</p>
     <div class="row"><span>Version actual</span><strong>v${escapeHtml(info.version)}</strong></div>
     ${
       info.previous_version
@@ -4302,11 +4356,27 @@ function renderAutoUpdateSection() {
     : info.enabled
       ? "Al dia"
       : "No configurado";
+  const license = state.licenseConfig || {};
+  const licenseClass = license.valid ? "badge success" : license.required ? "badge danger" : "badge muted";
+  const licenseText = license.valid
+    ? license.store_id || license.store_label
+      ? `Licencia activa (${[license.store_id, license.store_label].filter(Boolean).join(" - ")})`
+      : "Licencia activa"
+    : license.required
+      ? `Licencia ${license.status || "invalida"}`
+      : "Sin control de licencia";
+  const licenseHint = license.message
+    ? `<p class="hint">${escapeHtml(license.message)}</p>`
+    : "";
+  const licenseBlocked = license.required && !license.valid;
   return `
     <h3 style="margin: 0.2rem 0 0;">Actualizaciones automaticas</h3>
     <p class="hint">
-      Cuando publiques una mejora, las tiendas pueden actualizar solas sin reinstalar el instalador completo.
+      Cuando publiques una mejora, las tiendas autorizadas pueden actualizar solas sin reinstalar el instalador completo.
     </p>
+    <div class="row"><span>Licencia tienda</span><span class="${licenseClass}">${escapeHtml(licenseText)}</span></div>
+    ${license.fingerprint ? `<div class="row"><span>ID equipo</span><strong>${escapeHtml(license.fingerprint)}</strong></div>` : ""}
+    ${licenseHint}
     <div class="row"><span>Estado</span><span class="${statusClass}">${statusText}</span></div>
     <div class="row"><span>Version publicada</span><strong>${latest}</strong></div>
     <div class="row"><span>Detalle</span><strong>${escapeHtml(info.message || "-")}</strong></div>
@@ -4314,7 +4384,7 @@ function renderAutoUpdateSection() {
     <div class="panel-actions">
       <button id="check-system-update-btn" class="btn ghost" type="button">Buscar actualizaciones</button>
       ${
-        info.update_available
+        info.update_available && !licenseBlocked
           ? '<button id="apply-system-update-btn" class="btn primary" type="button">Actualizar ahora</button>'
           : ""
       }
@@ -4395,8 +4465,10 @@ function buildSaleSuccessMessage(sale, suffix = "") {
 }
 
 function renderReceiptPrinterSection() {
-  const cfg = state.receiptPrinterConfig;
-  if (!cfg) return "";
+  const cfg = state.receiptPrinterConfig || DEFAULT_RECEIPT_PRINTER_CONFIG;
+  const configWarning = state.receiptPrinterConfig
+    ? ""
+    : `<p class="hint" style="color: var(--warning, #b45309);">No se pudo cargar la configuracion guardada. Puedes personalizar el ticket y guardar de nuevo.</p>`;
   const defaultPrinter = cfg.default_printer || "ninguna detectada";
   const activePrinter = cfg.active_printer || defaultPrinter;
   const printerOptions = (cfg.available_printers || [])
@@ -4413,6 +4485,7 @@ function renderReceiptPrinterSection() {
     <p class="hint">
       Configura la impresora termica para tickets de venta. ${platformHint}
     </p>
+    ${configWarning}
     <div class="row"><span>Impresora activa</span><strong>${escapeHtml(activePrinter)}</strong></div>
     <div class="row"><span>Predeterminada Windows</span><strong>${escapeHtml(defaultPrinter)}</strong></div>
     <form id="receipt-printer-form">
@@ -4446,6 +4519,72 @@ function renderReceiptPrinterSection() {
         >
       </label>
       <label>
+        Espacio antes del corte (lineas)
+        <input
+          name="bottom_feed_lines"
+          type="number"
+          min="2"
+          max="20"
+          step="1"
+          value="${Number(cfg.bottom_feed_lines || 8)}"
+          required
+        >
+      </label>
+      <p class="hint">Si el texto queda muy pegado al corte, sube este valor a 10 o 12.</p>
+      <h4 style="margin: 1rem 0 0.4rem;">Personalizar diseño del ticket</h4>
+      <p class="hint">Deja en blanco las lineas de encabezado para usar los datos de tu empresa. Usa {id} en el titulo para el numero de venta.</p>
+      <label>
+        Linea 1 encabezado
+        <input name="header_line_1" maxlength="120" value="${escapeHtml(cfg.header_line_1 || "")}" placeholder="Nombre comercial (automatico si vacio)">
+      </label>
+      <label>
+        Linea 2 encabezado
+        <input name="header_line_2" maxlength="120" value="${escapeHtml(cfg.header_line_2 || "")}" placeholder="NIT u otra linea (automatico si vacio)">
+      </label>
+      <label>
+        Linea 3 encabezado
+        <input name="header_line_3" maxlength="120" value="${escapeHtml(cfg.header_line_3 || "")}" placeholder="Direccion u otra linea">
+      </label>
+      <label>
+        Titulo del ticket
+        <input name="ticket_label" maxlength="40" value="${escapeHtml(cfg.ticket_label || "TICKET #{id}")}" placeholder="TICKET #{id}">
+      </label>
+      <label>
+        Separador de secciones
+        <select name="separator_char">
+          <option value="-" ${cfg.separator_char === "-" ? "selected" : ""}>Guion (-)</option>
+          <option value="=" ${cfg.separator_char === "=" ? "selected" : ""}>Igual (=)</option>
+          <option value="*" ${cfg.separator_char === "*" ? "selected" : ""}>Asterisco (*)</option>
+          <option value="." ${cfg.separator_char === "." ? "selected" : ""}>Punto (.)</option>
+          <option value="_" ${cfg.separator_char === "_" ? "selected" : ""}>Guion bajo (_)</option>
+        </select>
+      </label>
+      <label>
+        Mensaje final del ticket
+        <input name="footer_message" maxlength="200" value="${escapeHtml(cfg.footer_message || "Gracias por su compra")}">
+      </label>
+      <label>
+        Linea extra al final (opcional)
+        <input name="footer_extra" maxlength="200" value="${escapeHtml(cfg.footer_extra || "")}" placeholder="Ej: Siguenos en redes / promo del mes">
+      </label>
+      <div class="inline-options-grid">
+        <label class="inline-option"><input type="checkbox" name="show_company_nit" ${cfg.show_company_nit !== false ? "checked" : ""}> Mostrar NIT empresa</label>
+        <label class="inline-option"><input type="checkbox" name="show_address" ${cfg.show_address ? "checked" : ""}> Mostrar direccion</label>
+        <label class="inline-option"><input type="checkbox" name="center_header" ${cfg.center_header ? "checked" : ""}> Centrar encabezado</label>
+        <label class="inline-option"><input type="checkbox" name="show_date" ${cfg.show_date !== false ? "checked" : ""}> Mostrar fecha</label>
+        <label class="inline-option"><input type="checkbox" name="show_customer" ${cfg.show_customer !== false ? "checked" : ""}> Mostrar cliente</label>
+        <label class="inline-option"><input type="checkbox" name="show_item_detail" ${cfg.show_item_detail !== false ? "checked" : ""}> Detalle precio x cantidad</label>
+        <label class="inline-option"><input type="checkbox" name="show_subtotal" ${cfg.show_subtotal !== false ? "checked" : ""}> Mostrar subtotal</label>
+        <label class="inline-option"><input type="checkbox" name="show_tax" ${cfg.show_tax !== false ? "checked" : ""}> Mostrar IVA</label>
+        <label class="inline-option"><input type="checkbox" name="show_payments" ${cfg.show_payments !== false ? "checked" : ""}> Mostrar forma de pago</label>
+        <label class="inline-option"><input type="checkbox" name="show_wholesale_savings" ${cfg.show_wholesale_savings !== false ? "checked" : ""}> Mostrar ahorro mayoreo</label>
+        <label class="inline-option"><input type="checkbox" name="show_fel" ${cfg.show_fel !== false ? "checked" : ""}> Mostrar datos FEL</label>
+      </div>
+      <label>
+        Vista previa del ticket
+        <textarea id="receipt-preview-text" rows="14" readonly style="font-family: Consolas, monospace; white-space: pre;">${escapeHtml(cfg.preview_text || "")}</textarea>
+      </label>
+      <label>
         Codificacion de caracteres
         <select name="encoding">
           <option value="cp850" ${cfg.encoding === "cp850" ? "selected" : ""}>cp850 (recomendado termica)</option>
@@ -4454,7 +4593,7 @@ function renderReceiptPrinterSection() {
         </select>
       </label>
       <div class="panel-actions">
-        <button class="btn primary" type="submit">Guardar impresora</button>
+        <button class="btn primary" type="submit">Guardar impresora y ticket</button>
         <button id="test-receipt-printer-btn" class="btn ghost" type="button">Imprimir prueba</button>
       </div>
     </form>
@@ -4478,6 +4617,24 @@ function renderConfig() {
 
   card.innerHTML = `
     ${renderVersionHistorySection()}
+    <h3 style="margin: 0.2rem 0 0;">Licencia de tienda</h3>
+    <p class="hint">Las licencias firmadas se validan localmente. No se publica ningun registro de tiendas en GitHub.</p>
+    <form id="license-config-form">
+      <label>
+        Clave de licencia
+        <input name="store_license_key" value="${escapeHtml(state.licenseConfig?.store_license_key || "")}" placeholder="FELPOS-v1..." required>
+      </label>
+      <label>
+        <input type="checkbox" name="license_required_for_updates" ${state.licenseConfig?.license_required_for_updates !== false ? "checked" : ""}>
+        Exigir licencia valida para actualizar
+      </label>
+      <button class="btn primary" type="submit">Guardar licencia</button>
+    </form>
+    <p class="hint">
+      Estado: ${escapeHtml(state.licenseConfig?.message || "Sin validar")}
+      ${state.licenseConfig?.fingerprint ? ` · ID equipo: ${escapeHtml(state.licenseConfig.fingerprint)}` : ""}
+    </p>
+    <hr style="border-color: var(--border); width: 100%;">
     ${renderAutoUpdateSection()}
     <h3 style="margin: 0.2rem 0 0;">Configuracion de tienda</h3>
     <p class="hint">
@@ -4585,6 +4742,34 @@ function renderConfig() {
     <p class="hint">Monitorea en tiempo real al cajero activo, control de ventas y arqueo de efectivo.</p>
     <div id="admin-cash-monitor-card" class="config-card" style="padding: 0.2rem 0;"></div>
     <hr style="border-color: var(--border); width: 100%;">
+    <h3 style="margin: 0.2rem 0 0;">Caja compartida</h3>
+    <p class="hint">Si esta activa, cualquier cajero puede vender con la caja abierta (util en tiendas pequeñas).</p>
+    <form id="system-config-form">
+      <label>
+        <input type="checkbox" name="cash_shared_session" ${state.systemConfig?.cash_shared_session !== false ? "checked" : ""}>
+        Permitir que cualquier cajero use la caja abierta
+      </label>
+      <button class="btn primary" type="submit">Guardar caja compartida</button>
+    </form>
+    <hr style="border-color: var(--border); width: 100%;">
+    <h3 style="margin: 0.2rem 0 0;">Notificaciones de ordenes</h3>
+    <p class="hint">Configura envio real por Gmail (SMTP) y WhatsApp Cloud API. Sin credenciales, el sistema queda en modo simulado.</p>
+    <form id="notification-config-form">
+      <label>Gmail remitente<input name="gmail_sender" value="${escapeHtml(state.notificationConfig?.gmail_sender || "")}" placeholder="tienda@gmail.com"></label>
+      <label>Clave de aplicacion Gmail<input name="gmail_app_password" type="password" placeholder="${state.notificationConfig?.gmail_app_password_configured ? "Configurada (dejar vacio para conservar)" : "Clave de app de 16 caracteres"}"></label>
+      <label>SMTP host<input name="gmail_smtp_host" value="${escapeHtml(state.notificationConfig?.gmail_smtp_host || "smtp.gmail.com")}"></label>
+      <label>SMTP puerto<input name="gmail_smtp_port" type="number" min="1" max="65535" value="${Number(state.notificationConfig?.gmail_smtp_port || 587)}"></label>
+      <label>WhatsApp Phone ID<input name="whatsapp_phone_id" value="${escapeHtml(state.notificationConfig?.whatsapp_phone_id || "")}" placeholder="ID del numero en Meta"></label>
+      <label>WhatsApp token<input name="whatsapp_token" type="password" placeholder="${state.notificationConfig?.whatsapp_token_configured ? "Configurado (dejar vacio para conservar)" : "Token permanente Meta"}"></label>
+      <label>WhatsApp API URL<input name="whatsapp_api_url" value="${escapeHtml(state.notificationConfig?.whatsapp_api_url || "https://graph.facebook.com/v20.0")}"></label>
+      <div class="panel-actions">
+        <button class="btn primary" type="submit">Guardar notificaciones</button>
+        <button id="test-gmail-config-btn" class="btn ghost" type="button">Probar Gmail</button>
+        <button id="test-whatsapp-config-btn" class="btn ghost" type="button">Probar WhatsApp</button>
+      </div>
+      <p class="hint">Gmail: ${state.notificationConfig?.gmail_ready ? "listo para envio real" : "modo simulado"} · WhatsApp: ${state.notificationConfig?.whatsapp_ready ? "listo para envio real" : "modo simulado"}</p>
+    </form>
+    <hr style="border-color: var(--border); width: 100%;">
     <h3 style="margin: 0.2rem 0 0;">Usuarios del sistema</h3>
     <p class="hint">Cada cajero debe tener su propio usuario para ingresar a app principal y app movil.</p>
     <form id="system-user-form">
@@ -4628,8 +4813,8 @@ function renderConfig() {
     </div>
     <hr style="border-color: var(--border); width: 100%;">
     <h3 style="margin: 0.2rem 0 0;">Seguridad de venta cajero</h3>
-    <p class="hint">Tiempo maximo de inactividad antes de bloquear venta y volver a pedir clave.</p>
-    <form id="sale-security-form">
+    <p class="hint">La clave por cada venta esta desactivada. El cajero puede vender al abrir caja sin pedir contrasena otra vez.</p>
+    <form id="sale-security-form" hidden>
       <label>
         Bloqueo por inactividad (segundos)
         <input
@@ -4655,7 +4840,10 @@ function renderConfig() {
     ${
       showFelCertifierFields
         ? `<h3 style="margin: 0.2rem 0 0;">FEL pendientes (modo offline)</h3>
-    <p class="hint">Ventas guardadas localmente cuando el certificador no esta disponible.</p>
+    <p class="hint">Ventas guardadas localmente cuando el certificador no esta disponible. Reintenta o descarta las que ya no aplican.</p>
+    <div class="panel-actions">
+      <button id="pending-fel-retry-all-btn" class="btn primary" type="button">Reintentar todas</button>
+    </div>
     <div id="pending-fel-table" class="table-wrap"></div>
     <hr style="border-color: var(--border); width: 100%;">`
         : ""
@@ -4668,7 +4856,7 @@ function renderConfig() {
     <hr style="border-color: var(--border); width: 100%;">
     <h3 style="margin: 0.2rem 0 0;">Respaldo del sistema</h3>
     <p class="hint">Crea respaldos de la base de datos y restaura en un clic cuando sea necesario.</p>
-    <p class="hint">El sistema guarda auto-respaldo por movimientos y recupera respaldo automaticamente al iniciar si detecta dano en la base.</p>
+    <p class="hint">Solo se muestran los 3 respaldos mas recientes. El sistema tambien crea auto-respaldos y puede recuperar la base al iniciar si detecta dano.</p>
     <div class="panel-actions">
       <button id="system-backup-create-btn" class="btn primary" type="button">Crear respaldo ahora</button>
       <button id="system-backup-refresh-btn" class="btn ghost" type="button">Actualizar lista</button>
@@ -4772,7 +4960,26 @@ function renderConfig() {
       print_on_checkout: Boolean(form.print_on_checkout?.checked),
       open_drawer_on_checkout: Boolean(form.open_drawer_on_checkout?.checked),
       chars_per_line: Number(form.chars_per_line.value || 48),
+      bottom_feed_lines: Number(form.bottom_feed_lines.value || 8),
       encoding: form.encoding.value,
+      header_line_1: form.header_line_1?.value || "",
+      header_line_2: form.header_line_2?.value || "",
+      header_line_3: form.header_line_3?.value || "",
+      show_company_nit: Boolean(form.show_company_nit?.checked),
+      show_address: Boolean(form.show_address?.checked),
+      center_header: Boolean(form.center_header?.checked),
+      footer_message: form.footer_message?.value || "Gracias por su compra",
+      footer_extra: form.footer_extra?.value || "",
+      ticket_label: form.ticket_label?.value || "TICKET #{id}",
+      separator_char: form.separator_char?.value || "-",
+      show_customer: Boolean(form.show_customer?.checked),
+      show_date: Boolean(form.show_date?.checked),
+      show_subtotal: Boolean(form.show_subtotal?.checked),
+      show_tax: Boolean(form.show_tax?.checked),
+      show_payments: Boolean(form.show_payments?.checked),
+      show_fel: Boolean(form.show_fel?.checked),
+      show_wholesale_savings: Boolean(form.show_wholesale_savings?.checked),
+      show_item_detail: Boolean(form.show_item_detail?.checked),
     };
     try {
       state.receiptPrinterConfig = await api("/api/config/receipt-printer", {
@@ -4780,7 +4987,7 @@ function renderConfig() {
         body: JSON.stringify(payload),
       });
       renderConfig();
-      alert("Configuracion de impresora guardada correctamente.");
+      alert("Configuracion de impresora y ticket guardada correctamente.");
     } catch (error) {
       alert(error.message);
     }
@@ -4790,6 +4997,99 @@ function renderConfig() {
     try {
       const result = await api("/api/config/receipt-printer/test", { method: "POST" });
       alert(result?.message || "Ticket de prueba enviado.");
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.getElementById("system-config-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    try {
+      state.systemConfig = await api("/api/config/system", {
+        method: "PUT",
+        body: JSON.stringify({ cash_shared_session: Boolean(form.cash_shared_session?.checked) }),
+      });
+      state.runtimeConfig = {
+        ...state.runtimeConfig,
+        cash_shared_session: state.systemConfig.cash_shared_session !== false,
+      };
+      renderConfig();
+      renderCashOwnerIndicator();
+      renderSaleSessionIndicator();
+      alert("Configuracion de caja guardada.");
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.getElementById("notification-config-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    try {
+      state.notificationConfig = await api("/api/config/notifications", {
+        method: "PUT",
+        body: JSON.stringify({
+          gmail_sender: form.gmail_sender.value.trim(),
+          gmail_app_password: form.gmail_app_password.value,
+          gmail_smtp_host: form.gmail_smtp_host.value.trim(),
+          gmail_smtp_port: Number(form.gmail_smtp_port.value || 587),
+          whatsapp_phone_id: form.whatsapp_phone_id.value.trim(),
+          whatsapp_token: form.whatsapp_token.value,
+          whatsapp_api_url: form.whatsapp_api_url.value.trim(),
+        }),
+      });
+      renderConfig();
+      alert("Configuracion de notificaciones guardada.");
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.getElementById("test-gmail-config-btn")?.addEventListener("click", async () => {
+    const recipient = prompt("Correo de prueba:");
+    if (!recipient) return;
+    try {
+      const result = await api("/api/config/notifications/test/gmail", {
+        method: "POST",
+        body: JSON.stringify({ recipient }),
+      });
+      alert(`Gmail: ${result.status}`);
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.getElementById("test-whatsapp-config-btn")?.addEventListener("click", async () => {
+    const recipient = prompt("Numero WhatsApp de prueba (ej. 50255550101):");
+    if (!recipient) return;
+    try {
+      const result = await api("/api/config/notifications/test/whatsapp", {
+        method: "POST",
+        body: JSON.stringify({ recipient }),
+      });
+      alert(`WhatsApp: ${result.status}`);
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.getElementById("pending-fel-retry-all-btn")?.addEventListener("click", retryAllPendingFel);
+
+  document.getElementById("license-config-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    try {
+      state.licenseConfig = await api("/api/config/license", {
+        method: "PUT",
+        body: JSON.stringify({
+          store_license_key: form.store_license_key.value.trim(),
+          license_required_for_updates: Boolean(form.license_required_for_updates?.checked),
+        }),
+      });
+      await checkSystemUpdates({ silent: true });
+      renderConfig();
+      alert("Licencia guardada y validada.");
     } catch (error) {
       alert(error.message);
     }
@@ -4962,7 +5262,7 @@ function renderConfig() {
   const backupsTableContainer = document.getElementById("system-backups-table");
   const renderBackupsTable = () => {
     if (!backupsTableContainer) return;
-    const backups = [...(state.backups || [])];
+    const backups = [...(state.backups || [])].slice(0, 3);
     if (!backups.length) {
       backupsTableContainer.innerHTML = '<div class="empty">Aun no hay respaldos creados.</div>';
       return;
@@ -5119,6 +5419,11 @@ async function loadData() {
   const receiptPrinterPromise = isAdmin
     ? api("/api/config/receipt-printer").catch(() => null)
     : Promise.resolve(null);
+  const systemConfigPromise = isAdmin ? api("/api/config/system").catch(() => null) : Promise.resolve(null);
+  const notificationConfigPromise = isAdmin
+    ? api("/api/config/notifications").catch(() => null)
+    : Promise.resolve(null);
+  const licenseConfigPromise = isAdmin ? api("/api/config/license").catch(() => null) : Promise.resolve(null);
   const [
     products,
     sales,
@@ -5146,6 +5451,9 @@ async function loadData() {
     branches,
     updateInfo,
     receiptPrinterConfig,
+    systemConfig,
+    notificationConfig,
+    licenseConfig,
   ] = await Promise.all([
     api("/api/products"),
     api("/api/sales"),
@@ -5173,6 +5481,9 @@ async function loadData() {
     branchesPromise,
     updateCheckPromise,
     receiptPrinterPromise,
+    systemConfigPromise,
+    notificationConfigPromise,
+    licenseConfigPromise,
   ]);
   state.products = products;
   state.suppliers = suppliers;
@@ -5180,6 +5491,10 @@ async function loadData() {
   state.purchaseOrders = purchaseOrders;
   state.sales = sales;
   state.businessProfile = String(profileInfo?.business_profile || state.businessProfile || "abarrotes").toLowerCase();
+  state.runtimeConfig = {
+    cash_shared_session: profileInfo?.cash_shared_session !== false,
+    nit_lookup_configured: Boolean(profileInfo?.nit_lookup_configured),
+  };
   state.config = config;
   state.users = users;
   state.backups = backups;
@@ -5200,6 +5515,9 @@ async function loadData() {
   state.branches = branches;
   state.updateInfo = updateInfo;
   state.receiptPrinterConfig = receiptPrinterConfig;
+  state.systemConfig = systemConfig;
+  state.notificationConfig = notificationConfig;
+  state.licenseConfig = licenseConfig;
   renderVersionLabel();
   renderSystemAlertsBar();
   populateCustomerSelect();
@@ -5239,14 +5557,29 @@ function isCurrentCashOwnedByLoggedUser() {
   return Number(state.currentCash.opened_by_user_id) === Number(state.user.id);
 }
 
+function isCashSharedSessionEnabled() {
+  return state.runtimeConfig?.cash_shared_session !== false;
+}
+
+function canUseCurrentCash() {
+  if (!state.currentCash || !state.user) return false;
+  if (state.user.role === "admin") return true;
+  if (isCashSharedSessionEnabled()) return true;
+  return isCurrentCashOwnedByLoggedUser();
+}
+
 function ensureCashOwnership(actionLabel = "operar caja") {
   if (!state.currentCash) {
     alert("Debes abrir caja antes de continuar.");
     return false;
   }
-  if (!isCurrentCashOwnedByLoggedUser()) {
+  if (!canUseCurrentCash()) {
+    const ownerName =
+      state.currentCash.opened_by_full_name ||
+      state.currentCash.opened_by_username ||
+      `usuario ID ${state.currentCash.opened_by_user_id}`;
     alert(
-      `No puedes ${actionLabel}. Solo el cajero que abrio el fondo puede usar esta caja (caja #${state.currentCash.id}).`
+      `No puedes ${actionLabel}. La caja #${state.currentCash.id} esta asignada a ${ownerName}. Pide al admin activar caja compartida o transferir el turno.`
     );
     return false;
   }
@@ -5281,11 +5614,18 @@ function renderCashOwnerIndicator() {
     state.currentCash.opened_by_username ||
     `usuario ID ${state.currentCash.opened_by_user_id}`;
   const ownsCash = isCurrentCashOwnedByLoggedUser();
-  if (ownsCash) {
+  const canUseCash = canUseCurrentCash();
+  if (canUseCash) {
     indicator.classList.add("owner");
-    indicator.textContent = `Caja #${state.currentCash.id} asignada a ti (${ownerName}). Puedes cobrar con esta caja.`;
-    if (captureBtn) captureBtn.disabled = false;
-    if (closeShiftBtn) closeShiftBtn.disabled = false;
+    if (ownsCash) {
+      indicator.textContent = `Caja #${state.currentCash.id} asignada a ti (${ownerName}). Puedes cobrar con esta caja.`;
+    } else if (isCashSharedSessionEnabled()) {
+      indicator.textContent = `Caja #${state.currentCash.id} abierta por ${ownerName}. Modo compartido: puedes cobrar con esta caja.`;
+    } else {
+      indicator.textContent = `Caja #${state.currentCash.id} (admin). Puedes cobrar con esta caja.`;
+    }
+    if (captureBtn) captureBtn.disabled = !canUseCash;
+    if (closeShiftBtn) closeShiftBtn.disabled = !ownsCash && state.user?.role !== "admin";
     return;
   }
 
@@ -5340,11 +5680,15 @@ function renderSaleSessionIndicator() {
     return;
   }
 
-  if (!isCurrentCashOwnedByLoggedUser()) {
+  if (!canUseCurrentCash()) {
     state.saleSessionUnlocked = false;
     clearSaleSessionAutoLockTimer();
     indicator.classList.add("blocked");
-    indicator.textContent = "Venta bloqueada. La caja actual pertenece a otro usuario.";
+    const ownerName =
+      state.currentCash.opened_by_full_name ||
+      state.currentCash.opened_by_username ||
+      `usuario ID ${state.currentCash.opened_by_user_id}`;
+    indicator.textContent = `Venta bloqueada. La caja pertenece a ${ownerName}.`;
     unlockBtn.disabled = true;
     if (captureBtn) captureBtn.disabled = true;
     if (clearBtn) clearBtn.disabled = true;
@@ -5395,6 +5739,7 @@ function refreshPostLoginDialogState() {
 
   const hasCashOpen = Boolean(state.currentCash);
   const ownsOpenCash = isCurrentCashOwnedByLoggedUser();
+  const canUseOpenCash = canUseCurrentCash();
   const isAdmin = isAdminUser();
 
   forceCloseBtn.hidden = true;
@@ -5430,9 +5775,17 @@ function refreshPostLoginDialogState() {
   openCashBtn.disabled = true;
   openCashBtn.textContent = "Fondo ya abierto";
 
-  if (ownsOpenCash) {
+  if (canUseOpenCash) {
     state.postLoginFundAdded = true;
-    hint.textContent = `Tu fondo #${state.currentCash.id} sigue abierto. Continuando...`;
+    if (ownsOpenCash) {
+      hint.textContent = `Tu fondo #${state.currentCash.id} sigue abierto. Continuando...`;
+    } else {
+      const ownerName =
+        state.currentCash.opened_by_full_name ||
+        state.currentCash.opened_by_username ||
+        `usuario ID ${state.currentCash.opened_by_user_id}`;
+      hint.textContent = `Caja compartida activa (#${state.currentCash.id}, abierta por ${ownerName}). Puedes continuar.`;
+    }
     return;
   }
 
@@ -5864,13 +6217,18 @@ async function openCashSession(event) {
 }
 
 async function openCashSessionWithValues(openingAmount, notes = null) {
-  return api("/api/cash/sessions/open", {
+  const session = await api("/api/cash/sessions/open", {
     method: "POST",
     body: JSON.stringify({
       opening_amount: Number(openingAmount || 0),
       notes: notes || null,
     }),
   });
+  // Al abrir fondo, la venta queda lista sin volver a pedir clave.
+  state.saleSessionUnlocked = true;
+  state.salePasswordPromptDismissed = false;
+  closeSalePasswordDialog();
+  return session;
 }
 
 async function registerCashMovement(event) {
@@ -6232,12 +6590,19 @@ async function sendOrder(orderId, channel) {
   if (channel === "gmail" && order.customer_email) payload.gmail_to = order.customer_email;
 
   try {
-    await api(`/api/orders/${orderId}/send`, {
+    const updated = await api(`/api/orders/${orderId}/send`, {
       method: "POST",
       body: JSON.stringify(payload),
     });
     await loadData();
-    alert(`Orden #${orderId} enviada por ${channel}.`);
+    const latest = (updated?.dispatches || []).find((item) => item.channel === channel);
+    const statusLabel =
+      latest?.status === "sent"
+        ? "enviado correctamente"
+        : latest?.status === "queued"
+          ? "en cola (modo simulado — configura credenciales en Configuracion)"
+          : `estado: ${latest?.status || "procesado"}`;
+    alert(`Orden #${orderId} · ${channel}: ${statusLabel}.`);
   } catch (error) {
     alert(error.message);
   }
@@ -6280,7 +6645,7 @@ async function login(event) {
       return;
     }
     state.postLoginFundAdded = false;
-    if (state.currentCash && isCurrentCashOwnedByLoggedUser()) {
+    if (state.currentCash && canUseCurrentCash()) {
       state.postLoginFundAdded = true;
       enterAppAfterLogin();
       return;
@@ -6695,6 +7060,61 @@ async function retryPendingFel(pendingId) {
   }
 }
 
+async function retryAllPendingFel() {
+  const rows = state.pendingFelSales || [];
+  if (!rows.length) {
+    alert("No hay ventas FEL pendientes.");
+    return;
+  }
+  if (!confirm(`Reintentar certificacion de ${rows.length} venta(s) pendiente(s)?`)) return;
+  try {
+    const result = await api("/api/fel/pending/retry-all", { method: "POST" });
+    await loadData();
+    alert(`Proceso terminado: ${result.certified} certificada(s), ${result.failed} con error.`);
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function dismissPendingFel(pendingId) {
+  if (!confirm("Descartar esta venta de la cola FEL pendiente? La venta en POS se conserva.")) return;
+  try {
+    await api(`/api/fel/pending/${pendingId}/dismiss`, { method: "POST" });
+    await loadData();
+    alert("Venta descartada de FEL pendientes.");
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function transferCashSessionToUser(sessionId) {
+  const activeUsers = (state.users || []).filter((user) => user.active);
+  if (!activeUsers.length) {
+    alert("No hay usuarios activos para transferir el turno.");
+    return;
+  }
+  const options = activeUsers
+    .map((user) => `${user.id}: ${user.full_name || user.username} (${user.username})`)
+    .join("\n");
+  const raw = prompt(`ID de usuario destino:\n${options}`);
+  if (!raw) return;
+  const targetUserId = Number(String(raw).trim().split(":")[0]);
+  if (!Number.isFinite(targetUserId) || targetUserId <= 0) {
+    alert("Usuario destino invalido.");
+    return;
+  }
+  try {
+    await api(`/api/cash/sessions/${sessionId}/transfer`, {
+      method: "POST",
+      body: JSON.stringify({ target_user_id: targetUserId }),
+    });
+    await loadData();
+    alert("Turno de caja transferido correctamente.");
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
 function renderPendingFelTable() {
   const container = document.getElementById("pending-fel-table");
   if (!container) return;
@@ -6705,17 +7125,21 @@ function renderPendingFelTable() {
   }
   container.innerHTML = `
     <table>
-      <thead><tr><th>Venta</th><th>Total</th><th>Intentos</th><th>Error</th><th></th></tr></thead>
+      <thead><tr><th>Venta</th><th>Fecha</th><th>Total</th><th>Intentos</th><th>Error</th><th></th></tr></thead>
       <tbody>
         ${rows
           .map(
             (row) => `
           <tr>
             <td>#${row.sale_id}</td>
+            <td>${new Date(row.created_at).toLocaleString("es-GT")}</td>
             <td>${money(row.sale_total || 0)}</td>
             <td>${row.retry_count || 0}</td>
-            <td>${row.last_error || "-"}</td>
-            <td><button class="btn ghost pending-fel-retry-btn" data-id="${row.id}">Reintentar</button></td>
+            <td>${escapeHtml(row.last_error || "-")}</td>
+            <td class="panel-actions">
+              <button class="btn ghost pending-fel-retry-btn" data-id="${row.id}">Reintentar</button>
+              <button class="btn ghost pending-fel-dismiss-btn" data-id="${row.id}">Descartar</button>
+            </td>
           </tr>`
           )
           .join("")}
@@ -6724,6 +7148,9 @@ function renderPendingFelTable() {
   `;
   container.querySelectorAll(".pending-fel-retry-btn").forEach((button) => {
     button.addEventListener("click", () => retryPendingFel(Number(button.dataset.id)));
+  });
+  container.querySelectorAll(".pending-fel-dismiss-btn").forEach((button) => {
+    button.addEventListener("click", () => dismissPendingFel(Number(button.dataset.id)));
   });
 }
 
@@ -6865,8 +7292,8 @@ function setupEvents() {
     }
 
     if (!state.postLoginFundAdded) {
-      if (state.currentCash && !isCurrentCashOwnedByLoggedUser()) {
-        alert("Hay una caja abierta de otro usuario. Un admin debe desactivarla para continuar.");
+      if (state.currentCash && !canUseCurrentCash()) {
+        alert("Hay una caja abierta de otro usuario. Un admin debe desactivarla o activar caja compartida.");
       } else {
         alert("Debes presionar Agregar fondo con una cantidad valida antes de ingresar.");
       }
@@ -6883,9 +7310,12 @@ function setupEvents() {
   });
   postLoginOpenCashBtn.addEventListener("click", async () => {
     if (state.currentCash) {
-      if (isCurrentCashOwnedByLoggedUser()) {
+      if (canUseCurrentCash()) {
         state.postLoginFundAdded = true;
-        postLoginHint.textContent = "Tu fondo sigue abierto. Presiona Ingresar al sistema de venta para continuar.";
+        const ownerText = isCurrentCashOwnedByLoggedUser()
+          ? "Tu fondo sigue abierto."
+          : "Caja compartida activa.";
+        postLoginHint.textContent = `${ownerText} Presiona Ingresar al sistema de venta para continuar.`;
         postLoginEnterBtn.disabled = false;
         postLoginEnterBtn.textContent = "Volver a entrar al fondo abierto";
       } else if (state.user?.role === "admin") {
@@ -6925,8 +7355,8 @@ function setupEvents() {
     }
     if (!state.postLoginFundAdded) {
       event.preventDefault();
-      if (state.currentCash && !isCurrentCashOwnedByLoggedUser()) {
-        alert("Hay una caja abierta de otro usuario. Solicita a un admin liberar esa caja.");
+      if (state.currentCash && !canUseCurrentCash()) {
+        alert("Hay una caja abierta de otro usuario. Solicita a un admin liberar esa caja o activar caja compartida.");
       } else {
         alert("Debes agregar fondo para continuar.");
       }

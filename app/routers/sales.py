@@ -7,7 +7,7 @@ from app.database import get_db
 from app.dependencies import require_roles
 from app.models import FelInvoice, Sale, SaleItem, SalePayment, SaleReturn, SaleReturnItem, User
 from app.schemas import PrintReceiptResponse, SaleCreate, SaleOut, SaleReturnCreate, SaleReturnOut
-from app.services.cash_service import add_cash_movement, get_open_cash_session
+from app.services.cash_service import add_cash_movement, can_use_cash_session, get_open_cash_session
 from app.services.receipt_service import print_receipt
 from app.services.sale_service import create_sale, create_sale_return, sale_to_schema
 
@@ -45,12 +45,13 @@ def register_sale(
         open_session = get_open_cash_session(db)
         if not open_session:
             raise ValueError("Debes abrir caja antes de registrar ventas.")
-        if open_session.opened_by_user_id != user.id:
+        if not can_use_cash_session(user, open_session):
+            owner_hint = "otro usuario"
             raise HTTPException(
                 status_code=403,
                 detail=(
-                    "La caja esta asignada a otro usuario. "
-                    "Solo el cajero que abrio el fondo puede usarla para vender."
+                    f"La caja esta asignada a {owner_hint}. "
+                    "Activa caja compartida en Configuracion o pide al admin transferir el turno."
                 ),
             )
         sale = create_sale(db, payload, user_id=user.id)
@@ -92,12 +93,12 @@ def register_sale_return(
         open_session = get_open_cash_session(db)
         if not open_session:
             raise ValueError("Debes abrir caja antes de registrar devoluciones.")
-        if open_session.opened_by_user_id != user.id:
+        if not can_use_cash_session(user, open_session):
             raise HTTPException(
                 status_code=403,
                 detail=(
                     "La caja esta asignada a otro usuario. "
-                    "Solo el cajero que abrio el fondo puede usarla para devoluciones."
+                    "Activa caja compartida en Configuracion o pide al admin transferir el turno."
                 ),
             )
 

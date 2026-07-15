@@ -234,7 +234,7 @@ def mobile_app():
 
 
 @app.on_event("startup")
-def seed_demo_data():
+def initialize_app_data():
     from app.database import SessionLocal
 
     try:
@@ -309,98 +309,6 @@ def seed_demo_data():
                     ),
                 ]
             )
-            db.commit()
-
-        if db.query(Supplier).count() == 0:
-            db.add_all(
-                [
-                    Supplier(
-                        name="Proveedor Cafe y Pan",
-                        email="compras.cafepan@example.com",
-                        phone="50255550101",
-                        contact_name="Ventas CafePan",
-                    ),
-                    Supplier(
-                        name="Bebidas GT",
-                        email="compras.bebidas@example.com",
-                        phone="50255550102",
-                        contact_name="Ventas Bebidas",
-                    ),
-                ]
-            )
-            db.commit()
-
-        if db.query(Department).count() == 0:
-            db.add_all(
-                [
-                    Department(name="Lacteos", description="Leche, queso, yogurt y derivados."),
-                    Department(name="Bebidas", description="Aguas, jugos y bebidas en general."),
-                    Department(name="Panaderia", description="Pan, galletas y reposteria."),
-                ]
-            )
-            db.commit()
-
-        if db.query(Product).count() == 0:
-            supplier_cafe = db.query(Supplier).filter(Supplier.name == "Proveedor Cafe y Pan").first()
-            supplier_bebidas = db.query(Supplier).filter(Supplier.name == "Bebidas GT").first()
-            dep_bebidas = db.query(Department).filter(Department.name == "Bebidas").first()
-            dep_panaderia = db.query(Department).filter(Department.name == "Panaderia").first()
-            demo_products = [
-                Product(
-                    sku="CAFE-001",
-                    name="Cafe Americano",
-                    price=18.0,
-                    stock=100,
-                    cost=8.0,
-                    min_stock=20,
-                    supplier_id=supplier_cafe.id if supplier_cafe else None,
-                    department_id=dep_bebidas.id if dep_bebidas else None,
-                ),
-                Product(
-                    sku="PAN-001",
-                    name="Pan Dulce",
-                    price=5.0,
-                    stock=200,
-                    cost=2.0,
-                    min_stock=40,
-                    wholesale_enabled=1,
-                    wholesale_min_qty=12,
-                    wholesale_discount_pct=10,
-                    supplier_id=supplier_cafe.id if supplier_cafe else None,
-                    department_id=dep_panaderia.id if dep_panaderia else None,
-                ),
-                Product(
-                    sku="AGUA-001",
-                    name="Agua 500ml",
-                    price=8.0,
-                    stock=150,
-                    cost=3.5,
-                    min_stock=30,
-                    supplier_id=supplier_bebidas.id if supplier_bebidas else None,
-                    department_id=dep_bebidas.id if dep_bebidas else None,
-                ),
-                Product(
-                    sku="JUGO-001",
-                    name="Jugo Natural",
-                    price=15.0,
-                    stock=80,
-                    cost=6.0,
-                    min_stock=15,
-                    supplier_id=supplier_bebidas.id if supplier_bebidas else None,
-                    department_id=dep_bebidas.id if dep_bebidas else None,
-                ),
-                Product(
-                    sku="GALLET-001",
-                    name="Galletas",
-                    price=12.0,
-                    stock=120,
-                    cost=5.0,
-                    min_stock=20,
-                    supplier_id=supplier_cafe.id if supplier_cafe else None,
-                    department_id=dep_panaderia.id if dep_panaderia else None,
-                ),
-            ]
-            db.add_all(demo_products)
             db.commit()
     finally:
         db.close()

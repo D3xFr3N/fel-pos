@@ -393,6 +393,8 @@ class CompanyConfigUpdateIn(BaseModel):
 class BusinessProfileConfigOut(BaseModel):
     business_profile: BusinessProfile
     business_profile_label: str
+    cash_shared_session: bool = True
+    nit_lookup_configured: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -545,8 +547,28 @@ class ReceiptPrinterConfigOut(BaseModel):
     print_on_checkout: bool = True
     open_drawer_on_checkout: bool = True
     chars_per_line: int = 48
+    bottom_feed_lines: int = 8
     encoding: str = "cp850"
     platform_supported: bool = True
+    header_line_1: str = ""
+    header_line_2: str = ""
+    header_line_3: str = ""
+    show_company_nit: bool = True
+    show_address: bool = False
+    center_header: bool = False
+    footer_message: str = "Gracias por su compra"
+    footer_extra: str = ""
+    ticket_label: str = "TICKET #{id}"
+    separator_char: str = "-"
+    show_customer: bool = True
+    show_date: bool = True
+    show_subtotal: bool = True
+    show_tax: bool = True
+    show_payments: bool = True
+    show_fel: bool = True
+    show_wholesale_savings: bool = True
+    show_item_detail: bool = True
+    preview_text: str = ""
 
 
 class ReceiptPrinterConfigUpdateIn(BaseModel):
@@ -554,7 +576,26 @@ class ReceiptPrinterConfigUpdateIn(BaseModel):
     print_on_checkout: bool = True
     open_drawer_on_checkout: bool = True
     chars_per_line: int = Field(default=48, ge=32, le=64)
+    bottom_feed_lines: int = Field(default=8, ge=2, le=20)
     encoding: str = Field(default="cp850", max_length=20)
+    header_line_1: str = Field(default="", max_length=120)
+    header_line_2: str = Field(default="", max_length=120)
+    header_line_3: str = Field(default="", max_length=120)
+    show_company_nit: bool = True
+    show_address: bool = False
+    center_header: bool = False
+    footer_message: str = Field(default="Gracias por su compra", max_length=200)
+    footer_extra: str = Field(default="", max_length=200)
+    ticket_label: str = Field(default="TICKET #{id}", max_length=40)
+    separator_char: str = Field(default="-", max_length=1)
+    show_customer: bool = True
+    show_date: bool = True
+    show_subtotal: bool = True
+    show_tax: bool = True
+    show_payments: bool = True
+    show_fel: bool = True
+    show_wholesale_savings: bool = True
+    show_item_detail: bool = True
 
 
 class ReceiptPrinterTestOut(BaseModel):
@@ -608,6 +649,38 @@ class UpdateCheckOut(BaseModel):
     manifest_url: str | None = None
     error: str | None = None
     message: str
+    license_required: bool = False
+    license_valid: bool = True
+    license_status: str | None = None
+    license_store_label: str | None = None
+    license_store_id: str | None = None
+    license_message: str | None = None
+    license_cached: bool = False
+
+
+class LicenseConfigOut(BaseModel):
+    store_license_key: str = ""
+    license_registry_url: str = ""
+    license_required_for_updates: bool = True
+    resolved_registry_url: str | None = None
+    configured: bool = False
+    required: bool = False
+    valid: bool = True
+    status: str = "optional"
+    store_label: str | None = None
+    store_id: str | None = None
+    message: str = ""
+    registry_url: str | None = None
+    fingerprint: str | None = None
+    checked_at: str | None = None
+    cached: bool = False
+    license_key_configured: bool = False
+
+
+class LicenseConfigUpdateIn(BaseModel):
+    store_license_key: str = Field(default="", max_length=80)
+    license_registry_url: str = ""
+    license_required_for_updates: bool = True
 
 
 class UpdateApplyOut(BaseModel):
@@ -947,6 +1020,52 @@ class PendingFelSaleOut(BaseModel):
     retry_count: int
     last_error: str | None = None
     sale_total: float | None = None
+
+
+class FelPendingBulkRetryOut(BaseModel):
+    total: int
+    certified: int
+    failed: int
+    items: list[PendingFelSaleOut] = Field(default_factory=list)
+
+
+class CashSessionTransferIn(BaseModel):
+    target_user_id: int = Field(gt=0)
+
+
+class SystemConfigOut(BaseModel):
+    cash_shared_session: bool = True
+    nit_lookup_configured: bool = False
+
+
+class SystemConfigUpdateIn(BaseModel):
+    cash_shared_session: bool = True
+
+
+class NotificationConfigOut(BaseModel):
+    gmail_sender: str = ""
+    gmail_app_password_configured: bool = False
+    gmail_smtp_host: str = "smtp.gmail.com"
+    gmail_smtp_port: int = 587
+    whatsapp_phone_id: str = ""
+    whatsapp_token_configured: bool = False
+    whatsapp_api_url: str = "https://graph.facebook.com/v20.0"
+    gmail_ready: bool = False
+    whatsapp_ready: bool = False
+
+
+class NotificationConfigUpdateIn(BaseModel):
+    gmail_sender: str = ""
+    gmail_app_password: str = ""
+    gmail_smtp_host: str = "smtp.gmail.com"
+    gmail_smtp_port: int = Field(default=587, ge=1, le=65535)
+    whatsapp_phone_id: str = ""
+    whatsapp_token: str = ""
+    whatsapp_api_url: str = "https://graph.facebook.com/v20.0"
+
+
+class NotificationTestIn(BaseModel):
+    recipient: str = Field(min_length=3, max_length=120)
 
 
 class ProductCostHistoryOut(BaseModel):

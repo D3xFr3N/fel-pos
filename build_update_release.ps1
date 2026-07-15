@@ -18,10 +18,8 @@ function Get-ProjectVersion {
 }
 
 $exePath = Join-Path $root "dist\FELPOS.exe"
-if (-not (Test-Path $exePath)) {
-    Write-Host "Generando FELPOS.exe..."
-    & (Join-Path $root "build_exe.ps1")
-}
+Write-Host "Generando FELPOS.exe..."
+& (Join-Path $root "build_exe.ps1")
 
 $version = Get-ProjectVersion
 $buildDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -40,6 +38,19 @@ New-Item -ItemType Directory -Path $stagingDir | Out-Null
 Copy-Item $exePath (Join-Path $stagingDir "FELPOS.exe") -Force
 Set-Content (Join-Path $stagingDir "VERSION") $version
 Set-Content (Join-Path $stagingDir "BUILD_DATE") $buildDate
+$assetsDir = Join-Path $root "installer\assets"
+foreach ($assetName in @(
+    "Aplicar_actualizacion_pendiente.bat",
+    "Reparar_instalacion.bat",
+    "Iniciar_FELPOS.bat",
+    "Limpiar_actualizacion_pendiente.bat",
+    "Diagnostico_instalacion.bat"
+)) {
+    $assetPath = Join-Path $assetsDir $assetName
+    if (Test-Path $assetPath) {
+        Copy-Item $assetPath (Join-Path $stagingDir $assetName) -Force
+    }
+}
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from xml.etree.ElementTree import Element, SubElement, tostring
 
+from app.config import settings
 from app.fel_config import is_fel_enabled, normalize_fel_mode
 from app.models import Customer, Sale, SaleItem, SaleReturn, SaleReturnItem
 

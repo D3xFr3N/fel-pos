@@ -25,6 +25,7 @@ from app.schemas import (
     BranchOut,
     BranchUpdate,
     PendingFelSaleOut,
+    FelPendingBulkRetryOut,
     ProductCostHistoryOut,
     ProductLotCreate,
     ProductLotOut,
@@ -36,7 +37,12 @@ from app.schemas import (
     SchoolPackageItemOut,
 )
 from app.services.audit_service import log_action
-from app.services.fel_pending_service import list_pending_fel_sales, retry_pending_fel_sale
+from app.services.fel_pending_service import (
+    dismiss_pending_fel_sale,
+    list_pending_fel_sales,
+    retry_all_pending_fel_sales,
+    retry_pending_fel_sale,
+)
 
 router = APIRouter(tags=["features"])
 
@@ -304,6 +310,36 @@ def retry_pending_fel(
 ):
     try:
         return retry_pending_fel_sale(db, pending_id=pending_id, user_id=user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/fel/pending/retry-all", response_model=FelPendingBulkRetryOut)
+def retry_all_pending_fel(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles("admin")),
+):
+    return retry_all_pending_fel_sales(db, user_id=user.id)
+
+
+@router.post("/api/fel/pending/{pending_id}/dismiss", response_model=PendingFelSaleOut)
+def dismiss_pending_fel(
+    pending_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles("admin")),
+):
+    try:
+        result = dismiss_pending_fel_sale(db, pending_id=pending_id)
+        log_action(
+            db,
+            user_id=user.id,
+            action="fel_pending_dismissed",
+            entity_type="pending_fel_sale",
+            entity_id=pending_id,
+            details=f"sale_id={result.sale_id}",
+        )
+        db.commit()
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -36,13 +36,53 @@ function Find-InnoSetupCompiler {
     return $candidates | Select-Object -First 1
 }
 
+function Build-LicenseHelper {
+    Write-Host "Generando install_license_helper.exe..."
+    $python = Join-Path $root ".venv\Scripts\python.exe"
+    if (-not (Test-Path $python)) {
+        throw "No se encontro .venv\Scripts\python.exe"
+    }
+    $helperRoot = Join-Path $root "dist\helper"
+    $buildRoot = Join-Path $root "build\helper"
+    if (Test-Path $helperRoot) {
+        Remove-Item $helperRoot -Recurse -Force
+    }
+    if (Test-Path $buildRoot) {
+        Remove-Item $buildRoot -Recurse -Force
+    }
+    $args = @(
+        "-m", "PyInstaller",
+        "--noconfirm",
+        "--onefile",
+        "--console",
+        "--name", "install_license_helper",
+        "--distpath", $helperRoot,
+        "--workpath", $buildRoot,
+        "--specpath", $buildRoot,
+        "--hidden-import", "cryptography.hazmat.backends.openssl",
+        (Join-Path $root "scripts\install_license_helper.py")
+    )
+    if (Test-Path (Join-Path $root "app\license_public.pem")) {
+        $pemPath = Join-Path $root "app\license_public.pem"
+        $args += @("--add-data", "$pemPath;app")
+    }
+    & $python @args
+    if (-not (Test-Path (Join-Path $helperRoot "install_license_helper.exe"))) {
+        throw "No se pudo generar install_license_helper.exe"
+    }
+}
+
 function Prepare-Staging {
     $staging = Join-Path $root "installer\staging"
     $assets = Join-Path $root "installer\assets"
     $exePath = Join-Path $root "dist\FELPOS.exe"
+    $helperPath = Join-Path $root "dist\helper\install_license_helper.exe"
 
     if (-not (Test-Path $exePath)) {
         throw "No se encontro dist\FELPOS.exe. Ejecuta primero build_exe.ps1"
+    }
+    if (-not (Test-Path $helperPath)) {
+        throw "No se encontro dist\helper\install_license_helper.exe. Ejecuta Build-LicenseHelper primero."
     }
 
     if (Test-Path $staging) {
@@ -52,6 +92,7 @@ function Prepare-Staging {
     New-Item -ItemType Directory -Path (Join-Path $staging "data\backups") -Force | Out-Null
 
     Copy-Item $exePath (Join-Path $staging "FELPOS.exe") -Force
+    Copy-Item $helperPath (Join-Path $staging "install_license_helper.exe") -Force
     Copy-Item (Join-Path $root ".env.example") (Join-Path $staging ".env.example") -Force
     Copy-Item (Join-Path $assets "*") $staging -Force
     $versionInfo = Write-VersionArtifacts -TargetDir $staging
@@ -63,11 +104,10 @@ function Prepare-Staging {
 Write-Host "=== FEL POS - Generador de instalador ==="
 Write-Host ""
 
-$exePath = Join-Path $root "dist\FELPOS.exe"
-if (-not (Test-Path $exePath)) {
-    Write-Host "Generando FELPOS.exe (PyInstaller)..."
-    & (Join-Path $root "build_exe.ps1")
-}
+Write-Host "Generando FELPOS.exe (PyInstaller)..."
+& (Join-Path $root "build_exe.ps1")
+
+Build-LicenseHelper
 
 $versionInfo = Prepare-Staging
 

@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import FelInvoice, PendingFelSale, Sale, SaleItem
-from app.schemas import PendingFelSaleOut
+from app.schemas import FelPendingBulkRetryOut, PendingFelSaleOut
 from app.services.fel_service import certify_sale
 
 
@@ -69,6 +69,48 @@ def retry_pending_fel_sale(db: Session, *, pending_id: int, user_id: int) -> Pen
     db.commit()
     db.refresh(pending)
     return _pending_to_schema(pending)
+
+
+def dismiss_pending_fel_sale(db: Session, *, pending_id: int) -> PendingFelSaleOut:
+    pending = (
+        db.query(PendingFelSale)
+        .options(joinedload(PendingFelSale.sale))
+        .filter(PendingFelSale.id == pending_id, PendingFelSale.status == "pending")
+        .one_or_none()
+    )
+    if not pending:
+        raise ValueError("Venta FEL pendiente no encontrada.")
+    pending.status = "dismissed"
+    pending.last_error = None
+    db.commit()
+    db.refresh(pending)
+    return _pending_to_schema(pending)
+
+
+def retry_all_pending_fel_sales(db: Session, *, user_id: int) -> FelPendingBulkRetryOut:
+    rows = (
+        db.query(PendingFelSale)
+        .filter(PendingFelSale.status == "pending")
+        .order_by(PendingFelSale.created_at.asc())
+        .all()
+    )
+    certified = 0
+    failed = 0
+    results: list[PendingFelSaleOut] = []
+    for row in rows:
+        try:
+            results.append(retry_pending_fel_sale(db, pending_id=row.id, user_id=user_id))
+            certified += 1
+        except ValueError:
+            failed += 1
+            db.refresh(row)
+            results.append(_pending_to_schema(row))
+    return FelPendingBulkRetryOut(
+        total=len(rows),
+        certified=certified,
+        failed=failed,
+        items=results,
+    )
 
 
 def _pending_to_schema(row: PendingFelSale) -> PendingFelSaleOut:

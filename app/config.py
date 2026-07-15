@@ -45,7 +45,26 @@ class Settings(BaseSettings):
     receipt_print_on_checkout: bool = True
     receipt_open_drawer_on_checkout: bool = True
     receipt_chars_per_line: int = 48
+    receipt_bottom_feed_lines: int = 8
     receipt_encoding: str = "cp850"
+    receipt_header_line_1: str = ""
+    receipt_header_line_2: str = ""
+    receipt_header_line_3: str = ""
+    receipt_show_company_nit: bool = True
+    receipt_show_address: bool = False
+    receipt_center_header: bool = False
+    receipt_footer_message: str = "Gracias por su compra"
+    receipt_footer_extra: str = ""
+    receipt_ticket_label: str = "TICKET #{id}"
+    receipt_separator_char: str = "-"
+    receipt_show_customer: bool = True
+    receipt_show_date: bool = True
+    receipt_show_subtotal: bool = True
+    receipt_show_tax: bool = True
+    receipt_show_payments: bool = True
+    receipt_show_fel: bool = True
+    receipt_show_wholesale_savings: bool = True
+    receipt_show_item_detail: bool = True
 
     label_printer_name: str = ""
     label_default_width_mm: int = 50
@@ -59,6 +78,14 @@ class Settings(BaseSettings):
     backup_auto_min_interval_seconds: int = 60
 
     update_manifest_url: str = ""
+
+    store_license_key: str = ""
+    license_registry_url: str = ""
+    license_required_for_updates: bool = True
+
+    cash_shared_session: bool = True
+
+    app_timezone: str = "America/Guatemala"
 
 
 settings = Settings()

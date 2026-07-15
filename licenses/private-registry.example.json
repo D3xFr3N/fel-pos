@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "entries": [
+    {
+      "store_id": "T001",
+      "store_label": "Tienda ejemplo",
+      "license_key": "FELPOS-XXXX-XXXX-XXXX-XXXX",
+      "status": "active",
+      "issued_at": "2026-01-01",
+      "contact": "50255550101",
+      "notes": "Ejemplo interno"
+    }
+  ]
+}

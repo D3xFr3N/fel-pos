@@ -16,8 +16,15 @@ Write-Host "Instalando dependencias del proyecto..."
 if (Test-Path ".\build") {
   Remove-Item ".\build" -Recurse -Force
 }
-if (Test-Path ".\dist") {
-  Remove-Item ".\dist" -Recurse -Force
+# Limpia solo el EXE/artefactos PyInstaller; conserva instalador y paquetes de release
+foreach ($name in @("FELPOS.exe", "FELPOS", "helper")) {
+  $target = Join-Path ".\dist" $name
+  if (Test-Path $target) {
+    Remove-Item $target -Recurse -Force
+  }
+}
+if (-not (Test-Path ".\dist")) {
+  New-Item -ItemType Directory -Path ".\dist" | Out-Null
 }
 
 Write-Host "Generando EXE..."
@@ -27,8 +34,15 @@ $args = @(
   "--clean",
   "--onefile",
   "--noconsole",
+  "--noupx",
+  "--runtime-tmpdir", ".",
   "--name", "FELPOS",
-  "--add-data", "static;static",
+  "--add-data", "static;static"
+)
+if (Test-Path ".\app\license_public.pem") {
+  $args += @("--add-data", "app\license_public.pem;app")
+}
+$args += @(
   "--collect-submodules", "app",
   "--hidden-import", "app.main",
   "--hidden-import", "webview.platforms.edgechromium",
@@ -39,6 +53,7 @@ $args = @(
   "--collect-all", "fastapi",
   "--collect-all", "pydantic",
   "--collect-all", "sqlalchemy",
+  "--collect-all", "tzdata",
   ".\fel_pos_launcher.py"
 )
 
