@@ -145,6 +145,38 @@ const escapeHtml = (value) =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 
+function parseAppDate(value) {
+  if (value == null || value === "") return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === "number") {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  // El backend guarda datetime.utcnow() sin zona. Sin "Z", el navegador lo toma como hora local
+  // y el historial queda adelantado ~6 horas en Guatemala.
+  let normalized = raw;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(raw)) {
+    normalized = `${raw}Z`;
+  } else if (/^\d{4}-\d{2}-\d{2}[ ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(raw)) {
+    normalized = `${raw.replace(" ", "T")}Z`;
+  }
+
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatAppDateTime(value) {
+  const parsed = parseAppDate(value);
+  if (!parsed) return "-";
+  return parsed.toLocaleString("es-GT", { timeZone: "America/Guatemala" });
+}
+
 function normalizeHexColor(value, fallback = "#00a884") {
   let raw = String(value || "").trim();
   if (!raw) return fallback;
@@ -2444,7 +2476,7 @@ function renderStockCountPanel() {
         <td>#${session.id}</td>
         <td>${escapeHtml(session.order_code || "-")}</td>
         <td>${escapeHtml(session.department_name || "-")}</td>
-        <td>${new Date(session.created_at).toLocaleString("es-GT")}</td>
+        <td>${formatAppDateTime(session.created_at)}</td>
         <td>${stockCountStatusLabel(session.status)}</td>
         <td>${session.totals.total_lines}</td>
         <td>${formatQuantity(session.totals.missing_units)}</td>
@@ -2541,7 +2573,7 @@ function renderStockCountPanel() {
       </div>
       <div class="row">
         <span>Creada</span>
-        <strong>${new Date(current.created_at).toLocaleString("es-GT")}</strong>
+        <strong>${formatAppDateTime(current.created_at)}</strong>
       </div>
       ${
         current.notes
@@ -2654,7 +2686,7 @@ function renderStockCountPanel() {
                   .map(
                     (log) => `
                     <tr>
-                      <td>${new Date(log.scanned_at).toLocaleString("es-GT")}</td>
+                      <td>${formatAppDateTime(log.scanned_at)}</td>
                       <td>${escapeHtml(log.scanned_by_full_name || log.scanned_by_username || "-")}</td>
                       <td>${escapeHtml(stockCountActionLabel(log.action_type))}</td>
                       <td>${escapeHtml(log.sku ? `${log.sku} - ${log.product_name || ""}` : log.note || "-")}</td>
@@ -3047,7 +3079,7 @@ function printStockCountOrder() {
         <h1>Orden de conteo ${escapeHtml(order.order_code || String(order.id))}</h1>
         <div class="meta">
           <div><strong>Departamento:</strong> ${escapeHtml(order.department_name || "-")}</div>
-          <div><strong>Fecha:</strong> ${new Date(order.created_at).toLocaleString("es-GT")}</div>
+          <div><strong>Fecha:</strong> ${formatAppDateTime(order.created_at)}</div>
           <div><strong>Estado:</strong> ${escapeHtml(stockCountStatusLabel(order.status))}</div>
           <div><strong>Tamano hoja:</strong> ${paper.label}</div>
           <div><strong>Notas:</strong> ${escapeHtml(order.notes || "Sin notas")}</div>
@@ -3156,7 +3188,7 @@ function printStockCountDifferenceReport() {
         <h1>Reporte de diferencias · Orden ${escapeHtml(order.order_code || String(order.id))}</h1>
         <div class="meta">
           <div><strong>Departamento:</strong> ${escapeHtml(order.department_name || "-")}</div>
-          <div><strong>Fecha sesion:</strong> ${new Date(order.created_at).toLocaleString("es-GT")}</div>
+          <div><strong>Fecha sesion:</strong> ${formatAppDateTime(order.created_at)}</div>
           <div><strong>Estado:</strong> ${escapeHtml(stockCountStatusLabel(order.status))}</div>
           <div><strong>Tamano hoja:</strong> ${paper.label}</div>
         </div>
@@ -3471,7 +3503,7 @@ function renderProductsTable() {
               <td>${row.stock}</td>
               <td>${row.min_stock}</td>
               <td>${row.deficit}</td>
-              <td>${row.low_since_at ? new Date(row.low_since_at).toLocaleString("es-GT") : "-"}</td>
+              <td>${row.low_since_at ? formatAppDateTime(row.low_since_at) : "-"}</td>
               <td>${row.low_for_hours != null ? `${row.low_for_hours}h` : "-"}</td>
               ${
                 canEdit || canStockEntry
@@ -3905,15 +3937,15 @@ function renderPurchaseOrdersTable() {
               const latestWhatsapp = getLatestPurchaseDispatch(order, "whatsapp");
               const latestGmail = getLatestPurchaseDispatch(order, "gmail");
               const whatsappText = latestWhatsapp
-                ? `${latestWhatsapp.status} (${new Date(latestWhatsapp.sent_at).toLocaleString("es-GT")})`
+                ? `${latestWhatsapp.status} (${formatAppDateTime(latestWhatsapp.sent_at)})`
                 : "-";
               const gmailText = latestGmail
-                ? `${latestGmail.status} (${new Date(latestGmail.sent_at).toLocaleString("es-GT")})`
+                ? `${latestGmail.status} (${formatAppDateTime(latestGmail.sent_at)})`
                 : "-";
               return `
           <tr>
             <td>${order.id}</td>
-            <td>${new Date(order.created_at).toLocaleString("es-GT")}</td>
+            <td>${formatAppDateTime(order.created_at)}</td>
             <td>${order.supplier_name}</td>
             <td>${money(order.total_estimate)}</td>
             <td>${order.status}</td>
@@ -4111,7 +4143,7 @@ function renderSalesTable() {
             (sale) => `
           <tr>
             <td>${sale.id}</td>
-            <td>${new Date(sale.created_at).toLocaleString("es-GT")}</td>
+            <td>${formatAppDateTime(sale.created_at)}</td>
             <td>${sale.customer_name || "CONSUMIDOR FINAL"}</td>
             <td>${money(sale.total)}</td>
             <td>${Number(sale.cart_discount_amount || 0) > 0 ? money(sale.cart_discount_amount) : "-"}</td>
@@ -4207,7 +4239,7 @@ function renderCashCard() {
     <div class="row"><span>Responsable</span><strong>${escapeHtml(ownerName)}</strong></div>
     <div class="row"><span>Monto inicial</span><strong>${money(cash.opening_amount)}</strong></div>
     <div class="row"><span>Esperado actual</span><strong>${money(cash.expected_amount)}</strong></div>
-    <div class="row"><span>Apertura</span><strong>${new Date(cash.opened_at).toLocaleString("es-GT")}</strong></div>
+    <div class="row"><span>Apertura</span><strong>${formatAppDateTime(cash.opened_at)}</strong></div>
     <button id="quick-close-cash-btn" class="btn primary" type="button">Cuadrar caja</button>
   `;
   document.getElementById("quick-close-cash-btn").addEventListener("click", quickCloseCashSession);
@@ -4286,7 +4318,7 @@ function openSaleDetail(saleId) {
             (saleReturn) => `
             <li>
               NC ${escapeHtml(saleReturn.fel_serie || "-")}-${escapeHtml(saleReturn.fel_numero || "-")}
-              · ${new Date(saleReturn.created_at).toLocaleString("es-GT")}
+              · ${formatAppDateTime(saleReturn.created_at)}
               · ${money(saleReturn.total)}
               ${saleReturn.reason ? `<br><small>Motivo: ${escapeHtml(saleReturn.reason)}</small>` : ""}
             </li>
@@ -4524,7 +4556,7 @@ function printAdminCashAuditReceipt({
   const cashierLabel = escapeHtml(cashierName);
   const adminLabel = escapeHtml(adminName);
   const differenceLabel = `${difference >= 0 ? "+" : "-"}${money(Math.abs(difference))}`;
-  const createdAt = new Date(createdAtIso || new Date().toISOString()).toLocaleString("es-GT");
+  const createdAt = formatAppDateTime(createdAtIso || new Date().toISOString());
   printWindow.document.write(`
     <html>
       <head>
@@ -4693,14 +4725,14 @@ function renderAdminCashMonitorCard() {
     .map((entry, index) => {
       const session = entry.session;
       const metrics = entry.metrics;
-      const lastSaleAt = metrics.lastSaleAt ? new Date(metrics.lastSaleAt).toLocaleString("es-GT") : "Sin ventas";
+      const lastSaleAt = metrics.lastSaleAt ? formatAppDateTime(metrics.lastSaleAt) : "Sin ventas";
       const cashierName =
         session.opened_by_full_name || session.opened_by_username || `ID ${session.opened_by_user_id}`;
       return `
       <div class="config-card" style="margin-bottom: 0.75rem; padding: 0.55rem 0.65rem; border: 1px solid var(--border); border-radius: 10px;">
         <div class="row"><span>Cajero</span><strong>${escapeHtml(cashierName)}</strong></div>
         <div class="row"><span>Caja</span><strong>#${session.id}</strong></div>
-        <div class="row"><span>Apertura</span><strong>${new Date(session.opened_at).toLocaleString("es-GT")}</strong></div>
+        <div class="row"><span>Apertura</span><strong>${formatAppDateTime(session.opened_at)}</strong></div>
         <div class="row"><span>Monto apertura</span><strong>${money(metrics.openingAmount)}</strong></div>
         <div class="row"><span>Ventas en efectivo</span><strong>${money(metrics.salesCashTotal)}</strong></div>
         <div class="row"><span>Devoluciones efectivo</span><strong>${money(metrics.returnsCashTotal)}</strong></div>
@@ -4824,7 +4856,7 @@ function renderVersionHistorySection() {
           <td>v${escapeHtml(entry.version)}${
             entry.version === info.version ? ' <span class="badge success">actual</span>' : ""
           }</td>
-          <td>${entry.installed_at ? new Date(entry.installed_at).toLocaleString("es-GT") : "-"}</td>
+          <td>${entry.installed_at ? formatAppDateTime(entry.installed_at) : "-"}</td>
         </tr>
       `
     )
@@ -4841,10 +4873,10 @@ function renderVersionHistorySection() {
     }
     <div class="row"><span>Compilada</span><strong>${escapeHtml(info.build_date || "No registrada")}</strong></div>
     <div class="row"><span>Instalada</span><strong>${
-      info.installed_at ? new Date(info.installed_at).toLocaleString("es-GT") : "-"
+      info.installed_at ? formatAppDateTime(info.installed_at) : "-"
     }</strong></div>
     <div class="row"><span>Ultima actualizacion</span><strong>${
-      info.updated_at ? new Date(info.updated_at).toLocaleString("es-GT") : "-"
+      info.updated_at ? formatAppDateTime(info.updated_at) : "-"
     }</strong></div>
     ${
       historyRows
@@ -6064,7 +6096,7 @@ function renderConfig() {
         (backup) => `
         <tr>
           <td>${escapeHtml(backup.name)}</td>
-          <td>${new Date(backup.created_at).toLocaleString("es-GT")}</td>
+          <td>${formatAppDateTime(backup.created_at)}</td>
           <td>${Number(backup.size_mb || 0).toFixed(3)} MB</td>
           <td>
             <div class="table-actions">
@@ -7314,9 +7346,9 @@ function printPurchaseOrder(orderId) {
     ? `<ul>${dispatches
         .map(
           (dispatch) =>
-            `<li>${escapeHtml(dispatch.channel)} - ${escapeHtml(dispatch.status)} - ${new Date(
+            `<li>${escapeHtml(dispatch.channel)} - ${escapeHtml(dispatch.status)} - ${formatAppDateTime(
               dispatch.sent_at
-            ).toLocaleString("es-GT")} - ${escapeHtml(dispatch.recipient || "-")}</li>`
+            )} - ${escapeHtml(dispatch.recipient || "-")}</li>`
         )
         .join("")}</ul>`
     : "<p>Sin envios registrados.</p>";
@@ -7340,7 +7372,7 @@ function printPurchaseOrder(orderId) {
         <h1>Orden de compra #${order.id}</h1>
         <div class="meta">
           <div><strong>Proveedor:</strong> ${escapeHtml(order.supplier_name)}</div>
-          <div><strong>Fecha:</strong> ${new Date(order.created_at).toLocaleString("es-GT")}</div>
+          <div><strong>Fecha:</strong> ${formatAppDateTime(order.created_at)}</div>
           <div><strong>Estado:</strong> ${escapeHtml(order.status)}</div>
           <div><strong>Notas:</strong> ${escapeHtml(order.notes || "Sin notas")}</div>
         </div>
@@ -7968,7 +8000,7 @@ function renderPendingFelTable() {
             (row) => `
           <tr>
             <td>#${row.sale_id}</td>
-            <td>${new Date(row.created_at).toLocaleString("es-GT")}</td>
+            <td>${formatAppDateTime(row.created_at)}</td>
             <td>${money(row.sale_total || 0)}</td>
             <td>${row.retry_count || 0}</td>
             <td>${escapeHtml(row.last_error || "-")}</td>
@@ -8006,7 +8038,7 @@ function renderAuditLogsTable() {
           .map(
             (row) => `
           <tr>
-            <td>${new Date(row.created_at).toLocaleString("es-GT")}</td>
+            <td>${formatAppDateTime(row.created_at)}</td>
             <td>${row.username || "-"}</td>
             <td>${row.action}</td>
             <td>${row.details || row.entity_type || "-"}</td>
