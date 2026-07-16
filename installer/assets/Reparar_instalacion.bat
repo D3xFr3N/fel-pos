@@ -100,12 +100,14 @@ if not exist "FELPOS.exe" (
 )
 
 :launch
-echo Iniciando FEL POS...
-if exist "Iniciar_FELPOS.bat" (
-  start "" "%~dp0Iniciar_FELPOS.bat"
-) else (
-  start "" "%~dp0FELPOS.exe"
-)
+echo Iniciando FELPOS...
+set "APP_DIR=%CD%"
+if exist "Iniciar_FELPOS.bat" goto launch_bat
+start "" "!APP_DIR!\FELPOS.exe"
+goto launch_done
+:launch_bat
+start "" "!APP_DIR!\Iniciar_FELPOS.bat"
+:launch_done
 echo.
 popd
 pause

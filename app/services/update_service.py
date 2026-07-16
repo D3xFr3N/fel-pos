@@ -420,6 +420,7 @@ def _write_restart_script(
         script_path = install_dir / PENDING_UPDATE_SCRIPT
 
     log_name = PENDING_UPDATE_LOG
+    # Rutas con "Program Files (x86)" rompen bloques IF (...): usar delayed expansion.
     install_quoted = str(install_dir)
     stage_quoted = str(stage_dir) if stage_dir else ""
     min_exe_bytes = max(MIN_EXE_BYTES, int(expected_exe_bytes or 0) // 2)
@@ -430,27 +431,24 @@ def _write_restart_script(
         f'set "INSTALL_DIR={install_quoted}"',
         f'set "STAGE_DIR={stage_quoted}"',
         'set "FELPOS_RUNTIME_TMP=%LOCALAPPDATA%\\FEL POS\\tmp"',
-        'if not exist "%FELPOS_RUNTIME_TMP%" mkdir "%FELPOS_RUNTIME_TMP%" >nul 2>&1',
-        'if exist "%FELPOS_RUNTIME_TMP%" (',
-        '  set "TEMP=%FELPOS_RUNTIME_TMP%"',
-        '  set "TMP=%FELPOS_RUNTIME_TMP%"',
-        ")",
-        'pushd "%INSTALL_DIR%"',
+        'if not exist "!FELPOS_RUNTIME_TMP!" mkdir "!FELPOS_RUNTIME_TMP!" >nul 2>&1',
+        'if exist "!FELPOS_RUNTIME_TMP!" set "TEMP=!FELPOS_RUNTIME_TMP!"',
+        'if exist "!FELPOS_RUNTIME_TMP!" set "TMP=!FELPOS_RUNTIME_TMP!"',
+        'pushd "!INSTALL_DIR!"',
         f'echo [%date% %time%] Iniciando actualizacion >> "{log_name}"',
         "set /a tries=0",
         ":wait",
         "set /a tries+=1",
         'tasklist /FI "IMAGENAME eq FELPOS.exe" 2>nul | find /I "FELPOS.exe" >nul',
-        "if not errorlevel 1 (",
-        "  if %tries% GEQ 60 (",
-        f'    echo [%date% %time%] Forzando cierre de FELPOS.exe >> "{log_name}"',
-        "    taskkill /F /IM FELPOS.exe /T >nul 2>&1",
-        "    timeout /t 2 >nul",
-        "    goto apply",
-        "  )",
-        "  timeout /t 1 >nul",
-        "  goto wait",
+        "if errorlevel 1 goto apply",
+        "if !tries! GEQ 60 (",
+        f'  echo [%date% %time%] Forzando cierre de FELPOS.exe >> "{log_name}"',
+        "  taskkill /F /IM FELPOS.exe /T >nul 2>&1",
+        "  timeout /t 2 >nul",
+        "  goto apply",
         ")",
+        "timeout /t 1 >nul",
+        "goto wait",
         ":apply",
     ]
 
@@ -459,41 +457,44 @@ def _write_restart_script(
             pending_name = f"{file_name}.pending"
             lines.extend(
                 [
-                    f'if exist "%STAGE_DIR%\\{pending_name}" (',
-                    f'  copy /Y "%STAGE_DIR%\\{pending_name}" "{pending_name}"',
-                    "  if errorlevel 1 (",
-                    f'    echo [%date% %time%] ERROR copiando {pending_name} desde staging >> "{log_name}"',
-                    "    goto fail_restore",
-                    "  )",
+                    f'if not exist "!STAGE_DIR!\\{pending_name}" goto after_stage_{file_name.replace(".", "_")}',
+                    f'copy /Y "!STAGE_DIR!\\{pending_name}" "{pending_name}"',
+                    "if errorlevel 1 (",
+                    f'  echo [%date% %time%] ERROR copiando {pending_name} desde staging >> "{log_name}"',
+                    "  goto fail_restore",
                     ")",
+                    f":after_stage_{file_name.replace('.', '_')}",
                 ]
             )
         for file_name in UPDATE_SUPPORT_FILES:
             pending_name = f"{file_name}.pending"
+            safe_label = file_name.replace(".", "_").replace(" ", "_")
             lines.extend(
                 [
-                    f'if exist "%STAGE_DIR%\\{pending_name}" (',
-                    f'  copy /Y "%STAGE_DIR%\\{pending_name}" "{file_name}"',
-                    "  if errorlevel 1 (",
-                    f'    echo [%date% %time%] AVISO: no se pudo copiar {file_name} >> "{log_name}"',
-                    "  )",
+                    f'if not exist "!STAGE_DIR!\\{pending_name}" goto after_support_{safe_label}',
+                    f'copy /Y "!STAGE_DIR!\\{pending_name}" "{file_name}"',
+                    "if errorlevel 1 (",
+                    f'  echo [%date% %time%] AVISO: no se pudo copiar {file_name} >> "{log_name}"',
                     ")",
+                    f":after_support_{safe_label}",
                 ]
             )
 
     lines.extend(
         [
-            'if not exist "FELPOS.exe.pending" (',
-            f'  echo [%date% %time%] ERROR: falta FELPOS.exe.pending >> "{log_name}"',
-            "  goto fail_restore",
-            ")",
+            'if exist "FELPOS.exe.pending" goto pending_ok',
+            f'echo [%date% %time%] ERROR: falta FELPOS.exe.pending >> "{log_name}"',
+            "goto fail_restore",
+            ":pending_ok",
             'set "PENDING_SIZE=0"',
             'for %%I in ("FELPOS.exe.pending") do set "PENDING_SIZE=%%~zI"',
-            f'if !PENDING_SIZE! LSS {min_exe_bytes} (',
-            f'  echo [%date% %time%] ERROR: FELPOS.exe.pending incompleto ^(!PENDING_SIZE! bytes^) >> "{log_name}"',
-            '  del /F /Q "FELPOS.exe.pending" >nul 2>&1',
-            "  goto fail_restore",
-            ")",
+            f'if !PENDING_SIZE! LSS {min_exe_bytes} goto pending_too_small',
+            "goto pending_size_ok",
+            ":pending_too_small",
+            f'echo [%date% %time%] ERROR: FELPOS.exe.pending incompleto ^(!PENDING_SIZE! bytes^) >> "{log_name}"',
+            'del /F /Q "FELPOS.exe.pending" >nul 2>&1',
+            "goto fail_restore",
+            ":pending_size_ok",
             f'echo [%date% %time%] Reemplazando FELPOS.exe ^(!PENDING_SIZE! bytes^) >> "{log_name}"',
             'if exist "FELPOS.exe.old" del /F /Q "FELPOS.exe.old" >nul 2>&1',
             'if exist "FELPOS.exe" ren "FELPOS.exe" "FELPOS.exe.old"',
@@ -510,29 +511,31 @@ def _write_restart_script(
         if file_name == "FELPOS.exe":
             continue
         pending_name = f"{file_name}.pending"
+        safe_label = file_name.replace(".", "_")
         lines.extend(
             [
-                f'if exist "{pending_name}" (',
-                f'  move /Y "{pending_name}" "{file_name}" >nul',
-                f'  echo [%date% %time%] {file_name} actualizado >> "{log_name}"',
-                ")",
+                f'if not exist "{pending_name}" goto after_file_{safe_label}',
+                f'move /Y "{pending_name}" "{file_name}" >nul',
+                f'echo [%date% %time%] {file_name} actualizado >> "{log_name}"',
+                f":after_file_{safe_label}",
             ]
         )
 
     lines.extend(
         [
             f'if exist "{PENDING_UPDATE_META}" del /F /Q "{PENDING_UPDATE_META}" >nul',
-            f'echo [%date% %time%] Reiniciando FEL POS >> "{log_name}"',
-            'if not exist "FELPOS.exe" (',
-            f'  echo [%date% %time%] ERROR: FELPOS.exe no existe despues de actualizar >> "{log_name}"',
-            "  goto fail_restore",
-            ")",
+            f'echo [%date% %time%] Reiniciando FELPOS >> "{log_name}"',
+            'if exist "FELPOS.exe" goto exe_ready',
+            f'echo [%date% %time%] ERROR: FELPOS.exe no existe despues de actualizar >> "{log_name}"',
+            "goto fail_restore",
+            ":exe_ready",
             "timeout /t 1 >nul",
-            'if exist "Iniciar_FELPOS.bat" (',
-            '  start "" "%INSTALL_DIR%\\Iniciar_FELPOS.bat"',
-            ") else (",
-            '  start "" "%INSTALL_DIR%\\FELPOS.exe"',
-            ")",
+            'if exist "Iniciar_FELPOS.bat" goto start_bat',
+            'start "" "!INSTALL_DIR!\\FELPOS.exe"',
+            "goto start_done",
+            ":start_bat",
+            'start "" "!INSTALL_DIR!\\Iniciar_FELPOS.bat"',
+            ":start_done",
             "popd",
             'del /F /Q "%~f0" >nul 2>&1',
             "endlocal",
@@ -540,13 +543,13 @@ def _write_restart_script(
             ":fail_restore",
             'if not exist "FELPOS.exe" if exist "FELPOS.exe.old" ren "FELPOS.exe.old" "FELPOS.exe"',
             f'echo [%date% %time%] Actualizacion abortada; se conserva/restaura EXE anterior >> "{log_name}"',
-            'if exist "FELPOS.exe" (',
-            '  if exist "Iniciar_FELPOS.bat" (',
-            '    start "" "%INSTALL_DIR%\\Iniciar_FELPOS.bat"',
-            "  ) else (",
-            '    start "" "%INSTALL_DIR%\\FELPOS.exe"',
-            "  )",
-            ")",
+            'if not exist "FELPOS.exe" goto fail_end',
+            'if exist "Iniciar_FELPOS.bat" goto fail_start_bat',
+            'start "" "!INSTALL_DIR!\\FELPOS.exe"',
+            "goto fail_end",
+            ":fail_start_bat",
+            'start "" "!INSTALL_DIR!\\Iniciar_FELPOS.bat"',
+            ":fail_end",
             "popd",
             "endlocal",
             "exit /b 1",
@@ -560,30 +563,34 @@ def _launch_updater_script(script_path: Path, install_dir: Path, *, elevate: boo
     import subprocess
 
     _append_update_log(install_dir, f"Ejecutando actualizador: {script_path.name} (elevate={elevate})")
+    script_str = str(script_path.resolve())
     if elevate and sys.platform.startswith("win"):
         import ctypes
 
-        # ShellExecuteW returns >32 on success.
+        # ShellExecuteW returns >32 on success. Comillas dobles para rutas con espacios.
         result = ctypes.windll.shell32.ShellExecuteW(
             None,
             "runas",
             "cmd.exe",
-            f'/c ""{script_path}""',
-            str(script_path.parent),
+            f'/c call "{script_str}"',
+            str(script_path.parent.resolve()),
             1,
         )
         if int(result) <= 32:
             raise PermissionError(_permission_denied_help(install_dir))
         return
 
+    creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0) | getattr(
+        subprocess, "CREATE_NO_WINDOW", 0
+    )
+    # CREATE_NO_WINDOW puede ocultar errores; usar NEW_CONSOLE para ver fallos.
     creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
     subprocess.Popen(
-        ["cmd.exe", "/c", str(script_path)],
+        ["cmd.exe", "/c", "call", script_str],
         cwd=str(install_dir),
         creationflags=creationflags,
         close_fds=True,
     )
-
 
 def delegate_pending_executable_update(install_dir: Path | None = None) -> bool:
     root = (install_dir or _install_dir()).resolve()
