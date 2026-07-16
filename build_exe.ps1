@@ -36,7 +36,8 @@ $args = @(
   "--onefile",
   "--noconsole",
   "--noupx",
-  "--runtime-tmpdir", ".",
+  # No usar --runtime-tmpdir ".": en Program Files el usuario no puede
+  # crear la carpeta temporal _MEI y falla con "Could not create temporary directory!".
   "--name", "FELPOS",
   "--add-data", "static;static"
 )

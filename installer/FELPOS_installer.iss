@@ -67,7 +67,7 @@ Name: "{group}\Diagnostico instalacion"; Filename: "{app}\Diagnostico_instalacio
 Name: "{autodesktop}\FEL POS"; Filename: "{app}\Iniciar_FELPOS.bat"; Tasks: desktopicon; WorkingDir: "{app}"
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Abrir FEL POS ahora"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Iniciar_FELPOS.bat"; Description: "Abrir FEL POS ahora"; Flags: nowait postinstall skipifsilent shellexec
 
 [Code]
 var
