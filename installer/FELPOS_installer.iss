@@ -40,6 +40,7 @@ Source: "staging\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\.env.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\LEEME_INSTALACION.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\Iniciar_FELPOS.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "staging\Iniciar_FELPOS.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\pre_update_backup.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\update_system_safe.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\Aplicar_actualizacion_pendiente.bat"; DestDir: "{app}"; Flags: ignoreversion
@@ -58,7 +59,7 @@ Name: "{app}\data\backups"; Permissions: users-full
 Name: "{app}\update_backups"; Permissions: users-full
 
 [Icons]
-Name: "{group}\FEL POS"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"
+Name: "{group}\FEL POS"; Filename: "{app}\Iniciar_FELPOS.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"
 Name: "{group}\Respaldo antes de actualizar"; Filename: "{app}\pre_update_backup.bat"; WorkingDir: "{app}"
 Name: "{group}\Actualizar sistema (seguro)"; Filename: "{app}\update_system_safe.bat"; WorkingDir: "{app}"
 Name: "{group}\Aplicar actualizacion pendiente"; Filename: "{app}\Aplicar_actualizacion_pendiente.bat"; WorkingDir: "{app}"
@@ -66,10 +67,10 @@ Name: "{group}\Reparar instalacion"; Filename: "{app}\Reparar_instalacion.bat"; 
 Name: "{group}\Limpiar actualizacion pendiente"; Filename: "{app}\Limpiar_actualizacion_pendiente.bat"; WorkingDir: "{app}"
 Name: "{group}\Diagnostico instalacion"; Filename: "{app}\Diagnostico_instalacion.bat"; WorkingDir: "{app}"
 Name: "{group}\Reparar permisos (actualizaciones)"; Filename: "{app}\Reparar_permisos_instalacion.bat"; WorkingDir: "{app}"
-Name: "{autodesktop}\FEL POS"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\FEL POS"; Filename: "{app}\Iniciar_FELPOS.vbs"; Tasks: desktopicon; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Abrir FEL POS ahora"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"
+Filename: "{app}\Iniciar_FELPOS.vbs"; Description: "Abrir FEL POS ahora"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"
 
 [Code]
 var

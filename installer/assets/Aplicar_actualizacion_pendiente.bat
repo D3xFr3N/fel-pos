@@ -87,8 +87,13 @@ exit /b 1
 echo Listo. La copia anterior queda en FELPOS.exe.old hasta el primer arranque OK.
 echo Reiniciando FELPOS...
 timeout /t 1 >nul
+if exist "Iniciar_FELPOS.vbs" goto start_vbs
 if exist "Iniciar_FELPOS.bat" goto start_bat
 start "" "!APP_DIR!\FELPOS.exe"
+goto end_ok
+
+:start_vbs
+start "" wscript //nologo "!APP_DIR!\Iniciar_FELPOS.vbs"
 goto end_ok
 
 :start_bat
