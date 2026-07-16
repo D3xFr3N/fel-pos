@@ -7,8 +7,11 @@ from sqlalchemy.orm import Session, joinedload
 from app.business_profiles import business_profile_label, normalize_business_profile
 from app.config import settings
 from app.services.printer_config_service import (
+    get_label_printer_config,
     get_receipt_printer_config,
+    print_label_test_page,
     print_receipt_test_page,
+    update_label_printer_config,
     update_receipt_printer_config,
 )
 from app.services.store_settings_service import (
@@ -38,6 +41,9 @@ from app.schemas import (
     EleventaImportOut,
     GenerateMissingBarcodesResponse,
     InventoryMovementOut,
+    LabelPrinterConfigOut,
+    LabelPrinterConfigUpdateIn,
+    LabelPrinterTestOut,
     LowStockReportOut,
     ProductCreate,
     ProductOut,
@@ -456,7 +462,7 @@ def generate_missing_barcodes(
 def generate_product_barcode(
     product_id: int,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_roles("admin", "user")),
 ):
     product = db.get(Product, product_id)
     if not product:
@@ -474,7 +480,7 @@ def print_product_barcode_labels(
     product_id: int,
     payload: BarcodeLabelPrintRequest,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_roles("admin", "user")),
 ):
     product = db.get(Product, product_id)
     if not product:
@@ -499,15 +505,19 @@ def print_product_barcode_labels(
         db.refresh(product)
 
     if payload.mode == "thermal":
-        printer_name = print_barcode_labels(
-            product_name=product.name,
-            barcode=barcode,
-            quantity=payload.quantity,
-            price=product.price if payload.include_price else None,
-            description=label_description if payload.include_description else None,
-        )
+        try:
+            printer_name = print_barcode_labels(
+                product_name=product.name,
+                barcode=barcode,
+                quantity=payload.quantity,
+                price=product.price if payload.include_price else None,
+                description=label_description if payload.include_description else None,
+                printer_name=payload.printer_name,
+            )
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return BarcodeLabelPrintResponse(
-            message=f"Se enviaron {payload.quantity} etiqueta(s) a la impresora.",
+            message=f"Se enviaron {payload.quantity} etiqueta(s) a {printer_name}.",
             printer_name=printer_name,
             quantity=payload.quantity,
             barcode=barcode,
@@ -855,6 +865,56 @@ def save_receipt_printer_config_route(
     )
     db.commit()
     return ReceiptPrinterConfigOut(**result)
+
+
+@config_router.get("/label-printer", response_model=LabelPrinterConfigOut)
+def get_label_printer_config_route(
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "user")),
+):
+    bootstrap_store_settings(db)
+    return LabelPrinterConfigOut(**get_label_printer_config())
+
+
+@config_router.put("/label-printer", response_model=LabelPrinterConfigOut)
+def save_label_printer_config_route(
+    payload: LabelPrinterConfigUpdateIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    bootstrap_store_settings(db)
+    try:
+        result = update_label_printer_config(printer_name=payload.printer_name)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar .env: {exc}") from exc
+
+    log_action(
+        db,
+        user_id=user.id,
+        action="label_printer_updated",
+        entity_type="printer_config",
+        entity_id=1,
+        details=f"printer={result.get('active_printer') or '-'}",
+    )
+    db.commit()
+    return LabelPrinterConfigOut(**result)
+
+
+@config_router.post("/label-printer/test", response_model=LabelPrinterTestOut)
+def test_label_printer_route(
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    bootstrap_store_settings(db)
+    try:
+        printer_name = print_label_test_page()
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return LabelPrinterTestOut(
+        ok=True,
+        message=f"Etiqueta de prueba enviada a {printer_name}.",
+        printer_name=printer_name,
+    )
 
 
 @config_router.post("/receipt-printer/test", response_model=ReceiptPrinterTestOut)

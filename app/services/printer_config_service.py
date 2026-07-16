@@ -317,3 +317,49 @@ def print_receipt_test_page(open_drawer: bool = False) -> str:
     finally:
         win32print.ClosePrinter(handle)
     return printer_name
+
+
+def _resolved_label_printer_name(override: str | None = None) -> str:
+    if override and override.strip():
+        return override.strip()
+    configured = (settings.label_printer_name or "").strip()
+    if configured:
+        return configured
+    receipt = (settings.receipt_printer_name or "").strip()
+    if receipt:
+        return receipt
+    _, default_printer = _list_windows_printers()
+    return default_printer
+
+
+def get_label_printer_config() -> dict:
+    printers, default_printer = _list_windows_printers()
+    configured = (settings.label_printer_name or "").strip()
+    active_printer = _resolved_label_printer_name()
+    return {
+        "printer_name": configured,
+        "default_printer": default_printer,
+        "available_printers": printers,
+        "active_printer": active_printer,
+        "platform_supported": sys.platform.startswith("win"),
+    }
+
+
+def update_label_printer_config(*, printer_name: str) -> dict:
+    normalized = (printer_name or "").strip()
+    settings.label_printer_name = normalized
+    _write_env_values({"LABEL_PRINTER_NAME": normalized})
+    return get_label_printer_config()
+
+
+def print_label_test_page(printer_name: str | None = None) -> str:
+    from app.services.label_service import print_barcode_labels
+
+    return print_barcode_labels(
+        product_name="FEL POS prueba",
+        barcode="FEL000001",
+        quantity=1,
+        price=1.0,
+        description="Etiqueta de prueba",
+        printer_name=printer_name,
+    )

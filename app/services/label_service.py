@@ -71,6 +71,7 @@ def print_barcode_labels(
     quantity: int = 1,
     price: float | None = None,
     description: str | None = None,
+    printer_name: str | None = None,
 ) -> str:
     try:
         import win32print  # type: ignore
@@ -79,11 +80,15 @@ def print_barcode_labels(
             "No se encontro pywin32. Instala dependencia para imprimir en Windows."
         ) from exc
 
-    printer_name = (settings.label_printer_name or "").strip()
-    if not printer_name:
-        printer_name = (settings.receipt_printer_name or "").strip() or win32print.GetDefaultPrinter()
-    if not printer_name:
-        raise RuntimeError("No hay impresora de etiquetas configurada.")
+    resolved = (printer_name or "").strip()
+    if not resolved:
+        resolved = (settings.label_printer_name or "").strip()
+    if not resolved:
+        resolved = (settings.receipt_printer_name or "").strip() or win32print.GetDefaultPrinter()
+    if not resolved:
+        raise RuntimeError(
+            "No hay impresora de etiquetas configurada. Ve a Configuracion y elige una."
+        )
 
     labels_qty = max(1, min(300, int(quantity or 1)))
     label_payload = build_label_payload(
@@ -94,7 +99,7 @@ def print_barcode_labels(
     )
     full_payload = label_payload * labels_qty
 
-    handle = win32print.OpenPrinter(printer_name)
+    handle = win32print.OpenPrinter(resolved)
     try:
         win32print.StartDocPrinter(handle, 1, ("FELPOS-LABEL", None, "RAW"))
         try:
@@ -106,4 +111,4 @@ def print_barcode_labels(
     finally:
         win32print.ClosePrinter(handle)
 
-    return printer_name
+    return resolved

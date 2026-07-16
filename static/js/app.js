@@ -23,6 +23,7 @@ const state = {
   backups: [],
   config: null,
   receiptPrinterConfig: null,
+  labelPrinterConfig: null,
   systemConfig: null,
   notificationConfig: null,
   scannerBridgeConfig: null,
@@ -1928,7 +1929,7 @@ async function openBarcodeLabelDialog(productId) {
   let product = state.products.find((item) => Number(item.id) === Number(productId));
   if (!product) return;
 
-  if (!getProductBarcodeValue(product)) {
+  if (!product.barcode) {
     const confirmed = confirm(
       `El producto ${product.name} no tiene codigo de barras. Deseas generarlo automaticamente ahora?`
     );
@@ -1938,17 +1939,54 @@ async function openBarcodeLabelDialog(productId) {
     product = generated;
   }
 
+  if (!state.labelPrinterConfig) {
+    try {
+      state.labelPrinterConfig = await api("/api/config/label-printer");
+    } catch (_error) {
+      state.labelPrinterConfig = null;
+    }
+  }
+
   state.barcodeLabelProductId = product.id;
   const dialog = document.getElementById("barcode-label-dialog");
   const productNameEl = document.getElementById("barcode-label-product-name");
   const codeEl = document.getElementById("barcode-label-current-code");
   const descriptionEl = document.getElementById("barcode-label-description");
   const qtyInput = document.getElementById("barcode-label-quantity");
+  const generateBtn = document.getElementById("barcode-label-generate-btn");
+  const printerSelect = document.getElementById("barcode-label-printer");
+  const printModeSelect = document.getElementById("barcode-label-print-mode");
   if (productNameEl) productNameEl.textContent = `Producto: ${product.name}`;
   if (codeEl) codeEl.textContent = `Codigo: ${getProductBarcodeValue(product)}`;
   if (descriptionEl) descriptionEl.value = product.description || "";
   if (qtyInput) qtyInput.value = "1";
+  if (generateBtn) generateBtn.hidden = Boolean(product.barcode);
+
+  if (printerSelect) {
+    const cfg = state.labelPrinterConfig || {};
+    const printers = cfg.available_printers || [];
+    const selected = cfg.printer_name || "";
+    printerSelect.innerHTML = [
+      `<option value="">Usar configurada (${escapeHtml(cfg.active_printer || "predeterminada")})</option>`,
+      ...printers.map(
+        (name) =>
+          `<option value="${escapeHtml(name)}" ${name === selected ? "selected" : ""}>${escapeHtml(name)}</option>`
+      ),
+    ].join("");
+  }
+  if (printModeSelect) {
+    printModeSelect.value = state.labelPrinterConfig?.printer_name || state.labelPrinterConfig?.active_printer
+      ? "thermal"
+      : "browser";
+  }
+  syncBarcodeLabelPrinterVisibility();
   dialog?.showModal();
+}
+
+function syncBarcodeLabelPrinterVisibility() {
+  const printMode = document.getElementById("barcode-label-print-mode")?.value;
+  const wrap = document.getElementById("barcode-label-printer-wrap");
+  if (wrap) wrap.hidden = printMode !== "thermal";
 }
 
 function printBarcodeLabels(product, quantity, widthMm, heightMm, options = {}) {
@@ -2044,14 +2082,20 @@ function submitBarcodeLabelForm(event) {
   const quantity = Number(form.quantity.value || 1);
   const widthMm = Number(form.width_mm.value || 50);
   const heightMm = Number(form.height_mm.value || 30);
-  const printMode = form.print_mode?.value === "thermal" ? "thermal" : "browser";
+  const printMode = form.print_mode?.value === "browser" ? "browser" : "thermal";
   const includePrice = Boolean(form.include_price?.checked);
   const includeDescription = Boolean(form.include_description?.checked);
   const description = (form.description?.value || "").trim();
+  const printerName = (form.printer_name?.value || "").trim() || null;
   const run = async () => {
     let workingProduct = product;
+    if (!workingProduct.barcode) {
+      const generated = await generateProductBarcode(workingProduct.id, { notify: false });
+      if (!generated) return;
+      workingProduct = generated;
+    }
     if (description !== (product.description || "").trim()) {
-      workingProduct = await saveProductDescription(product.id, description);
+      workingProduct = await saveProductDescription(workingProduct.id, description);
       renderProductsTable();
     }
     if (printMode === "thermal") {
@@ -2065,6 +2109,7 @@ function submitBarcodeLabelForm(event) {
           mode: "thermal",
           width_mm: widthMm,
           height_mm: heightMm,
+          printer_name: printerName,
         }),
       });
       alert(result.message || "Etiquetas enviadas a impresora.");
@@ -3207,12 +3252,12 @@ function renderProductsTable() {
                   ? `<td>
                       ${canEdit ? `<button class="btn ghost edit-product-btn" data-product-id="${row.product_id}">Editar</button>` : ""}
                       ${
-                        canEdit && !productById.get(Number(row.product_id))?.barcode
+                        (canEdit || canStockEntry) && !productById.get(Number(row.product_id))?.barcode
                           ? `<button class="btn ghost generate-barcode-btn" data-product-id="${row.product_id}">Generar CB</button>`
                           : ""
                       }
                       ${
-                        canEdit
+                        canEdit || canStockEntry
                           ? `<button class="btn ghost print-labels-btn" data-product-id="${row.product_id}">Etiquetas</button>`
                           : ""
                       }
@@ -3284,8 +3329,16 @@ function renderProductsTable() {
                 canEdit || canStockEntry
                   ? `<td>
                       ${canEdit ? `<button class="btn ghost edit-product-btn" data-product-id="${product.id}">Editar</button>` : ""}
-                      ${canEdit && !product.barcode ? `<button class="btn ghost generate-barcode-btn" data-product-id="${product.id}">Generar CB</button>` : ""}
-                      ${canEdit ? `<button class="btn ghost print-labels-btn" data-product-id="${product.id}">Etiquetas</button>` : ""}
+                      ${
+                        (canEdit || canStockEntry) && !product.barcode
+                          ? `<button class="btn ghost generate-barcode-btn" data-product-id="${product.id}">Generar CB</button>`
+                          : ""
+                      }
+                      ${
+                        canEdit || canStockEntry
+                          ? `<button class="btn ghost print-labels-btn" data-product-id="${product.id}">Etiquetas</button>`
+                          : ""
+                      }
                       ${
                         canStockEntry && product.tracks_inventory !== 0
                           ? `<button class="btn ghost stock-entry-btn" data-product-id="${product.id}" data-product-name="${product.name}">Ingreso</button>`
@@ -3315,7 +3368,7 @@ function renderProductsTable() {
       );
     });
   }
-  if (canEdit) {
+  if (canEdit || canStockEntry) {
     container.querySelectorAll(".generate-barcode-btn").forEach((button) => {
       button.addEventListener("click", async () => {
         await generateProductBarcode(Number(button.dataset.productId));
@@ -4913,6 +4966,47 @@ function renderReceiptPrinterSection() {
   `;
 }
 
+function renderLabelPrinterSection() {
+  const cfg = state.labelPrinterConfig || {
+    printer_name: "",
+    default_printer: "",
+    available_printers: [],
+    active_printer: "",
+    platform_supported: true,
+  };
+  const defaultPrinter = cfg.default_printer || "ninguna detectada";
+  const activePrinter = cfg.active_printer || defaultPrinter;
+  const printerOptions = (cfg.available_printers || [])
+    .map((name) => {
+      const selected = cfg.printer_name === name ? "selected" : "";
+      return `<option value="${escapeHtml(name)}" ${selected}>${escapeHtml(name)}</option>`;
+    })
+    .join("");
+  return `
+    <h3 style="margin: 0.2rem 0 0;">Impresora de etiquetas</h3>
+    <p class="hint">
+      Elige la impresora para codigos de barras. En Productos usa <strong>Generar CB</strong> y <strong>Etiquetas</strong>.
+    </p>
+    <div class="row"><span>Impresora activa</span><strong>${escapeHtml(activePrinter)}</strong></div>
+    <form id="label-printer-form">
+      <label>
+        Impresora de etiquetas
+        <select name="printer_name" ${cfg.platform_supported ? "" : "disabled"}>
+          <option value="" ${!cfg.printer_name ? "selected" : ""}>
+            Predeterminada / tickets (${escapeHtml(defaultPrinter)})
+          </option>
+          ${printerOptions}
+        </select>
+      </label>
+      <div class="panel-actions">
+        <button class="btn primary" type="submit">Guardar impresora de etiquetas</button>
+        <button id="test-label-printer-btn" class="btn ghost" type="button">Imprimir etiqueta prueba</button>
+      </div>
+    </form>
+    <hr style="border-color: var(--border); width: 100%;">
+  `;
+}
+
 function renderConfig() {
   const card = document.getElementById("config-card");
   if (!state.config) return;
@@ -5044,6 +5138,7 @@ function renderConfig() {
     </p>
     <hr style="border-color: var(--border); width: 100%;">
     ${renderReceiptPrinterSection()}
+    ${renderLabelPrinterSection()}
     <div class="row"><span>Empresa activa</span><strong>${escapeHtml(cfg.nombre_comercial)}</strong></div>
     <div class="row"><span>NIT activo</span><strong>${escapeHtml(cfg.nit)}</strong></div>
     <div class="row"><span>Tipo de tienda</span><strong>${profileLabel}</strong></div>
@@ -5301,6 +5396,30 @@ function renderConfig() {
     try {
       const result = await api("/api/config/receipt-printer/test", { method: "POST" });
       alert(result?.message || "Ticket de prueba enviado.");
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.getElementById("label-printer-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    try {
+      state.labelPrinterConfig = await api("/api/config/label-printer", {
+        method: "PUT",
+        body: JSON.stringify({ printer_name: form.printer_name.value || "" }),
+      });
+      renderConfig();
+      alert("Impresora de etiquetas guardada.");
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.getElementById("test-label-printer-btn")?.addEventListener("click", async () => {
+    try {
+      const result = await api("/api/config/label-printer/test", { method: "POST" });
+      alert(result?.message || "Etiqueta de prueba enviada.");
     } catch (error) {
       alert(error.message);
     }
@@ -5743,6 +5862,7 @@ async function loadData() {
   const receiptPrinterPromise = isAdmin
     ? api("/api/config/receipt-printer").catch(() => null)
     : Promise.resolve(null);
+  const labelPrinterPromise = api("/api/config/label-printer").catch(() => null);
   const systemConfigPromise = isAdmin ? api("/api/config/system").catch(() => null) : Promise.resolve(null);
   const notificationConfigPromise = isAdmin
     ? api("/api/config/notifications").catch(() => null)
@@ -5778,6 +5898,7 @@ async function loadData() {
     branches,
     updateInfo,
     receiptPrinterConfig,
+    labelPrinterConfig,
     systemConfig,
     notificationConfig,
     scannerBridgeConfig,
@@ -5809,6 +5930,7 @@ async function loadData() {
     branchesPromise,
     updateCheckPromise,
     receiptPrinterPromise,
+    labelPrinterPromise,
     systemConfigPromise,
     notificationConfigPromise,
     scannerBridgeConfigPromise,
@@ -5843,6 +5965,7 @@ async function loadData() {
   state.branches = branches;
   state.updateInfo = updateInfo;
   state.receiptPrinterConfig = receiptPrinterConfig;
+  state.labelPrinterConfig = labelPrinterConfig;
   state.systemConfig = systemConfig;
   state.notificationConfig = notificationConfig;
   state.scannerBridgeConfig = scannerBridgeConfig;
@@ -7785,6 +7908,17 @@ function setupEvents() {
     barcodeLabelDialog?.close();
   });
   document.getElementById("barcode-label-form")?.addEventListener("submit", submitBarcodeLabelForm);
+  document.getElementById("barcode-label-print-mode")?.addEventListener("change", syncBarcodeLabelPrinterVisibility);
+  document.getElementById("barcode-label-generate-btn")?.addEventListener("click", async () => {
+    if (!state.barcodeLabelProductId) return;
+    const updated = await generateProductBarcode(state.barcodeLabelProductId, { notify: true });
+    if (!updated) return;
+    const codeEl = document.getElementById("barcode-label-current-code");
+    const generateBtn = document.getElementById("barcode-label-generate-btn");
+    if (codeEl) codeEl.textContent = `Codigo: ${getProductBarcodeValue(updated)}`;
+    if (generateBtn) generateBtn.hidden = true;
+    renderProductsTable();
+  });
   barcodeLabelDialog?.addEventListener("close", () => {
     state.barcodeLabelProductId = null;
   });

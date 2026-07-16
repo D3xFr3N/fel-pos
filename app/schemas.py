@@ -87,6 +87,7 @@ class BarcodeLabelPrintRequest(BaseModel):
     mode: Literal["browser", "thermal"] = "browser"
     width_mm: int = Field(default=50, ge=20, le=120)
     height_mm: int = Field(default=30, ge=15, le=80)
+    printer_name: str | None = Field(default=None, max_length=200)
 
 
 class BarcodeLabelPrintResponse(BaseModel):
@@ -94,6 +95,24 @@ class BarcodeLabelPrintResponse(BaseModel):
     printer_name: str | None = None
     quantity: int
     barcode: str
+
+
+class LabelPrinterConfigOut(BaseModel):
+    printer_name: str = ""
+    default_printer: str = ""
+    available_printers: list[str] = Field(default_factory=list)
+    active_printer: str = ""
+    platform_supported: bool = True
+
+
+class LabelPrinterConfigUpdateIn(BaseModel):
+    printer_name: str = Field(default="", max_length=200)
+
+
+class LabelPrinterTestOut(BaseModel):
+    ok: bool = True
+    message: str
+    printer_name: str = ""
 
 
 class DepartmentBase(BaseModel):

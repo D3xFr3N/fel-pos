@@ -371,6 +371,7 @@
       <h3>Imprimir etiquetas de codigo de barras</h3>
       <p id="barcode-label-product-name" class="hint">Producto</p>
       <p id="barcode-label-current-code" class="hint">Codigo</p>
+      <button type="button" class="btn ghost" id="barcode-label-generate-btn" hidden>Generar codigo ahora</button>
       <label>
         Descripcion del producto
         <textarea id="barcode-label-description" name="description" rows="2" placeholder="Describe el producto para identificarlo al asignar codigo"></textarea>
@@ -397,8 +398,14 @@
       <label>
         Modo de impresion
         <select id="barcode-label-print-mode" name="print_mode">
-          <option value="browser" selected>Navegador (seleccionar impresora)</option>
-          <option value="thermal">Directo impresora termica etiquetas</option>
+          <option value="thermal" selected>Impresora de etiquetas (directo)</option>
+          <option value="browser">Navegador (elegir impresora al imprimir)</option>
+        </select>
+      </label>
+      <label id="barcode-label-printer-wrap">
+        Impresora de etiquetas
+        <select id="barcode-label-printer" name="printer_name">
+          <option value="">Usar configurada / predeterminada</option>
         </select>
       </label>
       <label class="inline-option">
@@ -406,10 +413,10 @@
         Incluir descripcion en etiqueta
       </label>
       <label class="inline-option">
-        <input id="barcode-label-include-price" name="include_price" type="checkbox">
-        Incluir precio en etiqueta termica
+        <input id="barcode-label-include-price" name="include_price" type="checkbox" checked>
+        Incluir precio en etiqueta
       </label>
-      <p class="hint">En modo navegador, selecciona tu impresora de etiquetas al imprimir.</p>
+      <p class="hint">Configura la impresora en Configuracion, o eligela aqui. Si no tienes termica de etiquetas, usa modo Navegador.</p>
       <div class="dialog-actions">
         <button type="button" class="btn ghost" id="close-barcode-label-dialog">Cancelar</button>
         <button type="submit" class="btn primary">Imprimir etiquetas</button>
