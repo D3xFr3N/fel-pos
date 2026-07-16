@@ -1,7 +1,7 @@
 {
-    "version":  "0.3.50",
-    "build_date":  "2026-07-16 11:51:04",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.50/felpos-update-0.3.50.zip",
-    "sha256":  "239c953325918f6bd4745d286e60733b4d3a19a7a3c40ca0d6d37b7aca142146",
-    "release_notes":  "IVA incluido: el precio de venta ya incluye IVA. Un producto a Q20 se cobra Q20 (antes sumaba el 12% encima).\r\n\r\nEl ticket muestra Subtotal + IVA como desglose, no como cargo extra. FEL usa el mismo modelo."
+    "version":  "0.3.51",
+    "build_date":  "2026-07-16 12:04:55",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.51/felpos-update-0.3.51.zip",
+    "sha256":  "b6a7cca9c72397650a9fb1dfd3c1af270f0a28a8a6357fadc22958c91e8586b5",
+    "release_notes":  "Descuento visible: si la venta lleva descuento, ahora aparece en el ticket en pantalla, recibo impreso, detalle e historial de ventas y en el XML FEL (Subtotal, Descuento, IVA incluido, Total).\r\n\r\nEl descuento se limpia automaticamente al terminar o cancelar la venta."
 }
