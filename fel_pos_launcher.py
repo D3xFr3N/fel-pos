@@ -128,6 +128,16 @@ def _apply_pending_update_if_needed(runtime_root: Path) -> None:
 def main() -> None:
     runtime_root = _runtime_root()
     os.chdir(runtime_root)
+
+    # Carpeta temporal writable (Program Files no sirve para unpack de PyInstaller).
+    runtime_tmp = Path(os.environ.get("LOCALAPPDATA") or "") / "FEL POS" / "tmp"
+    try:
+        runtime_tmp.mkdir(parents=True, exist_ok=True)
+        os.environ["TEMP"] = str(runtime_tmp)
+        os.environ["TMP"] = str(runtime_tmp)
+    except OSError:
+        pass
+
     _apply_pending_update_if_needed(runtime_root)
     mode = _resolve_mode()
     bind_host = _resolve_bind_host(mode)
@@ -148,6 +158,14 @@ def main() -> None:
             except Exception:
                 pass
         raise
+
+    # Arranque OK: ya se puede descartar la copia anterior del EXE.
+    try:
+        from app.services.update_service import cleanup_previous_exe_backup
+
+        cleanup_previous_exe_backup(runtime_root)
+    except Exception:
+        pass
 
     if mode == "server":
         _run_server_mode(fastapi_app=fastapi_app, bind_host=bind_host, port=port)

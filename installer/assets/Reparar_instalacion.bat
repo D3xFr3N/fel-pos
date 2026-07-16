@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 pushd "%~dp0" 2>nul
 if errorlevel 1 (
   echo ERROR: No se puede acceder a la carpeta de instalacion.
@@ -19,19 +19,53 @@ echo ========================================
 echo Carpeta: %CD%
 echo.
 
-if exist "FELPOS.exe" (
-  echo [OK] FELPOS.exe encontrado.
-  if exist "FELPOS.exe.pending" (
-    echo Limpiando actualizacion pendiente obsoleta...
+set "FELPOS_RUNTIME_TMP=%LOCALAPPDATA%\FEL POS\tmp"
+if not exist "%FELPOS_RUNTIME_TMP%" mkdir "%FELPOS_RUNTIME_TMP%" >nul 2>&1
+if exist "%FELPOS_RUNTIME_TMP%" (
+  set "TEMP=%FELPOS_RUNTIME_TMP%"
+  set "TMP=%FELPOS_RUNTIME_TMP%"
+)
+
+echo Limpiando carpetas temporales de arranque...
+for /d %%D in ("%~dp0_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
+for /d %%D in ("%TEMP%\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
+for /d %%D in ("%LOCALAPPDATA%\FEL POS\tmp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
+
+if exist "FELPOS.exe.pending" (
+  set "PENDING_SIZE=0"
+  for %%I in ("FELPOS.exe.pending") do set "PENDING_SIZE=%%~zI"
+  if !PENDING_SIZE! LSS 5000000 (
+    echo Eliminando actualizacion pendiente incompleta...
     del /F /Q "FELPOS.exe.pending" >nul 2>&1
-    del /F /Q "FELPOS.exe.old" >nul 2>&1
-    del /F /Q "VERSION.pending" >nul 2>&1
-    del /F /Q "BUILD_DATE.pending" >nul 2>&1
-    del /F /Q "pending_update.json" >nul 2>&1
-    del /F /Q "apply_pending_update.bat" >nul 2>&1
   )
-  echo Limpiando archivos temporales de arranque...
-  for /d %%D in ("%~dp0_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
+)
+
+if exist "FELPOS.exe" (
+  set "EXE_SIZE=0"
+  for %%I in ("FELPOS.exe") do set "EXE_SIZE=%%~zI"
+  if !EXE_SIZE! LSS 5000000 (
+    echo FELPOS.exe parece danado ^(!EXE_SIZE! bytes^).
+    if exist "FELPOS.exe.old" (
+      echo Restaurando FELPOS.exe.old ...
+      del /F /Q "FELPOS.exe" >nul 2>&1
+      ren "FELPOS.exe.old" "FELPOS.exe"
+    ) else (
+      echo No hay FELPOS.exe.old. Debes reinstalar con FELPOS_Setup.exe
+      popd
+      pause
+      exit /b 1
+    )
+  ) else (
+    echo [OK] FELPOS.exe encontrado.
+    if exist "FELPOS.exe.pending" (
+      echo Limpiando actualizacion pendiente obsoleta...
+      del /F /Q "FELPOS.exe.pending" >nul 2>&1
+      del /F /Q "VERSION.pending" >nul 2>&1
+      del /F /Q "BUILD_DATE.pending" >nul 2>&1
+      del /F /Q "pending_update.json" >nul 2>&1
+      del /F /Q "apply_pending_update.bat" >nul 2>&1
+    )
+  )
   goto launch
 )
 
@@ -57,7 +91,8 @@ if exist "FELPOS.exe.old" (
 if not exist "FELPOS.exe" (
   echo.
   echo ERROR: No hay FELPOS.exe en esta carpeta.
-  echo Reinstala en C:\FELPOS con FELPOS_Setup.exe
+  echo Reinstala con FELPOS_Setup.exe desde:
+  echo   https://github.com/D3xFr3N/fel-pos/releases
   echo.
   popd
   pause
@@ -66,7 +101,11 @@ if not exist "FELPOS.exe" (
 
 :launch
 echo Iniciando FEL POS...
-start "" "%~dp0FELPOS.exe"
+if exist "Iniciar_FELPOS.bat" (
+  start "" "%~dp0Iniciar_FELPOS.bat"
+) else (
+  start "" "%~dp0FELPOS.exe"
+)
 echo.
 popd
 pause

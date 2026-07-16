@@ -32,7 +32,8 @@ UPDATE_SUPPORT_FILES = (
     "Diagnostico_instalacion.bat",
     "Reparar_permisos_instalacion.bat",
 )
-HTTP_TIMEOUT_SECONDS = 45
+HTTP_TIMEOUT_SECONDS = 180
+MIN_EXE_BYTES = 5 * 1024 * 1024
 
 
 @dataclass
@@ -160,9 +161,21 @@ def _download_file(url: str, target: Path) -> None:
     with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
         with client.stream("GET", url) as response:
             response.raise_for_status()
+            expected_header = response.headers.get("content-length")
+            expected = int(expected_header) if expected_header and expected_header.isdigit() else None
+            written = 0
             with target.open("wb") as handle:
                 for chunk in response.iter_bytes():
+                    if not chunk:
+                        continue
                     handle.write(chunk)
+                    written += len(chunk)
+            if written <= 0:
+                raise ValueError("La descarga de la actualizacion quedo vacia.")
+            if expected is not None and written != expected:
+                raise ValueError(
+                    f"Descarga incompleta de actualizacion ({written} / {expected} bytes)."
+                )
 
 
 def _extract_update_zip(zip_path: Path, extract_dir: Path) -> dict[str, Path]:
@@ -262,7 +275,6 @@ def clear_pending_update_artifacts(install_dir: Path | None = None) -> list[str]
     removed: list[str] = []
     for name in (
         "FELPOS.exe.pending",
-        "FELPOS.exe.old",
         "VERSION.pending",
         "BUILD_DATE.pending",
         PENDING_UPDATE_META,
@@ -279,6 +291,20 @@ def clear_pending_update_artifacts(install_dir: Path | None = None) -> list[str]
     if removed:
         _append_update_log(root, f"Archivos de actualizacion limpiados: {', '.join(removed)}")
     return removed
+
+
+def cleanup_previous_exe_backup(install_dir: Path | None = None) -> bool:
+    """Elimina FELPOS.exe.old solo despues de un arranque exitoso."""
+    root = (install_dir or _install_dir()).resolve()
+    old_exe = root / "FELPOS.exe.old"
+    if not old_exe.exists():
+        return False
+    try:
+        old_exe.unlink()
+        _append_update_log(root, "Copia anterior FELPOS.exe.old eliminada tras arranque OK.")
+        return True
+    except OSError:
+        return False
 
 
 def cleanup_stale_pending_update(install_dir: Path | None = None) -> list[str]:
@@ -386,6 +412,7 @@ def _write_restart_script(
     *,
     stage_dir: Path | None = None,
     require_elevation: bool = False,
+    expected_exe_bytes: int | None = None,
 ) -> Path:
     if require_elevation and stage_dir is not None:
         script_path = stage_dir / PENDING_UPDATE_SCRIPT
@@ -395,12 +422,19 @@ def _write_restart_script(
     log_name = PENDING_UPDATE_LOG
     install_quoted = str(install_dir)
     stage_quoted = str(stage_dir) if stage_dir else ""
+    min_exe_bytes = max(MIN_EXE_BYTES, int(expected_exe_bytes or 0) // 2)
 
     lines = [
         "@echo off",
-        "setlocal EnableExtensions",
+        "setlocal EnableExtensions EnableDelayedExpansion",
         f'set "INSTALL_DIR={install_quoted}"',
         f'set "STAGE_DIR={stage_quoted}"',
+        'set "FELPOS_RUNTIME_TMP=%LOCALAPPDATA%\\FEL POS\\tmp"',
+        'if not exist "%FELPOS_RUNTIME_TMP%" mkdir "%FELPOS_RUNTIME_TMP%" >nul 2>&1',
+        'if exist "%FELPOS_RUNTIME_TMP%" (',
+        '  set "TEMP=%FELPOS_RUNTIME_TMP%"',
+        '  set "TMP=%FELPOS_RUNTIME_TMP%"',
+        ")",
         'pushd "%INSTALL_DIR%"',
         f'echo [%date% %time%] Iniciando actualizacion >> "{log_name}"',
         "set /a tries=0",
@@ -426,7 +460,11 @@ def _write_restart_script(
             lines.extend(
                 [
                     f'if exist "%STAGE_DIR%\\{pending_name}" (',
-                    f'  copy /Y "%STAGE_DIR%\\{pending_name}" "{pending_name}" >nul',
+                    f'  copy /Y "%STAGE_DIR%\\{pending_name}" "{pending_name}"',
+                    "  if errorlevel 1 (",
+                    f'    echo [%date% %time%] ERROR copiando {pending_name} desde staging >> "{log_name}"',
+                    "    goto fail_restore",
+                    "  )",
                     ")",
                 ]
             )
@@ -435,41 +473,51 @@ def _write_restart_script(
             lines.extend(
                 [
                     f'if exist "%STAGE_DIR%\\{pending_name}" (',
-                    f'  copy /Y "%STAGE_DIR%\\{pending_name}" "{file_name}" >nul',
-                    ")",
-                ]
-            )
-
-    for file_name in UPDATE_FILES:
-        pending_name = f"{file_name}.pending"
-        backup_name = f"{file_name}.old"
-        if file_name == "FELPOS.exe":
-            lines.extend(
-                [
-                    f'if exist "{pending_name}" (',
-                    f'  echo [%date% %time%] Reemplazando {file_name} >> "{log_name}"',
-                    f'  if exist "{backup_name}" del /F /Q "{backup_name}" >nul 2>&1',
-                    f'  if exist "{file_name}" ren "{file_name}" "{backup_name}"',
-                    f'  ren "{pending_name}" "{file_name}"',
+                    f'  copy /Y "%STAGE_DIR%\\{pending_name}" "{file_name}"',
                     "  if errorlevel 1 (",
-                    f'    echo [%date% %time%] ERROR al reemplazar {file_name} >> "{log_name}"',
-                    f'    if exist "{backup_name}" ren "{backup_name}" "{file_name}"',
-                    "  ) else (",
-                    f'    if exist "{backup_name}" del /F /Q "{backup_name}" >nul 2>&1',
-                    f'    echo [%date% %time%] {file_name} actualizado >> "{log_name}"',
+                    f'    echo [%date% %time%] AVISO: no se pudo copiar {file_name} >> "{log_name}"',
                     "  )",
                     ")",
                 ]
             )
-        else:
-            lines.extend(
-                [
-                    f'if exist "{pending_name}" (',
-                    f'  move /Y "{pending_name}" "{file_name}" >nul',
-                    f'  echo [%date% %time%] {file_name} actualizado >> "{log_name}"',
-                    ")",
-                ]
-            )
+
+    lines.extend(
+        [
+            'if not exist "FELPOS.exe.pending" (',
+            f'  echo [%date% %time%] ERROR: falta FELPOS.exe.pending >> "{log_name}"',
+            "  goto fail_restore",
+            ")",
+            'set "PENDING_SIZE=0"',
+            'for %%I in ("FELPOS.exe.pending") do set "PENDING_SIZE=%%~zI"',
+            f'if !PENDING_SIZE! LSS {min_exe_bytes} (',
+            f'  echo [%date% %time%] ERROR: FELPOS.exe.pending incompleto ^(!PENDING_SIZE! bytes^) >> "{log_name}"',
+            '  del /F /Q "FELPOS.exe.pending" >nul 2>&1',
+            "  goto fail_restore",
+            ")",
+            f'echo [%date% %time%] Reemplazando FELPOS.exe ^(!PENDING_SIZE! bytes^) >> "{log_name}"',
+            'if exist "FELPOS.exe.old" del /F /Q "FELPOS.exe.old" >nul 2>&1',
+            'if exist "FELPOS.exe" ren "FELPOS.exe" "FELPOS.exe.old"',
+            'ren "FELPOS.exe.pending" "FELPOS.exe"',
+            "if errorlevel 1 (",
+            f'  echo [%date% %time%] ERROR al reemplazar FELPOS.exe >> "{log_name}"',
+            "  goto fail_restore",
+            ")",
+            f'echo [%date% %time%] FELPOS.exe actualizado >> "{log_name}"',
+        ]
+    )
+
+    for file_name in UPDATE_FILES:
+        if file_name == "FELPOS.exe":
+            continue
+        pending_name = f"{file_name}.pending"
+        lines.extend(
+            [
+                f'if exist "{pending_name}" (',
+                f'  move /Y "{pending_name}" "{file_name}" >nul',
+                f'  echo [%date% %time%] {file_name} actualizado >> "{log_name}"',
+                ")",
+            ]
+        )
 
     lines.extend(
         [
@@ -477,14 +525,31 @@ def _write_restart_script(
             f'echo [%date% %time%] Reiniciando FEL POS >> "{log_name}"',
             'if not exist "FELPOS.exe" (',
             f'  echo [%date% %time%] ERROR: FELPOS.exe no existe despues de actualizar >> "{log_name}"',
-            "  popd",
-            "  endlocal",
-            "  exit /b 1",
+            "  goto fail_restore",
             ")",
-            'start "" "%INSTALL_DIR%\\FELPOS.exe"',
+            "timeout /t 1 >nul",
+            'if exist "Iniciar_FELPOS.bat" (',
+            '  start "" "%INSTALL_DIR%\\Iniciar_FELPOS.bat"',
+            ") else (",
+            '  start "" "%INSTALL_DIR%\\FELPOS.exe"',
+            ")",
             "popd",
             'del /F /Q "%~f0" >nul 2>&1',
             "endlocal",
+            "exit /b 0",
+            ":fail_restore",
+            'if not exist "FELPOS.exe" if exist "FELPOS.exe.old" ren "FELPOS.exe.old" "FELPOS.exe"',
+            f'echo [%date% %time%] Actualizacion abortada; se conserva/restaura EXE anterior >> "{log_name}"',
+            'if exist "FELPOS.exe" (',
+            '  if exist "Iniciar_FELPOS.bat" (',
+            '    start "" "%INSTALL_DIR%\\Iniciar_FELPOS.bat"',
+            "  ) else (",
+            '    start "" "%INSTALL_DIR%\\FELPOS.exe"',
+            "  )",
+            ")",
+            "popd",
+            "endlocal",
+            "exit /b 1",
         ]
     )
     script_path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
@@ -579,11 +644,19 @@ def prepare_update_apply() -> dict:
                 raise ValueError("La actualizacion descargada no coincide con el hash de seguridad.")
 
         extracted = _extract_update_zip(zip_path, extract_dir)
+        exe_source = extracted["FELPOS.exe"]
+        exe_size = exe_source.stat().st_size
+        if exe_size < MIN_EXE_BYTES:
+            raise ValueError(
+                f"El FELPOS.exe del paquete parece incompleto ({exe_size} bytes)."
+            )
         staged_files: list[str] = []
         try:
             for file_name, source_path in extracted.items():
                 pending_target = stage_dir / f"{file_name}.pending"
                 shutil.copy2(source_path, pending_target)
+                if file_name == "FELPOS.exe" and pending_target.stat().st_size != exe_size:
+                    raise ValueError("No se pudo copiar FELPOS.exe completo a la carpeta temporal.")
                 staged_files.append(file_name)
             if can_write_install:
                 staged_files.extend(_stage_support_files(install_dir, extract_dir))
@@ -607,6 +680,7 @@ def prepare_update_apply() -> dict:
             "backup_name": backup.get("name"),
             "stage_dir": str(stage_dir),
             "requires_elevation": not can_write_install,
+            "expected_exe_bytes": exe_size,
         }
         meta_path = (install_dir if can_write_install else stage_dir) / PENDING_UPDATE_META
         try:
@@ -618,6 +692,7 @@ def prepare_update_apply() -> dict:
             install_dir,
             stage_dir=None if can_write_install else stage_dir,
             require_elevation=not can_write_install,
+            expected_exe_bytes=exe_size,
         )
         _append_update_log(
             install_dir,
