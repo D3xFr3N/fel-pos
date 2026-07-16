@@ -103,16 +103,36 @@
 
             <div class="totals">
               <div><span>Subtotal</span><strong id="subtotal">Q 0.00</strong></div>
-              <div><span>Descuento ticket</span><strong id="cart-discount-display">Q 0.00</strong></div>
+              <div class="totals-discount" id="totals-discount-row">
+                <span>Descuento</span>
+                <strong id="cart-discount-display">Q 0.00</strong>
+              </div>
               <div><span>IVA</span><strong id="tax-total">Q 0.00</strong></div>
               <div class="grand"><span>Total</span><strong id="grand-total">Q 0.00</strong></div>
             </div>
 
-            <div class="payment-row">
-              <label>
-                Descuento ticket (Q)
-                <input id="cart-discount-input" type="number" step="0.01" min="0" value="0">
+            <div class="discount-panel" id="discount-panel">
+              <div class="discount-panel-header">
+                <div>
+                  <strong>Descuento del ticket</strong>
+                  <small>Aplica un monto fijo sobre la venta actual</small>
+                </div>
+                <span class="discount-badge" id="discount-badge">Sin descuento</span>
+              </div>
+              <label class="discount-input-wrap">
+                <span class="discount-currency">Q</span>
+                <input id="cart-discount-input" type="number" step="0.01" min="0" value="0" placeholder="0.00" aria-label="Descuento del ticket en quetzales">
               </label>
+              <div class="discount-quick" id="discount-quick">
+                <button type="button" class="discount-chip" data-discount="5">Q 5</button>
+                <button type="button" class="discount-chip" data-discount="10">Q 10</button>
+                <button type="button" class="discount-chip" data-discount="20">Q 20</button>
+                <button type="button" class="discount-chip" data-discount="50">Q 50</button>
+                <button type="button" class="discount-chip discount-chip-clear" data-discount="0">Quitar</button>
+              </div>
+            </div>
+
+            <div class="payment-row">
               <label>
                 Pago
                 <select id="payment-method">

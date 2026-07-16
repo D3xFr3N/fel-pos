@@ -1468,11 +1468,29 @@ function renderCart() {
 
 function renderTotals() {
   const totals = calcTotals(state.cart);
+  const discountAmount = Number(totals.cartDiscount || 0);
   document.getElementById("subtotal").textContent = money(totals.subtotal);
   const discountEl = document.getElementById("cart-discount-display");
-  if (discountEl) discountEl.textContent = money(totals.cartDiscount || 0);
+  if (discountEl) discountEl.textContent = money(discountAmount);
   document.getElementById("tax-total").textContent = money(totals.taxTotal);
   document.getElementById("grand-total").textContent = money(totals.total);
+
+  const discountRow = document.getElementById("totals-discount-row");
+  const discountPanel = document.getElementById("discount-panel");
+  const discountBadge = document.getElementById("discount-badge");
+  const hasDiscount = discountAmount > 0;
+  discountRow?.classList.toggle("is-active", hasDiscount);
+  discountPanel?.classList.toggle("is-active", hasDiscount);
+  if (discountBadge) {
+    discountBadge.textContent = hasDiscount ? `Ahorro ${money(discountAmount)}` : "Sin descuento";
+  }
+
+  const input = document.getElementById("cart-discount-input");
+  const currentValue = Math.round(Number(input?.value || 0) * 100) / 100;
+  document.querySelectorAll(".discount-chip[data-discount]").forEach((chip) => {
+    const chipValue = Math.round(Number(chip.dataset.discount || 0) * 100) / 100;
+    chip.classList.toggle("is-selected", hasDiscount && chipValue === currentValue && chipValue > 0);
+  });
 }
 
 function formatPaymentMethodLabel(method) {
@@ -8262,6 +8280,15 @@ function setupEvents() {
 
   document.getElementById("customer-select")?.addEventListener("change", onCustomerSelectChange);
   document.getElementById("cart-discount-input")?.addEventListener("input", renderTotals);
+  document.getElementById("discount-quick")?.addEventListener("click", (event) => {
+    const chip = event.target.closest(".discount-chip[data-discount]");
+    if (!chip) return;
+    const input = document.getElementById("cart-discount-input");
+    if (!input) return;
+    input.value = String(Number(chip.dataset.discount || 0));
+    renderTotals();
+    input.focus();
+  });
   document.getElementById("add-school-package-btn")?.addEventListener("click", addSchoolPackageToCart);
   document.getElementById("new-customer-btn")?.addEventListener("click", openCustomerDialog);
   document.getElementById("new-promotion-btn")?.addEventListener("click", openPromotionDialog);
