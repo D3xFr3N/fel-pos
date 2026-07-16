@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Abrir FEL POS Movil</title>
+  <style>
+    :root {
+      --bg: #0f1720;
+      --card: #182230;
+      --text: #e8eef5;
+      --muted: #9aadc0;
+      --accent: #3d9cf0;
+      --ok: #3ecf8e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 20% -10%, #1a3a55, var(--bg));
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      width: min(420px, 100%);
+      background: color-mix(in srgb, var(--card) 92%, black);
+      border: 1px solid #2a3b4f;
+      border-radius: 16px;
+      padding: 28px 22px;
+      text-align: center;
+    }
+    h1 { margin: 0 0 8px; font-size: 1.35rem; }
+    p { margin: 0 0 14px; color: var(--muted); line-height: 1.45; font-size: 0.95rem; }
+    .server {
+      word-break: break-all;
+      background: #0c131b;
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: var(--ok);
+      font-size: 0.9rem;
+      margin-bottom: 18px;
+    }
+    .btn {
+      display: inline-block;
+      width: 100%;
+      border: 0;
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      color: #041018;
+      background: var(--accent);
+      margin-bottom: 10px;
+    }
+    .btn.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid #3a516b;
+    }
+    .status { min-height: 1.2em; font-size: 0.88rem; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>FEL POS Movil</h1>
+    <p>Abriendo la app para conectar con este servidor. Escribe usuario y contraseña en la app.</p>
+    <div class="server" id="serverLabel">-</div>
+    <a class="btn" id="openAppBtn" href="#">Abrir app FEL POS</a>
+    <a class="btn secondary" id="webFallbackBtn" href="/mobile">Abrir version web</a>
+    <p class="status" id="status">Intentando abrir la app...</p>
+  </div>
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      let server = (params.get("server") || "").trim();
+      if (!server) {
+        server = window.location.origin;
+      }
+      server = server.replace(/\/+$/, "");
+      if (!/^https?:\/\//i.test(server)) {
+        server = "http://" + server;
+      }
+
+      const deepLink = "felpos://connect?server=" + encodeURIComponent(server);
+      const intentLink =
+        "intent://connect?server=" +
+        encodeURIComponent(server) +
+        "#Intent;scheme=felpos;package=com.felpos.mobile;end";
+
+      const serverLabel = document.getElementById("serverLabel");
+      const openAppBtn = document.getElementById("openAppBtn");
+      const webFallbackBtn = document.getElementById("webFallbackBtn");
+      const statusEl = document.getElementById("status");
+
+      serverLabel.textContent = server;
+      webFallbackBtn.href = server + "/mobile";
+      openAppBtn.href = intentLink;
+
+      function tryOpenApp() {
+        statusEl.textContent = "Intentando abrir la app...";
+        const isAndroid = /Android/i.test(navigator.userAgent);
+        window.location.href = isAndroid ? intentLink : deepLink;
+        setTimeout(function () {
+          statusEl.textContent =
+            "Si no se abrio, instala la APK FEL POS Movil y pulsa Abrir app.";
+        }, 1600);
+      }
+
+      openAppBtn.addEventListener("click", function (event) {
+        event.preventDefault();
+        tryOpenApp();
+      });
+
+      tryOpenApp();
+    })();
+  </script>
+</body>
+</html>

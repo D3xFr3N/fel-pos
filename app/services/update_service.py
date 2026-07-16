@@ -414,13 +414,12 @@ def _write_restart_script(
     require_elevation: bool = False,
     expected_exe_bytes: int | None = None,
 ) -> Path:
-    if require_elevation and stage_dir is not None:
-        script_path = stage_dir / PENDING_UPDATE_SCRIPT
-    else:
-        script_path = install_dir / PENDING_UPDATE_SCRIPT
+    # Siempre escribir fuera de Program Files (x86): los parentesis rompen CMD.
+    updates_dir = _user_updates_dir()
+    updates_dir.mkdir(parents=True, exist_ok=True)
+    script_path = updates_dir / PENDING_UPDATE_SCRIPT
 
     log_name = PENDING_UPDATE_LOG
-    # Rutas con "Program Files (x86)" rompen bloques IF (...): usar delayed expansion.
     install_quoted = str(install_dir)
     stage_quoted = str(stage_dir) if stage_dir else ""
     min_exe_bytes = max(MIN_EXE_BYTES, int(expected_exe_bytes or 0) // 2)
@@ -441,29 +440,31 @@ def _write_restart_script(
         "set /a tries+=1",
         'tasklist /FI "IMAGENAME eq FELPOS.exe" 2>nul | find /I "FELPOS.exe" >nul',
         "if errorlevel 1 goto apply",
-        "if !tries! GEQ 60 (",
-        f'  echo [%date% %time%] Forzando cierre de FELPOS.exe >> "{log_name}"',
-        "  taskkill /F /IM FELPOS.exe /T >nul 2>&1",
-        "  timeout /t 2 >nul",
-        "  goto apply",
-        ")",
+        "if !tries! GEQ 60 goto force_kill",
         "timeout /t 1 >nul",
         "goto wait",
+        ":force_kill",
+        f'echo [%date% %time%] Forzando cierre de FELPOS.exe >> "{log_name}"',
+        "taskkill /F /IM FELPOS.exe /T >nul 2>&1",
+        "timeout /t 2 >nul",
+        "goto apply",
         ":apply",
     ]
 
     if stage_dir is not None:
         for file_name in UPDATE_FILES:
             pending_name = f"{file_name}.pending"
+            safe_label = file_name.replace(".", "_")
             lines.extend(
                 [
-                    f'if not exist "!STAGE_DIR!\\{pending_name}" goto after_stage_{file_name.replace(".", "_")}',
+                    f'if not exist "!STAGE_DIR!\\{pending_name}" goto after_stage_{safe_label}',
                     f'copy /Y "!STAGE_DIR!\\{pending_name}" "{pending_name}"',
-                    "if errorlevel 1 (",
-                    f'  echo [%date% %time%] ERROR copiando {pending_name} desde staging >> "{log_name}"',
-                    "  goto fail_restore",
-                    ")",
-                    f":after_stage_{file_name.replace('.', '_')}",
+                    f"if errorlevel 1 goto stage_copy_fail_{safe_label}",
+                    f"goto after_stage_{safe_label}",
+                    f":stage_copy_fail_{safe_label}",
+                    f'echo [%date% %time%] ERROR copiando {pending_name} desde staging >> "{log_name}"',
+                    "goto fail_restore",
+                    f":after_stage_{safe_label}",
                 ]
             )
         for file_name in UPDATE_SUPPORT_FILES:
@@ -473,9 +474,10 @@ def _write_restart_script(
                 [
                     f'if not exist "!STAGE_DIR!\\{pending_name}" goto after_support_{safe_label}',
                     f'copy /Y "!STAGE_DIR!\\{pending_name}" "{file_name}"',
-                    "if errorlevel 1 (",
-                    f'  echo [%date% %time%] AVISO: no se pudo copiar {file_name} >> "{log_name}"',
-                    ")",
+                    f"if errorlevel 1 goto support_copy_warn_{safe_label}",
+                    f"goto after_support_{safe_label}",
+                    f":support_copy_warn_{safe_label}",
+                    f'echo [%date% %time%] AVISO: no se pudo copiar {file_name} >> "{log_name}"',
                     f":after_support_{safe_label}",
                 ]
             )
@@ -499,10 +501,12 @@ def _write_restart_script(
             'if exist "FELPOS.exe.old" del /F /Q "FELPOS.exe.old" >nul 2>&1',
             'if exist "FELPOS.exe" ren "FELPOS.exe" "FELPOS.exe.old"',
             'ren "FELPOS.exe.pending" "FELPOS.exe"',
-            "if errorlevel 1 (",
-            f'  echo [%date% %time%] ERROR al reemplazar FELPOS.exe >> "{log_name}"',
-            "  goto fail_restore",
-            ")",
+            "if errorlevel 1 goto ren_fail",
+            "goto ren_ok",
+            ":ren_fail",
+            f'echo [%date% %time%] ERROR al reemplazar FELPOS.exe >> "{log_name}"',
+            "goto fail_restore",
+            ":ren_ok",
             f'echo [%date% %time%] FELPOS.exe actualizado >> "{log_name}"',
         ]
     )
@@ -580,16 +584,14 @@ def _launch_updater_script(script_path: Path, install_dir: Path, *, elevate: boo
             raise PermissionError(_permission_denied_help(install_dir))
         return
 
-    creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0) | getattr(
-        subprocess, "CREATE_NO_WINDOW", 0
-    )
-    # CREATE_NO_WINDOW puede ocultar errores; usar NEW_CONSOLE para ver fallos.
     creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+    # Lanzar con una sola cadena bien entrecomillada evita romper rutas con (x86).
     subprocess.Popen(
-        ["cmd.exe", "/c", "call", script_str],
+        f'cmd.exe /c call "{script_str}"',
         cwd=str(install_dir),
         creationflags=creationflags,
         close_fds=True,
+        shell=True,
     )
 
 def delegate_pending_executable_update(install_dir: Path | None = None) -> bool:
@@ -600,17 +602,19 @@ def delegate_pending_executable_update(install_dir: Path | None = None) -> bool:
         stage_pending = stage_dir / "FELPOS.exe.pending"
         if not stage_pending.exists():
             return False
-        script_path = stage_dir / PENDING_UPDATE_SCRIPT
+        script_path = _user_updates_dir() / PENDING_UPDATE_SCRIPT
         if not script_path.exists():
             script_path = _write_restart_script(root, stage_dir=stage_dir, require_elevation=True)
         _launch_updater_script(script_path, root, elevate=True)
         time.sleep(0.3)
         os._exit(0)
 
-    script_path = root / PENDING_UPDATE_SCRIPT
+    script_path = _user_updates_dir() / PENDING_UPDATE_SCRIPT
     elevate = not _dir_is_writable(root)
     if not script_path.exists():
-        script_path = _write_restart_script(root)
+        # Compatibilidad con scripts viejos dejados en la carpeta de instalacion.
+        legacy = root / PENDING_UPDATE_SCRIPT
+        script_path = legacy if legacy.exists() else _write_restart_script(root)
     _launch_updater_script(script_path, root, elevate=elevate)
     time.sleep(0.3)
     os._exit(0)
@@ -728,13 +732,18 @@ def prepare_update_apply() -> dict:
 
 def launch_pending_update_restart() -> bool:
     install_dir = _install_dir()
-    script_path = install_dir / PENDING_UPDATE_SCRIPT
+    updates_dir = _user_updates_dir()
+    script_path = updates_dir / PENDING_UPDATE_SCRIPT
     elevate = False
     if not script_path.exists():
-        stage_script = _user_updates_dir() / "pending" / PENDING_UPDATE_SCRIPT
+        stage_script = updates_dir / "pending" / PENDING_UPDATE_SCRIPT
+        legacy_script = install_dir / PENDING_UPDATE_SCRIPT
         if stage_script.exists():
             script_path = stage_script
             elevate = True
+        elif legacy_script.exists():
+            script_path = legacy_script
+            elevate = not _dir_is_writable(install_dir)
         else:
             return False
     else:

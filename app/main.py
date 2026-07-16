@@ -250,6 +250,11 @@ def mobile_app():
     return FileResponse(static_dir / "mobile.html")
 
 
+@app.get("/mobile/open-app")
+def mobile_open_app():
+    return FileResponse(static_dir / "mobile-open-app.html")
+
+
 @app.on_event("startup")
 def initialize_app_data():
     from app.database import SessionLocal

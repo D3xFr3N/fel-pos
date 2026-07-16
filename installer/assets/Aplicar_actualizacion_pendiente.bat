@@ -46,13 +46,14 @@ set /a tries=0
 set /a tries+=1
 tasklist /FI "IMAGENAME eq FELPOS.exe" 2>nul | find /I "FELPOS.exe" >nul
 if errorlevel 1 goto apply
-if !tries! GEQ 60 (
-  taskkill /F /IM FELPOS.exe /T >nul 2>&1
-  timeout /t 2 >nul
-  goto apply
-)
+if !tries! GEQ 60 goto force_kill
 timeout /t 1 >nul
 goto wait
+
+:force_kill
+taskkill /F /IM FELPOS.exe /T >nul 2>&1
+timeout /t 2 >nul
+goto apply
 
 :apply
 echo Aplicando actualizacion ^(!PENDING_SIZE! bytes^)...

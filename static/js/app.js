@@ -991,7 +991,9 @@ function buildMobileAppUrl(hostInput) {
     port &&
     !((protocol === "http:" && port === "80") || (protocol === "https:" && port === "443"));
 
-  return `${protocol}//${rawHost}${includePort ? `:${port}` : ""}/mobile`;
+  const serverBase = `${protocol}//${rawHost}${includePort ? `:${port}` : ""}`;
+  // Pagina puente: abre la APK (felpos://) y deja listo el servidor para login.
+  return `${serverBase}/mobile/open-app?server=${encodeURIComponent(serverBase)}`;
 }
 
 function setMobileQrStatus(message, isError = false) {

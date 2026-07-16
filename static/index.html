@@ -732,20 +732,20 @@
   <dialog id="mobile-qr-dialog">
     <form id="mobile-qr-form" method="dialog">
       <h3>Abrir app movil</h3>
-      <p class="hint">Escanea este QR desde el telefono para abrir conteo y verificacion de precios.</p>
+      <p class="hint">Escanea este QR con el telefono. Se abrira la APK FEL POS Movil para escribir usuario y contraseña.</p>
       <label>
         IP o host de esta PC
         <input id="mobile-qr-host" placeholder="Ej. 192.168.1.20" required>
       </label>
       <div class="change-box">
-        <span>URL movil</span>
+        <span>URL / enlace</span>
         <strong id="mobile-qr-url">-</strong>
       </div>
       <div class="qr-box">
         <img id="mobile-qr-image" alt="QR app movil">
       </div>
       <p id="mobile-qr-detect-status" class="hint"></p>
-      <p class="hint">Si usas launcher en red local, ejecuta con FELPOS_BIND_HOST=0.0.0.0.</p>
+      <p class="hint">Necesitas la APK instalada. El QR abre la app con el servidor ya configurado.</p>
       <div class="dialog-actions">
         <button type="button" class="btn ghost" id="mobile-qr-detect-ip-btn">Detectar mi IP</button>
         <button type="button" class="btn ghost" id="mobile-qr-copy-btn">Copiar URL</button>
