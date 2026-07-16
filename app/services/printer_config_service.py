@@ -289,6 +289,8 @@ def print_receipt_test_page(open_drawer: bool = False) -> str:
     if not sys.platform.startswith("win"):
         raise RuntimeError("La impresion directa solo esta disponible en Windows.")
 
+    from app.services.receipt_service import append_receipt_cut, open_cash_drawer
+
     try:
         import win32print  # type: ignore
     except Exception as exc:  # pragma: no cover
@@ -316,6 +318,12 @@ def print_receipt_test_page(open_drawer: bool = False) -> str:
             win32print.EndDocPrinter(handle)
     finally:
         win32print.ClosePrinter(handle)
+
+    if open_drawer:
+        try:
+            open_cash_drawer()
+        except Exception:
+            pass
     return printer_name
 
 

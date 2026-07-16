@@ -4960,8 +4960,9 @@ function renderReceiptPrinterSection() {
       </label>
       <label class="inline-option">
         <input type="checkbox" name="open_drawer_on_checkout" ${cfg.open_drawer_on_checkout ? "checked" : ""}>
-        Abrir cajon de dinero al cobrar
+        Abrir cajon de dinero al cobrar (efectivo / mixto)
       </label>
+      <p class="hint">El cajon se abre aunque cobres con F2 (sin imprimir). Debe estar conectado al puerto de la impresora termica.</p>
       <label>
         Ancho del ticket (caracteres)
         <input
@@ -5051,6 +5052,7 @@ function renderReceiptPrinterSection() {
       <div class="panel-actions">
         <button class="btn primary" type="submit">Guardar impresora y ticket</button>
         <button id="test-receipt-printer-btn" class="btn ghost" type="button">Imprimir prueba</button>
+        <button id="test-cash-drawer-btn" class="btn ghost" type="button">Probar cajon</button>
       </div>
     </form>
     <hr style="border-color: var(--border); width: 100%;">
@@ -5487,6 +5489,15 @@ function renderConfig() {
     try {
       const result = await api("/api/config/receipt-printer/test", { method: "POST" });
       alert(result?.message || "Ticket de prueba enviado.");
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.getElementById("test-cash-drawer-btn")?.addEventListener("click", async () => {
+    try {
+      const result = await openCashDrawer(false);
+      alert(result?.message || "Se envio el pulso al cajon.");
     } catch (error) {
       alert(error.message);
     }
@@ -6332,6 +6343,30 @@ async function printSaleReceipt(saleId, notifyOnSuccess = false, force = false) 
   }
 }
 
+async function openCashDrawer(notifyOnError = true) {
+  try {
+    return await api("/api/sales/open-drawer", { method: "POST" });
+  } catch (error) {
+    if (notifyOnError) {
+      alert(`No se pudo abrir el cajon: ${error.message}`);
+      return null;
+    }
+    throw error;
+  }
+}
+
+function shouldOpenDrawerForPayment(paymentMethod, payments = null) {
+  if (state.receiptPrinterConfig && state.receiptPrinterConfig.open_drawer_on_checkout === false) {
+    return false;
+  }
+  if (paymentMethod === "efectivo") return true;
+  if (paymentMethod === "mixto") {
+    if (!payments?.length) return true;
+    return payments.some((line) => line.payment_method === "efectivo" && Number(line.amount || 0) > 0);
+  }
+  return false;
+}
+
 async function checkout(printTicket = true) {
   if (!ensureCashOwnership("registrar ventas")) return;
   const unlocked = await ensureSaleSessionUnlocked();
@@ -6576,6 +6611,8 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
     }
     if (printTicket) {
       await printSaleReceipt(sale.id, false);
+    } else if (shouldOpenDrawerForPayment(paymentMethod, payments)) {
+      await openCashDrawer(false);
     }
     if (paymentMethod === "efectivo") {
       const received = Number(cashReceived || 0);

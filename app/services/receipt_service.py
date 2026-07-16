@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 
 from app.config import settings
 from app.datetime_utils import format_local_datetime
-from app.datetime_utils import format_local_datetime
 from app.schemas import FelInvoiceOut, SaleItemOut, SaleOut, SalePaymentOut
 from app.services.receipt_layout import (
     format_ticket_label,
@@ -166,18 +165,25 @@ def get_receipt_bottom_feed_lines() -> int:
     return max(2, min(value, 20))
 
 
+def build_drawer_kick_bytes() -> bytes:
+    """Pulso ESC/POS para cajon (pin 2 y pin 5; muchas cajas usan uno u otro)."""
+    # ESC p m t1 t2  ->  m=0 pin2, m=1 pin5; t1/t2 tiempo on/off
+    return b"\x1bp\x00\x40\xf0" + b"\x1bp\x01\x40\xf0"
+
+
 def append_receipt_cut(payload: bytes, *, open_drawer: bool = False) -> bytes:
     feed_lines = get_receipt_bottom_feed_lines()
     payload += b"\n" * feed_lines
     feed_dots = min(255, feed_lines * 12)
     payload += b"\x1bJ" + bytes([feed_dots])
-    if open_drawer:
-        payload += b"\x1bp\x00\x19\xfa"
+    # Cortar primero; el pulso del cajon suele responder mejor despues del corte.
     payload += b"\x1dV\x00"
+    if open_drawer:
+        payload += build_drawer_kick_bytes()
     return payload
 
 
-def print_receipt(sale: SaleOut, open_drawer: bool) -> None:
+def _resolved_receipt_printer_name() -> str:
     try:
         import win32print  # type: ignore
     except Exception as exc:  # pragma: no cover
@@ -185,18 +191,18 @@ def print_receipt(sale: SaleOut, open_drawer: bool) -> None:
             "No se encontro pywin32. Instala dependencia para imprimir en Windows."
         ) from exc
 
-    printer_name = settings.receipt_printer_name.strip() or win32print.GetDefaultPrinter()
+    printer_name = (settings.receipt_printer_name or "").strip() or win32print.GetDefaultPrinter()
     if not printer_name:
         raise RuntimeError("No hay impresora configurada para tickets.")
+    return printer_name
 
-    text = build_receipt_text(sale)
-    encoding = settings.receipt_encoding or "cp850"
-    payload = b"\x1b@" + text.encode(encoding, errors="replace")
-    payload = append_receipt_cut(payload, open_drawer=open_drawer)
+
+def _send_raw_to_printer(printer_name: str, payload: bytes, job_name: str) -> None:
+    import win32print  # type: ignore
 
     handle = win32print.OpenPrinter(printer_name)
     try:
-        win32print.StartDocPrinter(handle, 1, (f"FELPOS-{sale.id}", None, "RAW"))
+        win32print.StartDocPrinter(handle, 1, (job_name, None, "RAW"))
         try:
             win32print.StartPagePrinter(handle)
             win32print.WritePrinter(handle, payload)
@@ -205,3 +211,28 @@ def print_receipt(sale: SaleOut, open_drawer: bool) -> None:
             win32print.EndDocPrinter(handle)
     finally:
         win32print.ClosePrinter(handle)
+
+
+def open_cash_drawer() -> str:
+    """Abre el cajon de dinero sin imprimir ticket."""
+    if not __import__("sys").platform.startswith("win"):
+        raise RuntimeError("La apertura de cajon solo esta disponible en Windows.")
+    printer_name = _resolved_receipt_printer_name()
+    payload = b"\x1b@" + build_drawer_kick_bytes()
+    _send_raw_to_printer(printer_name, payload, "FELPOS-DRAWER")
+    return printer_name
+
+
+def print_receipt(sale: SaleOut, open_drawer: bool) -> None:
+    printer_name = _resolved_receipt_printer_name()
+    text = build_receipt_text(sale)
+    encoding = settings.receipt_encoding or "cp850"
+    payload = b"\x1b@" + text.encode(encoding, errors="replace")
+    payload = append_receipt_cut(payload, open_drawer=open_drawer)
+    _send_raw_to_printer(printer_name, payload, f"FELPOS-{sale.id}")
+    # Refuerzo: algunos drivers ignoran el pulso dentro del ticket.
+    if open_drawer:
+        try:
+            open_cash_drawer()
+        except Exception:
+            pass

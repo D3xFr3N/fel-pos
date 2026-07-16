@@ -8,7 +8,7 @@ from app.dependencies import require_roles
 from app.models import FelInvoice, Sale, SaleItem, SalePayment, SaleReturn, SaleReturnItem, User
 from app.schemas import PrintReceiptResponse, SaleCreate, SaleOut, SaleReturnCreate, SaleReturnOut
 from app.services.cash_service import add_cash_movement, can_use_cash_session, get_open_cash_session
-from app.services.receipt_service import print_receipt
+from app.services.receipt_service import open_cash_drawer, print_receipt
 from app.services.sale_service import create_sale, create_sale_return, sale_to_schema
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
@@ -76,6 +76,19 @@ def register_sale(
         return sale
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/open-drawer", response_model=PrintReceiptResponse)
+def open_drawer_route(
+    user: User = Depends(require_roles("admin", "user")),
+):
+    if not settings.receipt_open_drawer_on_checkout:
+        return PrintReceiptResponse(ok=True, message="Apertura de cajon desactivada en configuracion.")
+    try:
+        printer_name = open_cash_drawer()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"No se pudo abrir el cajon: {exc}") from exc
+    return PrintReceiptResponse(ok=True, message=f"Cajon abierto en {printer_name}.")
 
 
 @router.post("/{sale_id}/returns", response_model=SaleReturnOut, status_code=201)
@@ -151,6 +164,15 @@ def print_sale_receipt(
     user: User = Depends(require_roles("admin", "user")),
 ):
     if not force and not settings.receipt_print_on_checkout:
+        if settings.receipt_open_drawer_on_checkout:
+            try:
+                printer_name = open_cash_drawer()
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"No se pudo abrir el cajon: {exc}") from exc
+            return PrintReceiptResponse(
+                ok=True,
+                message=f"Impresion automatica desactivada; cajon abierto en {printer_name}.",
+            )
         return PrintReceiptResponse(ok=True, message="Impresion automatica desactivada.")
 
     sale = (
