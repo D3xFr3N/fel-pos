@@ -46,11 +46,13 @@ Source: "staging\Aplicar_actualizacion_pendiente.bat"; DestDir: "{app}"; Flags: 
 Source: "staging\Reparar_instalacion.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\Limpiar_actualizacion_pendiente.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\Diagnostico_instalacion.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "staging\Reparar_permisos_instalacion.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\VERSION"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\BUILD_DATE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\install_license_helper.exe"; DestDir: "{tmp}"; DestName: "install_license_helper.exe"; Flags: dontcopy noencryption deleteafterinstall
 
 [Dirs]
+Name: "{app}"; Permissions: users-modify
 Name: "{app}\data"; Permissions: users-full
 Name: "{app}\data\backups"; Permissions: users-full
 Name: "{app}\update_backups"; Permissions: users-full
@@ -63,6 +65,7 @@ Name: "{group}\Aplicar actualizacion pendiente"; Filename: "{app}\Aplicar_actual
 Name: "{group}\Reparar instalacion"; Filename: "{app}\Reparar_instalacion.bat"; WorkingDir: "{app}"
 Name: "{group}\Limpiar actualizacion pendiente"; Filename: "{app}\Limpiar_actualizacion_pendiente.bat"; WorkingDir: "{app}"
 Name: "{group}\Diagnostico instalacion"; Filename: "{app}\Diagnostico_instalacion.bat"; WorkingDir: "{app}"
+Name: "{group}\Reparar permisos (actualizaciones)"; Filename: "{app}\Reparar_permisos_instalacion.bat"; WorkingDir: "{app}"
 Name: "{autodesktop}\FEL POS"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"
 
 [Run]

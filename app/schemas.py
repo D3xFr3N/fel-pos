@@ -704,6 +704,7 @@ class UpdateApplyOut(BaseModel):
     backup_name: str | None = None
     restart_script: str | None = None
     restart_required: bool = True
+    requires_elevation: bool = False
 
 
 class PurchaseOrderItemInput(BaseModel):

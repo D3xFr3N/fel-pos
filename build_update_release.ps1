@@ -44,7 +44,8 @@ foreach ($assetName in @(
     "Reparar_instalacion.bat",
     "Iniciar_FELPOS.bat",
     "Limpiar_actualizacion_pendiente.bat",
-    "Diagnostico_instalacion.bat"
+    "Diagnostico_instalacion.bat",
+    "Reparar_permisos_instalacion.bat"
 )) {
     $assetPath = Join-Path $assetsDir $assetName
     if (Test-Path $assetPath) {

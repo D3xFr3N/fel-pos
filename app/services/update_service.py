@@ -30,6 +30,7 @@ UPDATE_SUPPORT_FILES = (
     "Iniciar_FELPOS.bat",
     "Limpiar_actualizacion_pendiente.bat",
     "Diagnostico_instalacion.bat",
+    "Reparar_permisos_instalacion.bat",
 )
 HTTP_TIMEOUT_SECONDS = 45
 
@@ -192,8 +193,12 @@ def _stage_support_files(install_dir: Path, extract_dir: Path) -> list[str]:
         if not source_path:
             continue
         target_path = install_dir / file_name
-        shutil.copy2(source_path, target_path)
-        staged.append(file_name)
+        try:
+            shutil.copy2(source_path, target_path)
+            staged.append(file_name)
+        except OSError:
+            # En Program Files sin permiso se omiten; el EXE/VERSION bastan para actualizar.
+            continue
     return staged
 
 
@@ -204,11 +209,52 @@ def _append_update_log(install_dir: Path, message: str) -> None:
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(f"[{timestamp}] {message}\n")
     except OSError:
-        pass
+        try:
+            fallback = _user_updates_dir() / PENDING_UPDATE_LOG
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            with fallback.open("a", encoding="utf-8") as handle:
+                handle.write(f"[{timestamp}] {message}\n")
+        except OSError:
+            pass
 
 
 def _install_dir() -> Path:
     return get_install_dir()
+
+
+def _user_updates_dir() -> Path:
+    local_app = (os.getenv("LOCALAPPDATA") or "").strip()
+    if local_app:
+        target = Path(local_app) / "FEL POS" / "updates"
+    else:
+        target = Path.home() / "FEL POS" / "updates"
+    target.mkdir(parents=True, exist_ok=True)
+    return target.resolve()
+
+
+def _dir_is_writable(path: Path) -> bool:
+    path.mkdir(parents=True, exist_ok=True)
+    probe = path / f".felpos_write_test_{os.getpid()}"
+    try:
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+
+
+def _permission_denied_help(install_dir: Path) -> str:
+    repair_bat = install_dir / "Reparar_permisos_instalacion.bat"
+    hint = (
+        f"No hay permiso para escribir en la carpeta de instalacion:\n{install_dir}\n\n"
+        "Solucion rapida:\n"
+        "1) Ejecuta 'Reparar permisos (actualizaciones)' desde el menu Inicio de FEL POS, o\n"
+        "2) Abre FEL POS como administrador una vez y vuelve a actualizar, o\n"
+        "3) Reinstala con el instalador nuevo desde GitHub (conserva tus datos)."
+    )
+    if repair_bat.exists():
+        hint += f"\n\nScript: {repair_bat}"
+    return hint
 
 
 def clear_pending_update_artifacts(install_dir: Path | None = None) -> list[str]:
@@ -335,13 +381,27 @@ def apply_pending_update_at_startup(install_dir: Path | None = None) -> dict | N
     }
 
 
-def _write_restart_script(install_dir: Path) -> Path:
-    script_path = install_dir / PENDING_UPDATE_SCRIPT
+def _write_restart_script(
+    install_dir: Path,
+    *,
+    stage_dir: Path | None = None,
+    require_elevation: bool = False,
+) -> Path:
+    if require_elevation and stage_dir is not None:
+        script_path = stage_dir / PENDING_UPDATE_SCRIPT
+    else:
+        script_path = install_dir / PENDING_UPDATE_SCRIPT
+
     log_name = PENDING_UPDATE_LOG
+    install_quoted = str(install_dir)
+    stage_quoted = str(stage_dir) if stage_dir else ""
+
     lines = [
         "@echo off",
         "setlocal EnableExtensions",
-        "pushd \"%~dp0\"",
+        f'set "INSTALL_DIR={install_quoted}"',
+        f'set "STAGE_DIR={stage_quoted}"',
+        'pushd "%INSTALL_DIR%"',
         f'echo [%date% %time%] Iniciando actualizacion >> "{log_name}"',
         "set /a tries=0",
         ":wait",
@@ -349,7 +409,7 @@ def _write_restart_script(install_dir: Path) -> Path:
         'tasklist /FI "IMAGENAME eq FELPOS.exe" 2>nul | find /I "FELPOS.exe" >nul',
         "if not errorlevel 1 (",
         "  if %tries% GEQ 60 (",
-        '    echo [%date% %time%] Forzando cierre de FELPOS.exe >> "' + log_name + '"',
+        f'    echo [%date% %time%] Forzando cierre de FELPOS.exe >> "{log_name}"',
         "    taskkill /F /IM FELPOS.exe /T >nul 2>&1",
         "    timeout /t 2 >nul",
         "    goto apply",
@@ -359,6 +419,27 @@ def _write_restart_script(install_dir: Path) -> Path:
         ")",
         ":apply",
     ]
+
+    if stage_dir is not None:
+        for file_name in UPDATE_FILES:
+            pending_name = f"{file_name}.pending"
+            lines.extend(
+                [
+                    f'if exist "%STAGE_DIR%\\{pending_name}" (',
+                    f'  copy /Y "%STAGE_DIR%\\{pending_name}" "{pending_name}" >nul',
+                    ")",
+                ]
+            )
+        for file_name in UPDATE_SUPPORT_FILES:
+            pending_name = f"{file_name}.pending"
+            lines.extend(
+                [
+                    f'if exist "%STAGE_DIR%\\{pending_name}" (',
+                    f'  copy /Y "%STAGE_DIR%\\{pending_name}" "{file_name}" >nul',
+                    ")",
+                ]
+            )
+
     for file_name in UPDATE_FILES:
         pending_name = f"{file_name}.pending"
         backup_name = f"{file_name}.old"
@@ -389,6 +470,7 @@ def _write_restart_script(install_dir: Path) -> Path:
                     ")",
                 ]
             )
+
     lines.extend(
         [
             f'if exist "{PENDING_UPDATE_META}" del /F /Q "{PENDING_UPDATE_META}" >nul',
@@ -399,9 +481,9 @@ def _write_restart_script(install_dir: Path) -> Path:
             "  endlocal",
             "  exit /b 1",
             ")",
-            'start "" "%~dp0FELPOS.exe"',
+            'start "" "%INSTALL_DIR%\\FELPOS.exe"',
             "popd",
-            "del /F /Q \"%~f0\" >nul 2>&1",
+            'del /F /Q "%~f0" >nul 2>&1',
             "endlocal",
         ]
     )
@@ -409,10 +491,26 @@ def _write_restart_script(install_dir: Path) -> Path:
     return script_path
 
 
-def _launch_updater_script(script_path: Path, install_dir: Path) -> None:
+def _launch_updater_script(script_path: Path, install_dir: Path, *, elevate: bool = False) -> None:
     import subprocess
 
-    _append_update_log(install_dir, f"Ejecutando actualizador: {script_path.name}")
+    _append_update_log(install_dir, f"Ejecutando actualizador: {script_path.name} (elevate={elevate})")
+    if elevate and sys.platform.startswith("win"):
+        import ctypes
+
+        # ShellExecuteW returns >32 on success.
+        result = ctypes.windll.shell32.ShellExecuteW(
+            None,
+            "runas",
+            "cmd.exe",
+            f'/c ""{script_path}""',
+            str(script_path.parent),
+            1,
+        )
+        if int(result) <= 32:
+            raise PermissionError(_permission_denied_help(install_dir))
+        return
+
     creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
     subprocess.Popen(
         ["cmd.exe", "/c", str(script_path)],
@@ -425,13 +523,23 @@ def _launch_updater_script(script_path: Path, install_dir: Path) -> None:
 def delegate_pending_executable_update(install_dir: Path | None = None) -> bool:
     root = (install_dir or _install_dir()).resolve()
     if not has_pending_executable_update(root):
-        return False
+        # Tambien revisar staging del usuario.
+        stage_dir = _user_updates_dir() / "pending"
+        stage_pending = stage_dir / "FELPOS.exe.pending"
+        if not stage_pending.exists():
+            return False
+        script_path = stage_dir / PENDING_UPDATE_SCRIPT
+        if not script_path.exists():
+            script_path = _write_restart_script(root, stage_dir=stage_dir, require_elevation=True)
+        _launch_updater_script(script_path, root, elevate=True)
+        time.sleep(0.3)
+        os._exit(0)
 
     script_path = root / PENDING_UPDATE_SCRIPT
+    elevate = not _dir_is_writable(root)
     if not script_path.exists():
         script_path = _write_restart_script(root)
-
-    _launch_updater_script(script_path, root)
+    _launch_updater_script(script_path, root, elevate=elevate)
     time.sleep(0.3)
     os._exit(0)
 
@@ -453,6 +561,13 @@ def prepare_update_apply() -> dict:
     os.environ["FELPOS_PRE_UPDATE_BACKUP"] = "1"
     backup = create_backup("pre_update")
 
+    can_write_install = _dir_is_writable(install_dir)
+    stage_dir = install_dir if can_write_install else (_user_updates_dir() / "pending")
+    if not can_write_install:
+        if stage_dir.exists():
+            shutil.rmtree(stage_dir, ignore_errors=True)
+        stage_dir.mkdir(parents=True, exist_ok=True)
+
     temp_dir = Path(tempfile.mkdtemp(prefix="felpos-update-"))
     zip_path = temp_dir / "felpos-update.zip"
     extract_dir = temp_dir / "extracted"
@@ -465,27 +580,45 @@ def prepare_update_apply() -> dict:
 
         extracted = _extract_update_zip(zip_path, extract_dir)
         staged_files: list[str] = []
-        for file_name, source_path in extracted.items():
-            pending_target = install_dir / f"{file_name}.pending"
-            shutil.copy2(source_path, pending_target)
-            staged_files.append(file_name)
-        staged_files.extend(_stage_support_files(install_dir, extract_dir))
+        try:
+            for file_name, source_path in extracted.items():
+                pending_target = stage_dir / f"{file_name}.pending"
+                shutil.copy2(source_path, pending_target)
+                staged_files.append(file_name)
+            if can_write_install:
+                staged_files.extend(_stage_support_files(install_dir, extract_dir))
+            else:
+                # Copia support bats al staging; el script elevado los pondra en install.
+                for file_name in UPDATE_SUPPORT_FILES:
+                    assets_dir = Path(__file__).resolve().parent.parent.parent / "installer" / "assets"
+                    source = extract_dir / file_name
+                    if not source.exists():
+                        source = assets_dir / file_name
+                    if source.exists():
+                        shutil.copy2(source, stage_dir / f"{file_name}.pending")
+                        staged_files.append(file_name)
+        except OSError as exc:
+            raise PermissionError(_permission_denied_help(install_dir)) from exc
 
-        meta_path = install_dir / PENDING_UPDATE_META
-        meta_path.write_text(
-            json.dumps(
-                {
-                    "target_version": manifest.version,
-                    "previous_version": get_app_version(),
-                    "staged_files": staged_files,
-                    "backup_name": backup.get("name"),
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
+        meta_payload = {
+            "target_version": manifest.version,
+            "previous_version": get_app_version(),
+            "staged_files": staged_files,
+            "backup_name": backup.get("name"),
+            "stage_dir": str(stage_dir),
+            "requires_elevation": not can_write_install,
+        }
+        meta_path = (install_dir if can_write_install else stage_dir) / PENDING_UPDATE_META
+        try:
+            meta_path.write_text(json.dumps(meta_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError as exc:
+            raise PermissionError(_permission_denied_help(install_dir)) from exc
+
+        script_path = _write_restart_script(
+            install_dir,
+            stage_dir=None if can_write_install else stage_dir,
+            require_elevation=not can_write_install,
         )
-        script_path = _write_restart_script(install_dir)
         _append_update_log(
             install_dir,
             f"Actualizacion {manifest.version} descargada. Archivos pendientes: {', '.join(staged_files)}",
@@ -494,22 +627,38 @@ def prepare_update_apply() -> dict:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
     return {
-        "message": f"Actualizacion {manifest.version} lista. El sistema se reiniciara para aplicarla.",
+        "message": (
+            f"Actualizacion {manifest.version} lista. "
+            + (
+                "Se pedira permiso de administrador para aplicarla."
+                if not can_write_install
+                else "El sistema se reiniciara para aplicarla."
+            )
+        ),
         "target_version": manifest.version,
         "previous_version": get_app_version(),
         "backup_name": backup.get("name"),
         "restart_script": str(script_path),
         "restart_required": True,
+        "requires_elevation": not can_write_install,
     }
 
 
 def launch_pending_update_restart() -> bool:
     install_dir = _install_dir()
     script_path = install_dir / PENDING_UPDATE_SCRIPT
+    elevate = False
     if not script_path.exists():
-        return False
+        stage_script = _user_updates_dir() / "pending" / PENDING_UPDATE_SCRIPT
+        if stage_script.exists():
+            script_path = stage_script
+            elevate = True
+        else:
+            return False
+    else:
+        elevate = not _dir_is_writable(install_dir)
 
     _append_update_log(install_dir, "Reinicio solicitado para aplicar actualizacion.")
-    _launch_updater_script(script_path, install_dir)
+    _launch_updater_script(script_path, install_dir, elevate=elevate)
     time.sleep(0.5)
     os._exit(0)

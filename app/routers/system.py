@@ -31,6 +31,8 @@ def read_update_check(user: User = Depends(require_roles("admin"))):
 def apply_system_update(user: User = Depends(require_roles("admin"))):
     try:
         result = prepare_update_apply()
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
