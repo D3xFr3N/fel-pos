@@ -1656,7 +1656,12 @@ async function finalizeMixedCheckout(printTicket = true) {
 function productTracksInventory(productOrLine) {
   if (!productOrLine) return true;
   const value = productOrLine.tracks_inventory;
-  return !(value === 0 || value === false || value === "0");
+  if (value === false || value === 0 || value === "0") return false;
+  if (value === true || value === 1 || value === "1") return true;
+  // Cualquier otro valor numerico: solo cuenta como inventario si es > 0
+  const asNumber = Number(value);
+  if (Number.isFinite(asNumber)) return asNumber !== 0;
+  return true;
 }
 
 async function addToCart(productId) {
@@ -1667,7 +1672,10 @@ async function addToCart(productId) {
   const tracksInventory = productTracksInventory(product);
   const availableStock = Number(product.stock || 0);
   if (tracksInventory && availableStock <= 0) {
-    alert(`Producto sin existencia: ${product.name}.`);
+    alert(
+      `Producto sin existencia: ${product.name}.\n\n` +
+        `Si este producto no debe controlar stock (servicio, paquete, etc.), editalo en Inventario y desmarca "Maneja inventario".`
+    );
     return;
   }
   const existing = state.cart.find((item) => item.id === productId);
@@ -3422,9 +3430,21 @@ function renderProductsTable() {
                   ? `${product.wholesale_min_qty}+ uds / -${product.wholesale_discount_pct}%`
                   : "-"
               }</td>
-              <td>${product.tracks_inventory === 0 ? "No" : "Si"}</td>
-              <td>${product.tracks_inventory === 0 ? "-" : product.stock}</td>
-              <td>${product.tracks_inventory === 0 ? "-" : product.min_stock || 0}</td>
+              <td>
+                ${
+                  canEdit
+                    ? `<button type="button" class="btn ghost toggle-inventory-btn ${
+                        productTracksInventory(product) ? "" : "inventory-off"
+                      }" data-product-id="${product.id}" title="Clic para activar/desactivar control de stock">
+                        ${productTracksInventory(product) ? "Si" : "No"}
+                      </button>`
+                    : productTracksInventory(product)
+                      ? "Si"
+                      : "No"
+                }
+              </td>
+              <td>${productTracksInventory(product) ? product.stock : "-"}</td>
+              <td>${productTracksInventory(product) ? product.min_stock || 0 : "-"}</td>
               <td>${(product.tax_rate * 100).toFixed(0)}%</td>
               ${
                 canEdit || canStockEntry
@@ -3441,7 +3461,7 @@ function renderProductsTable() {
                           : ""
                       }
                       ${
-                        canStockEntry && product.tracks_inventory !== 0
+                        canStockEntry && productTracksInventory(product)
                           ? `<button class="btn ghost stock-entry-btn" data-product-id="${product.id}" data-product-name="${product.name}">Ingreso</button>`
                           : ""
                       }
@@ -3460,6 +3480,33 @@ function renderProductsTable() {
   if (canEdit) {
     container.querySelectorAll(".edit-product-btn").forEach((button) => {
       button.addEventListener("click", () => openProductEditor(Number(button.dataset.productId)));
+    });
+    container.querySelectorAll(".toggle-inventory-btn").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const productId = Number(button.dataset.productId);
+        const product = state.products.find((item) => item.id === productId);
+        if (!product) return;
+        const currentlyTracks = productTracksInventory(product);
+        const nextValue = currentlyTracks ? 0 : 1;
+        const label = currentlyTracks
+          ? "Desactivar control de inventario para este producto?\nPodras venderlo aunque el stock sea 0."
+          : "Activar control de inventario para este producto?";
+        if (!confirm(label)) return;
+        try {
+          const updated = await api(`/api/products/${productId}`, {
+            method: "PUT",
+            body: JSON.stringify({ tracks_inventory: nextValue }),
+          });
+          const idx = state.products.findIndex((item) => item.id === productId);
+          if (idx >= 0) {
+            state.products[idx] = { ...state.products[idx], ...updated };
+          }
+          renderProductsTable();
+          renderProducts();
+        } catch (error) {
+          alert(error.message);
+        }
+      });
     });
   }
   if (canStockEntry) {
@@ -8100,6 +8147,10 @@ function setupEvents() {
       wholesale_min_qty: Number(form.wholesale_min_qty.value || 0),
       wholesale_discount_pct: Number(form.wholesale_discount_pct.value || 0),
     };
+    // Si no maneja inventario, no forzar stock minimo ni bloquear venta por existencias.
+    if (!payload.tracks_inventory) {
+      payload.min_stock = 0;
+    }
     if (useSchoolFields) {
       payload.school_category = form.school_category.value.trim() || null;
       payload.school_grade = form.school_grade.value.trim() || null;
@@ -8107,10 +8158,19 @@ function setupEvents() {
       payload.school_variant = form.school_variant.value.trim() || null;
     }
     try {
+      let saved;
       if (state.editingProductId) {
-        await api(`/api/products/${state.editingProductId}`, { method: "PUT", body: JSON.stringify(payload) });
+        saved = await api(`/api/products/${state.editingProductId}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
       } else {
-        await api("/api/products", { method: "POST", body: JSON.stringify(payload) });
+        saved = await api("/api/products", { method: "POST", body: JSON.stringify(payload) });
+      }
+      if (payload.tracks_inventory === 0 && productTracksInventory(saved)) {
+        throw new Error(
+          "No se pudo desactivar el control de inventario. Intenta de nuevo o usa el boton Si/No en la tabla de Inventario."
+        );
       }
       productDialog.close();
       state.editingProductId = null;

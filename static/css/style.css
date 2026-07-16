@@ -436,6 +436,10 @@ dialog textarea {
   background: rgba(229, 83, 75, 0.12);
   color: #ffb0ab;
 }
+.inventory-off {
+  border-color: rgba(240, 193, 75, 0.55) !important;
+  color: #f0c14b !important;
+}
 
 .payment-row { display: grid; gap: 0.75rem; }
 .payment-actions {
