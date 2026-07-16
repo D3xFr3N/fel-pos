@@ -1360,11 +1360,11 @@ function renderProducts() {
     .map(
       (product) => `
     <article class="product-card ${
-      product.tracks_inventory !== 0 && Number(product.stock || 0) <= 0 ? "out-of-stock" : ""
+      productTracksInventory(product) && Number(product.stock || 0) <= 0 ? "out-of-stock" : ""
     }" data-id="${product.id}">
       <h3>${product.name}</h3>
       <p>${getProductBarcodeValue(product)} · ${product.department_name || "Sin departamento"} · ${
-        product.tracks_inventory === 0 ? "Sin control de inventario" : `Stock: ${product.stock}`
+        productTracksInventory(product) ? `Stock: ${product.stock}` : "Sin control de inventario"
       }</p>
       ${
         hasProductExtraFields()
@@ -1380,7 +1380,7 @@ function renderProducts() {
 
   grid.querySelectorAll(".product-card").forEach((card) => {
     const product = state.products.find((item) => item.id === Number(card.dataset.id));
-    if (!product || (product.tracks_inventory !== 0 && Number(product.stock || 0) <= 0)) {
+    if (!product || (productTracksInventory(product) && Number(product.stock || 0) <= 0)) {
       return;
     }
     card.addEventListener("click", () => addToCart(Number(card.dataset.id)));
@@ -1392,13 +1392,16 @@ function renderCart() {
   state.cart = state.cart
     .map((line) => {
       const product = state.products.find((item) => item.id === line.id);
-      const tracksInventory = product?.tracks_inventory !== 0;
+      const tracksInventory = product
+        ? productTracksInventory(product)
+        : productTracksInventory(line);
       const availableStock = Number(product?.stock || 0);
       const normalizedQty = Number(line.quantity || 0);
       if (!Number.isFinite(normalizedQty) || normalizedQty <= 0) return null;
       if (tracksInventory && availableStock <= 0) return null;
       return {
         ...line,
+        tracks_inventory: tracksInventory ? 1 : 0,
         quantity: tracksInventory ? Math.min(normalizedQty, availableStock) : normalizedQty,
       };
     })
@@ -1411,7 +1414,7 @@ function renderCart() {
     container.innerHTML = state.cart
       .map((line) => {
         const product = productById.get(line.id);
-        const tracksInventory = product?.tracks_inventory !== 0;
+        const tracksInventory = productTracksInventory(product ?? line);
         const availableStock = Number(product?.stock || 0);
         const maxReached = tracksInventory && line.quantity >= availableStock;
         return `
@@ -1445,7 +1448,7 @@ function renderCart() {
         if (!line) return;
         if (button.dataset.action === "inc") {
           const product = state.products.find((item) => item.id === id);
-          const tracksInventory = product?.tracks_inventory !== 0;
+          const tracksInventory = productTracksInventory(product ?? line);
           const availableStock = Number(product?.stock || 0);
           const currentQty = Number(line.quantity || 0);
           if (tracksInventory && currentQty >= availableStock) {
@@ -1650,12 +1653,18 @@ async function finalizeMixedCheckout(printTicket = true) {
   return success;
 }
 
+function productTracksInventory(productOrLine) {
+  if (!productOrLine) return true;
+  const value = productOrLine.tracks_inventory;
+  return !(value === 0 || value === false || value === "0");
+}
+
 async function addToCart(productId) {
   const unlocked = await ensureSaleSessionUnlocked();
   if (!unlocked) return;
   const product = state.products.find((item) => item.id === productId);
   if (!product) return;
-  const tracksInventory = product.tracks_inventory !== 0;
+  const tracksInventory = productTracksInventory(product);
   const availableStock = Number(product.stock || 0);
   if (tracksInventory && availableStock <= 0) {
     alert(`Producto sin existencia: ${product.name}.`);
@@ -1674,6 +1683,7 @@ async function addToCart(productId) {
       name: product.name,
       base_price: product.price,
       tax_rate: product.tax_rate,
+      tracks_inventory: tracksInventory ? 1 : 0,
       wholesale_enabled: product.wholesale_enabled === 1,
       wholesale_min_qty: Number(product.wholesale_min_qty || 0),
       wholesale_discount_pct: Number(product.wholesale_discount_pct || 0),
@@ -6550,6 +6560,12 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
 
   for (const line of state.cart) {
     const product = state.products.find((item) => item.id === line.id);
+    const tracksInventory = product
+      ? productTracksInventory(product)
+      : productTracksInventory(line);
+    if (!tracksInventory) {
+      continue;
+    }
     const availableStock = Number(product?.stock || 0);
     const requestedQty = Number(line.quantity || 0);
     if (!product || requestedQty > availableStock) {

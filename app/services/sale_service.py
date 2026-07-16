@@ -361,7 +361,7 @@ def create_sale(db: Session, payload: SaleCreate, user_id: int | None = None) ->
         product = db.get(Product, line.product_id)
         if not product or not product.active:
             raise ValueError(f"Producto invalido: {line.product_id}")
-        if product.tracks_inventory and product.stock < line.quantity:
+        if int(product.tracks_inventory or 0) == 1 and product.stock < line.quantity:
             raise ValueError(
                 f"Stock insuficiente para {product.name}. "
                 f"Disponible: {product.stock:g}, solicitado: {line.quantity:g}."
@@ -410,7 +410,7 @@ def create_sale(db: Session, payload: SaleCreate, user_id: int | None = None) ->
             total=line_total,
         )
         db.add(item)
-        if product.tracks_inventory:
+        if int(product.tracks_inventory or 0) == 1:
             before_stock = float(product.stock)
             product.stock -= line.quantity
             after_stock = float(product.stock)
