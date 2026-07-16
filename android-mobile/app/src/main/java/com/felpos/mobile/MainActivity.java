@@ -178,8 +178,15 @@ public class MainActivity extends AppCompatActivity {
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_TOKEN, token).apply();
                 runOnUiThread(onSuccess);
             } catch (Exception exc) {
+                String detail = exc.getMessage() == null ? "error de red" : exc.getMessage();
+                String tip = detail.toLowerCase().contains("failed to connect")
+                        || detail.toLowerCase().contains("econnrefused")
+                        || detail.toLowerCase().contains("timed out")
+                        || detail.toLowerCase().contains("unreachable")
+                        ? " Revisa: 1) misma WiFi 2) URL http://IP-DEL-PC:8000 3) FEL POS abierto 4) firewall del PC."
+                        : "";
                 runOnUiThread(() ->
-                        Toast.makeText(this, "Login fallo: " + exc.getMessage(), Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, "Login fallo: " + detail + tip, Toast.LENGTH_LONG).show()
                 );
             }
         });

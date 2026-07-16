@@ -73,9 +73,9 @@ def _resolve_bind_host(mode: str) -> str:
     explicit = (os.getenv("FELPOS_BIND_HOST") or "").strip()
     if explicit:
         return explicit
-    if mode == "server":
-        return "0.0.0.0"
-    return "127.0.0.1"
+    # Por defecto escucha en toda la red local para que la APK/celular puedan conectar.
+    # Usa FELPOS_BIND_HOST=127.0.0.1 si quieres solo este equipo.
+    return "0.0.0.0"
 
 
 def _run_server_mode(*, fastapi_app, bind_host: str, port: int) -> None:
@@ -125,9 +125,28 @@ def _apply_pending_update_if_needed(runtime_root: Path) -> None:
         print(f"[WARN] No se pudo aplicar actualizacion pendiente. Revisa: {log_path}")
 
 
+def _load_env_file(runtime_root: Path) -> None:
+    env_path = runtime_root / ".env"
+    if not env_path.exists():
+        return
+    try:
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+    except OSError:
+        pass
+
+
 def main() -> None:
     runtime_root = _runtime_root()
     os.chdir(runtime_root)
+    _load_env_file(runtime_root)
 
     # Carpeta temporal writable (Program Files no sirve para unpack de PyInstaller).
     runtime_tmp = Path(os.environ.get("LOCALAPPDATA") or "") / "FEL POS" / "tmp"

@@ -30,6 +30,8 @@ pause
 exit /b 1
 
 :launch
+REM Permite que la APK/celular lleguen al POS en la red local.
+if not defined FELPOS_BIND_HOST set "FELPOS_BIND_HOST=0.0.0.0"
 start "" "!APP_DIR!\FELPOS.exe"
 popd
 exit /b 0
