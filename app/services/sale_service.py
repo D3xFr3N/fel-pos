@@ -237,9 +237,11 @@ def create_sale_return(
                 f"Disponible: {available_qty:g}, solicitado: {requested_qty:g}."
             )
 
-        line_subtotal = _round2(sale_item.unit_price * requested_qty)
-        line_tax = _round2(line_subtotal * sale_item.tax_rate)
-        line_total = _round2(line_subtotal + line_tax)
+        # Proporcional a lo cobrado en la venta original (compatible con IVA incluido o sumado).
+        qty_factor = requested_qty / sale_item.quantity if sale_item.quantity else 0
+        line_total = _round2(sale_item.total * qty_factor)
+        line_tax = _round2(sale_item.tax_amount * qty_factor)
+        line_subtotal = _round2(line_total - line_tax)
 
         sale_return_item = SaleReturnItem(
             sale_return_id=sale_return.id,
@@ -390,11 +392,13 @@ def create_sale(db: Session, payload: SaleCreate, user_id: int | None = None) ->
             if promo:
                 applied_promotion_id = promo.id
 
-        line_subtotal = round(unit_price * line.quantity, 2)
+        # Precio de venta con IVA incluido: el impuesto se desglosa, no se suma encima.
+        line_total = round(unit_price * line.quantity, 2)
         if promo_discount > 0:
-            line_subtotal = _round2(max(line_subtotal - promo_discount, 0))
-        line_tax = round(line_subtotal * product.tax_rate, 2)
-        line_total = round(line_subtotal + line_tax, 2)
+            line_total = _round2(max(line_total - promo_discount, 0))
+        tax_rate = float(product.tax_rate or 0)
+        line_tax = _round2(line_total - (line_total / (1 + tax_rate))) if tax_rate > 0 else 0.0
+        line_subtotal = _round2(line_total - line_tax)
 
         item = SaleItem(
             sale_id=sale.id,
@@ -431,15 +435,15 @@ def create_sale(db: Session, payload: SaleCreate, user_id: int | None = None) ->
         tax_total += line_tax
         total += line_total
 
-    raw_subtotal = _round2(subtotal)
+    raw_total = _round2(total)
     if sale.cart_discount_amount > 0:
-        discount = min(sale.cart_discount_amount, raw_subtotal)
+        discount = min(sale.cart_discount_amount, raw_total)
         sale.cart_discount_amount = discount
-        if raw_subtotal > 0:
-            ratio = (raw_subtotal - discount) / raw_subtotal
-            subtotal = _round2(raw_subtotal - discount)
+        if raw_total > 0:
+            ratio = (raw_total - discount) / raw_total
+            total = _round2(raw_total - discount)
             tax_total = _round2(tax_total * ratio)
-            total = _round2(subtotal + tax_total)
+            subtotal = _round2(total - tax_total)
 
     sale.promotion_id = applied_promotion_id
     sale.subtotal = _round2(subtotal)

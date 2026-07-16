@@ -68,12 +68,18 @@ if ($BaseUrl) {
     $manifestUrl = "https://TU-SERVIDOR.com/fel-pos/latest.json"
 }
 
+$releaseNotes = "Actualizacion FEL POS v$version"
+$notesFile = Join-Path $root "dist\release-notes-$version.md"
+if (Test-Path $notesFile) {
+    $releaseNotes = (Get-Content $notesFile -Raw).Trim()
+}
+
 $manifest = [ordered]@{
     version = $version
     build_date = $buildDate
     download_url = $downloadUrl
     sha256 = $hash
-    release_notes = "Actualizacion FEL POS v$version"
+    release_notes = $releaseNotes
 }
 $manifestJson = ($manifest | ConvertTo-Json -Depth 4)
 Set-Content (Join-Path $versionDir "latest.json") $manifestJson

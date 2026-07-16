@@ -90,8 +90,9 @@ def _build_document_xml(
         SubElement(item_node, "dte:Cantidad").text = _format_amount(float(line["quantity"]))
         SubElement(item_node, "dte:UnidadMedida").text = "UNI"
         SubElement(item_node, "dte:Descripcion").text = str(line["description"])
+        # PrecioUnitario y Precio van con IVA incluido; MontoGravable es la base sin IVA.
         SubElement(item_node, "dte:PrecioUnitario").text = _format_amount(float(line["unit_price"]))
-        SubElement(item_node, "dte:Precio").text = _format_amount(float(line["subtotal"]))
+        SubElement(item_node, "dte:Precio").text = _format_amount(float(line["total"]))
         SubElement(item_node, "dte:Descuento").text = "0.000000"
         taxes = SubElement(item_node, "dte:Impuestos")
         tax = SubElement(taxes, "dte:Impuesto")

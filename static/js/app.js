@@ -1181,30 +1181,32 @@ async function api(path, options = {}) {
 }
 
 function calcTotals(cart) {
-  let subtotal = 0;
+  // El precio de venta ya incluye IVA: el impuesto se desglosa del precio, no se suma encima.
+  let total = 0;
   let taxTotal = 0;
   cart.forEach((line) => {
     const unitPrice = getEffectiveUnitPrice(line);
-    const lineSubtotal = unitPrice * line.quantity;
-    const lineTax = lineSubtotal * line.tax_rate;
-    subtotal += lineSubtotal;
+    const lineTotal = unitPrice * line.quantity;
+    const lineTax = line.tax_rate > 0 ? lineTotal - lineTotal / (1 + line.tax_rate) : 0;
+    total += lineTotal;
     taxTotal += lineTax;
   });
-  const rawSubtotal = Math.round(subtotal * 100) / 100;
+  const rawTotal = Math.round(total * 100) / 100;
   const rawTax = Math.round(taxTotal * 100) / 100;
   const cartDiscount = Math.min(
     Math.round(Number(document.getElementById("cart-discount-input")?.value || 0) * 100) / 100,
-    rawSubtotal
+    rawTotal
   );
-  const adjustedSubtotal = Math.round((rawSubtotal - cartDiscount) * 100) / 100;
-  const ratio = rawSubtotal > 0 ? adjustedSubtotal / rawSubtotal : 1;
+  const adjustedTotal = Math.round((rawTotal - cartDiscount) * 100) / 100;
+  const ratio = rawTotal > 0 ? adjustedTotal / rawTotal : 1;
   const adjustedTax = Math.round(rawTax * ratio * 100) / 100;
+  const adjustedSubtotal = Math.round((adjustedTotal - adjustedTax) * 100) / 100;
   return {
     subtotal: adjustedSubtotal,
     taxTotal: adjustedTax,
-    total: Math.round((adjustedSubtotal + adjustedTax) * 100) / 100,
+    total: adjustedTotal,
     cartDiscount,
-    rawSubtotal,
+    rawSubtotal: rawTotal,
   };
 }
 
@@ -1421,7 +1423,7 @@ function renderCart() {
       <div class="cart-line">
         <div>
           <strong>${line.name}</strong>
-          <small>${money(getEffectiveUnitPrice(line))} c/u · IVA ${(line.tax_rate * 100).toFixed(0)}%</small>
+          <small>${money(getEffectiveUnitPrice(line))} c/u${line.tax_rate > 0 ? ` · IVA ${(line.tax_rate * 100).toFixed(0)}% incluido` : ""}</small>
           <small>${
             tracksInventory ? `Disponible: ${formatQuantity(availableStock)}` : "Sin control de inventario"
           }</small>
