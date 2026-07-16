@@ -4308,6 +4308,12 @@ function openSaleDetail(saleId) {
     }
     <p><strong>IVA (incluido):</strong> ${money(sale.tax_total || 0)}</p>
     <p><strong>Total:</strong> ${money(sale.total)}</p>
+    ${
+      Number(sale.cash_received || 0) > 0
+        ? `<p><strong>Recibido:</strong> ${money(sale.cash_received)}</p>
+           <p><strong>Cambio:</strong> ${money(sale.change_amount || 0)}</p>`
+        : ""
+    }
     <p><strong>Total devuelto:</strong> ${money(sale.returned_total || 0)}</p>
     <p><strong>Total neto:</strong> ${money(sale.net_total ?? sale.total)}</p>
     <p><strong>Pago:</strong> ${formatSalePayments(sale)}</p>
@@ -4979,7 +4985,11 @@ function buildSaleSuccessMessage(sale, suffix = "") {
       : `Ticket #${sale.id}`;
   const discount = Number(sale.cart_discount_amount || 0);
   const discountPart = discount > 0 ? ` Descuento: ${money(discount)}.` : "";
-  return `Venta registrada. ${reference}.${discountPart}${suffix ? ` ${suffix}` : ""}`;
+  const received = Number(sale.cash_received || 0);
+  const change = Number(sale.change_amount || 0);
+  const tenderPart =
+    received > 0 ? ` Recibido: ${money(received)}. Cambio: ${money(change)}.` : "";
+  return `Venta registrada. ${reference}.${discountPart}${tenderPart}${suffix ? ` ${suffix}` : ""}`;
 }
 
 function renderScannerBridgeSection() {
@@ -6833,6 +6843,10 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
     payment_method: payments ? "mixto" : paymentMethod === "credito" ? "credito" : paymentMethod,
     is_credit: paymentMethod === "credito",
     cart_discount_amount: calcTotals(state.cart).cartDiscount || 0,
+    cash_received:
+      paymentMethod === "efectivo" || paymentMethod === "mixto"
+        ? Math.round(Number(cashReceived || 0) * 100) / 100
+        : 0,
     items: state.cart.map((line) => ({ product_id: line.id, quantity: line.quantity })),
   };
   if (payments) {
@@ -6869,19 +6883,9 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
       await openCashDrawer(false);
     }
     if (paymentMethod === "efectivo") {
-      const received = Number(cashReceived || 0);
-      const change = Math.round((received - totals.total) * 100) / 100;
-      alert(buildSaleSuccessMessage(sale, `Cambio: ${money(change)}`));
+      alert(buildSaleSuccessMessage(sale));
     } else if (paymentMethod === "mixto" && payments) {
-      const cashLine = payments.find((line) => line.payment_method === "efectivo");
-      const received = Number(cashReceived || 0);
-      const change = cashLine ? Math.round((received - cashLine.amount) * 100) / 100 : 0;
-      alert(
-        buildSaleSuccessMessage(
-          sale,
-          `Pago: ${formatSalePayments(sale)}.` + (change > 0 ? ` Cambio: ${money(change)}.` : "")
-        )
-      );
+      alert(buildSaleSuccessMessage(sale, `Pago: ${formatSalePayments(sale)}.`));
     } else {
       alert(buildSaleSuccessMessage(sale));
     }

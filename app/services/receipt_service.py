@@ -97,6 +97,14 @@ def build_receipt_text(sale: SaleOut, layout: dict | None = None) -> str:
         else:
             lines.append(_left_right("Pago", sale.payment_method.upper(), width))
 
+    cash_received = round(float(getattr(sale, "cash_received", 0) or 0), 2)
+    change_amount = round(float(getattr(sale, "change_amount", 0) or 0), 2)
+    if cash_received > 0:
+        if not cfg.get("show_payments") or not payment_lines:
+            lines.append(sep)
+        lines.append(_left_right("Recibido", _money(cash_received), width))
+        lines.append(_left_right("Cambio", _money(change_amount), width))
+
     if cfg.get("show_wholesale_savings") and sale.wholesale_savings > 0:
         lines.append(_left_right("Ahorro mayoreo", _money(sale.wholesale_savings), width))
 
@@ -131,6 +139,8 @@ def build_receipt_preview_text() -> str:
         status="completed",
         wholesale_savings=5.0,
         cart_discount_amount=10.0,
+        cash_received=120.0,
+        change_amount=18.0,
         returned_total=0,
         net_total=102.0,
         customer_nit="CF",

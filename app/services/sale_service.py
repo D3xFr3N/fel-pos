@@ -83,6 +83,34 @@ def _resolve_sale_payments(
     return method, [SalePaymentInput(payment_method=method, amount=_round2(total))]
 
 
+def _resolve_cash_tender(payload: SaleCreate, payment_method: str, payment_lines: list[SalePaymentInput]) -> tuple[float, float]:
+    """Devuelve (efectivo recibido del cliente, cambio a devolver)."""
+    if payload.is_credit or payment_method == "credito":
+        return 0.0, 0.0
+
+    cash_due = 0.0
+    if payment_method == "efectivo":
+        cash_due = _round2(sum(line.amount for line in payment_lines if line.payment_method == "efectivo"))
+    elif payment_method == "mixto":
+        cash_due = _round2(sum(line.amount for line in payment_lines if line.payment_method == "efectivo"))
+    else:
+        return 0.0, 0.0
+
+    if cash_due <= 0:
+        return 0.0, 0.0
+
+    received = _round2(float(payload.cash_received or 0))
+    if received <= 0:
+        # Sin captura explicita, asumir pago exacto.
+        received = cash_due
+    if received + 0.001 < cash_due:
+        raise ValueError(
+            f"Efectivo insuficiente. Se requieren Q{cash_due:.2f} y se recibieron Q{received:.2f}."
+        )
+    change = _round2(max(received - cash_due, 0))
+    return received, change
+
+
 def _returned_qty_by_sale_item(sale: Sale) -> dict[int, float]:
     returned: dict[int, float] = {}
     for sale_return in sale.returns:
@@ -451,7 +479,10 @@ def create_sale(db: Session, payload: SaleCreate, user_id: int | None = None) ->
     sale.total = _round2(total)
 
     payment_method, payment_lines = _resolve_sale_payments(payload, sale.total)
+    cash_received, change_amount = _resolve_cash_tender(payload, payment_method, payment_lines)
     sale.payment_method = payment_method
+    sale.cash_received = cash_received
+    sale.change_amount = change_amount
     for line in payment_lines:
         db.add(
             SalePayment(
@@ -586,6 +617,8 @@ def sale_to_schema(sale: Sale) -> SaleOut:
         payment_method=sale.payment_method,
         status=sale.status,
         cart_discount_amount=_round2(float(sale.cart_discount_amount or 0)),
+        cash_received=_round2(float(getattr(sale, "cash_received", 0) or 0)),
+        change_amount=_round2(float(getattr(sale, "change_amount", 0) or 0)),
         wholesale_savings=round(wholesale_savings, 2),
         returned_total=returned_total,
         net_total=net_total,

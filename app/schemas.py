@@ -285,6 +285,7 @@ class SaleCreate(BaseModel):
     payment_method: str = "efectivo"
     is_credit: bool = False
     cart_discount_amount: float = Field(default=0, ge=0)
+    cash_received: float = Field(default=0, ge=0)
     promotion_id: int | None = None
     payments: list[SalePaymentInput] | None = None
     items: list[SaleItemInput]
@@ -363,6 +364,8 @@ class SaleOut(BaseModel):
     payment_method: str
     status: str
     cart_discount_amount: float = 0
+    cash_received: float = 0
+    change_amount: float = 0
     wholesale_savings: float = 0
     returned_total: float = 0
     net_total: float = 0

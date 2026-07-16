@@ -198,6 +198,14 @@ def ensure_schema_updates() -> None:
             alter_statements.append(
                 "ALTER TABLE sales ADD COLUMN is_credit INTEGER NOT NULL DEFAULT 0"
             )
+        if "cash_received" not in sale_columns:
+            alter_statements.append(
+                "ALTER TABLE sales ADD COLUMN cash_received FLOAT NOT NULL DEFAULT 0"
+            )
+        if "change_amount" not in sale_columns:
+            alter_statements.append(
+                "ALTER TABLE sales ADD COLUMN change_amount FLOAT NOT NULL DEFAULT 0"
+            )
 
     if "sale_items" in table_names:
         sale_item_columns = {col["name"] for col in inspector.get_columns("sale_items")}

@@ -102,6 +102,8 @@ class Sale(Base):
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
     cart_discount_amount: Mapped[float] = mapped_column(Float, default=0)
+    cash_received: Mapped[float] = mapped_column(Float, default=0)
+    change_amount: Mapped[float] = mapped_column(Float, default=0)
     promotion_id: Mapped[int | None] = mapped_column(ForeignKey("promotions.id"), nullable=True)
     is_credit: Mapped[int] = mapped_column(Integer, default=0)
 
