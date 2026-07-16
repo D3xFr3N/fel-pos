@@ -335,6 +335,8 @@ def scan_stock_count_item(
     )
     if not product:
         raise HTTPException(status_code=404, detail=f"No existe producto activo con codigo {normalized_sku}.")
+    if not product.tracks_inventory:
+        raise HTTPException(status_code=400, detail=f"El producto {product.name} no maneja inventario.")
     if not product.department_id:
         raise HTTPException(
             status_code=400,
@@ -489,7 +491,7 @@ def apply_stock_count_session(
 
     for line in session.items:
         product = db.get(Product, line.product_id)
-        if not product:
+        if not product or not product.tracks_inventory:
             continue
 
         # Ajuste incremental: se aplica la diferencia capturada en el momento del conteo.

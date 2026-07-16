@@ -56,18 +56,17 @@ Name: "{app}\data\backups"; Permissions: users-full
 Name: "{app}\update_backups"; Permissions: users-full
 
 [Icons]
-Name: "{group}\FEL POS"; Filename: "{app}\Iniciar_FELPOS.bat"; WorkingDir: "{app}"
-Name: "{group}\Iniciar FEL POS"; Filename: "{app}\Iniciar_FELPOS.bat"; WorkingDir: "{app}"
+Name: "{group}\FEL POS"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"
 Name: "{group}\Respaldo antes de actualizar"; Filename: "{app}\pre_update_backup.bat"; WorkingDir: "{app}"
 Name: "{group}\Actualizar sistema (seguro)"; Filename: "{app}\update_system_safe.bat"; WorkingDir: "{app}"
 Name: "{group}\Aplicar actualizacion pendiente"; Filename: "{app}\Aplicar_actualizacion_pendiente.bat"; WorkingDir: "{app}"
 Name: "{group}\Reparar instalacion"; Filename: "{app}\Reparar_instalacion.bat"; WorkingDir: "{app}"
 Name: "{group}\Limpiar actualizacion pendiente"; Filename: "{app}\Limpiar_actualizacion_pendiente.bat"; WorkingDir: "{app}"
 Name: "{group}\Diagnostico instalacion"; Filename: "{app}\Diagnostico_instalacion.bat"; WorkingDir: "{app}"
-Name: "{autodesktop}\FEL POS"; Filename: "{app}\Iniciar_FELPOS.bat"; Tasks: desktopicon; WorkingDir: "{app}"
+Name: "{autodesktop}\FEL POS"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"
 
 [Run]
-Filename: "{app}\Iniciar_FELPOS.bat"; Description: "Abrir FEL POS ahora"; Flags: nowait postinstall skipifsilent shellexec
+Filename: "{app}\{#MyAppExeName}"; Description: "Abrir FEL POS ahora"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"
 
 [Code]
 var

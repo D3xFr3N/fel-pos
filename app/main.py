@@ -112,6 +112,10 @@ def ensure_schema_updates() -> None:
             alter_statements.append(
                 "ALTER TABLE products ADD COLUMN min_stock FLOAT NOT NULL DEFAULT 0"
             )
+        if "tracks_inventory" not in columns:
+            alter_statements.append(
+                "ALTER TABLE products ADD COLUMN tracks_inventory INTEGER NOT NULL DEFAULT 1"
+            )
         if "supplier_id" not in columns:
             alter_statements.append(
                 "ALTER TABLE products ADD COLUMN supplier_id INTEGER"
@@ -197,6 +201,10 @@ def ensure_schema_updates() -> None:
 
     if "sale_items" in table_names:
         sale_item_columns = {col["name"] for col in inspector.get_columns("sale_items")}
+        if "tracks_inventory" not in sale_item_columns:
+            alter_statements.append(
+                "ALTER TABLE sale_items ADD COLUMN tracks_inventory INTEGER NOT NULL DEFAULT 1"
+            )
         if "base_unit_price" not in sale_item_columns:
             alter_statements.append(
                 "ALTER TABLE sale_items ADD COLUMN base_unit_price FLOAT NOT NULL DEFAULT 0"

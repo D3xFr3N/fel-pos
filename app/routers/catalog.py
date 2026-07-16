@@ -161,7 +161,12 @@ def list_low_stock_products(
     return (
         db.query(Product)
         .options(joinedload(Product.supplier), joinedload(Product.department))
-        .filter(Product.active == 1, Product.min_stock > 0, Product.stock <= Product.min_stock)
+        .filter(
+            Product.active == 1,
+            Product.tracks_inventory == 1,
+            Product.min_stock > 0,
+            Product.stock <= Product.min_stock,
+        )
         .order_by(Product.stock.asc(), Product.name.asc())
         .all()
     )
@@ -175,7 +180,12 @@ def low_stock_report(
     low_products = (
         db.query(Product)
         .options(joinedload(Product.supplier), joinedload(Product.department))
-        .filter(Product.active == 1, Product.min_stock > 0, Product.stock <= Product.min_stock)
+        .filter(
+            Product.active == 1,
+            Product.tracks_inventory == 1,
+            Product.min_stock > 0,
+            Product.stock <= Product.min_stock,
+        )
         .order_by(Product.stock.asc(), Product.name.asc())
         .all()
     )
@@ -296,6 +306,8 @@ def register_stock_entry(
     product = db.get(Product, product_id)
     if not product or not product.active:
         raise HTTPException(status_code=404, detail="Producto no encontrado.")
+    if not product.tracks_inventory:
+        raise HTTPException(status_code=400, detail="Este producto no maneja inventario.")
 
     before_stock = float(product.stock)
     product.stock = round(before_stock + payload.quantity, 2)

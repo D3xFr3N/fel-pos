@@ -31,8 +31,6 @@ def receive_purchase_order(
             continue
         previous_cost = float(product.cost or 0)
         new_cost = float(line.unit_cost or previous_cost)
-        before_stock = float(product.stock or 0)
-        product.stock = round(before_stock + qty, 2)
         if new_cost > 0 and new_cost != previous_cost:
             product.cost = new_cost
             db.add(
@@ -45,17 +43,20 @@ def receive_purchase_order(
                     notes=invoice_ref or f"OC #{order.id}",
                 )
             )
-        db.add(
-            InventoryMovement(
-                product_id=product.id,
-                created_by_user_id=user_id,
-                movement_type="entry",
-                quantity=qty,
-                before_stock=before_stock,
-                after_stock=product.stock,
-                notes=f"Recepcion OC #{order.id}",
+        if product.tracks_inventory:
+            before_stock = float(product.stock or 0)
+            product.stock = round(before_stock + qty, 2)
+            db.add(
+                InventoryMovement(
+                    product_id=product.id,
+                    created_by_user_id=user_id,
+                    movement_type="entry",
+                    quantity=qty,
+                    before_stock=before_stock,
+                    after_stock=product.stock,
+                    notes=f"Recepcion OC #{order.id}",
+                )
             )
-        )
 
     order.status = "received"
     if invoice_ref:

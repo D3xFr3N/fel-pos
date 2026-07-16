@@ -9,7 +9,12 @@ def build_system_alerts(db: Session) -> list[dict]:
     alerts: list[dict] = []
     low_stock = (
         db.query(Product)
-        .filter(Product.active == 1, Product.min_stock > 0, Product.stock <= Product.min_stock)
+        .filter(
+            Product.active == 1,
+            Product.tracks_inventory == 1,
+            Product.min_stock > 0,
+            Product.stock <= Product.min_stock,
+        )
         .order_by(Product.stock.asc())
         .limit(10)
         .all()
@@ -56,7 +61,7 @@ def build_system_alerts(db: Session) -> list[dict]:
     }
     stale = (
         db.query(Product)
-        .filter(Product.active == 1, Product.stock > 0)
+        .filter(Product.active == 1, Product.tracks_inventory == 1, Product.stock > 0)
         .order_by(Product.name.asc())
         .limit(200)
         .all()

@@ -257,19 +257,20 @@ def create_sale_return(
         product = db.get(Product, sale_item.product_id)
         if not product:
             raise ValueError(f"No se encontro producto para la linea {sale_item.id}.")
-        before_stock = _round2(product.stock)
-        product.stock = _round2(before_stock + requested_qty)
-        db.add(
-            InventoryMovement(
-                product_id=product.id,
-                created_by_user_id=user_id,
-                movement_type="sale_return_in",
-                quantity=requested_qty,
-                before_stock=before_stock,
-                after_stock=product.stock,
-                notes=f"Devolucion venta #{sale.id}",
+        if sale_item.tracks_inventory:
+            before_stock = _round2(product.stock)
+            product.stock = _round2(before_stock + requested_qty)
+            db.add(
+                InventoryMovement(
+                    product_id=product.id,
+                    created_by_user_id=user_id,
+                    movement_type="sale_return_in",
+                    quantity=requested_qty,
+                    before_stock=before_stock,
+                    after_stock=product.stock,
+                    notes=f"Devolucion venta #{sale.id}",
+                )
             )
-        )
 
         subtotal += line_subtotal
         tax_total += line_tax
@@ -360,7 +361,7 @@ def create_sale(db: Session, payload: SaleCreate, user_id: int | None = None) ->
         product = db.get(Product, line.product_id)
         if not product or not product.active:
             raise ValueError(f"Producto invalido: {line.product_id}")
-        if product.stock < line.quantity:
+        if product.tracks_inventory and product.stock < line.quantity:
             raise ValueError(
                 f"Stock insuficiente para {product.name}. "
                 f"Disponible: {product.stock:g}, solicitado: {line.quantity:g}."
@@ -399,6 +400,7 @@ def create_sale(db: Session, payload: SaleCreate, user_id: int | None = None) ->
             sale_id=sale.id,
             product_id=product.id,
             quantity=line.quantity,
+            tracks_inventory=product.tracks_inventory,
             base_unit_price=base_unit_price,
             unit_price=unit_price,
             discount_amount=line_discount,
@@ -408,21 +410,22 @@ def create_sale(db: Session, payload: SaleCreate, user_id: int | None = None) ->
             total=line_total,
         )
         db.add(item)
-        before_stock = float(product.stock)
-        product.stock -= line.quantity
-        after_stock = float(product.stock)
-        if user_id:
-            db.add(
-                InventoryMovement(
-                    product_id=product.id,
-                    created_by_user_id=user_id,
-                    movement_type="sale_out",
-                    quantity=line.quantity,
-                    before_stock=before_stock,
-                    after_stock=after_stock,
-                    notes=f"Venta #{sale.id}",
+        if product.tracks_inventory:
+            before_stock = float(product.stock)
+            product.stock -= line.quantity
+            after_stock = float(product.stock)
+            if user_id:
+                db.add(
+                    InventoryMovement(
+                        product_id=product.id,
+                        created_by_user_id=user_id,
+                        movement_type="sale_out",
+                        quantity=line.quantity,
+                        before_stock=before_stock,
+                        after_stock=after_stock,
+                        notes=f"Venta #{sale.id}",
+                    )
                 )
-            )
 
         subtotal += line_subtotal
         tax_total += line_tax

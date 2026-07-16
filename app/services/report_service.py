@@ -237,7 +237,7 @@ def build_purchase_suggestions(db: Session, *, days: int = 30) -> list[dict]:
     sold_map = {row[0]: float(row[1] or 0) for row in sold_rows}
     products = (
         db.query(Product)
-        .filter(Product.active == 1)
+        .filter(Product.active == 1, Product.tracks_inventory == 1)
         .order_by(Product.name)
         .all()
     )

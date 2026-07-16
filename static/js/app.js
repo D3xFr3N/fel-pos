@@ -1327,9 +1327,13 @@ function renderProducts() {
   grid.innerHTML = items
     .map(
       (product) => `
-    <article class="product-card ${Number(product.stock || 0) <= 0 ? "out-of-stock" : ""}" data-id="${product.id}">
+    <article class="product-card ${
+      product.tracks_inventory !== 0 && Number(product.stock || 0) <= 0 ? "out-of-stock" : ""
+    }" data-id="${product.id}">
       <h3>${product.name}</h3>
-      <p>${getProductBarcodeValue(product)} · ${product.department_name || "Sin departamento"} · Stock: ${product.stock}</p>
+      <p>${getProductBarcodeValue(product)} · ${product.department_name || "Sin departamento"} · ${
+        product.tracks_inventory === 0 ? "Sin control de inventario" : `Stock: ${product.stock}`
+      }</p>
       ${
         hasProductExtraFields()
           ? `<p>${formatProductExtraDetail(product) || getProductExtraFieldsCopy().emptyDetail || "Sin detalle"}</p>`
@@ -1344,7 +1348,7 @@ function renderProducts() {
 
   grid.querySelectorAll(".product-card").forEach((card) => {
     const product = state.products.find((item) => item.id === Number(card.dataset.id));
-    if (!product || Number(product.stock || 0) <= 0) {
+    if (!product || (product.tracks_inventory !== 0 && Number(product.stock || 0) <= 0)) {
       return;
     }
     card.addEventListener("click", () => addToCart(Number(card.dataset.id)));
@@ -1356,13 +1360,14 @@ function renderCart() {
   state.cart = state.cart
     .map((line) => {
       const product = state.products.find((item) => item.id === line.id);
+      const tracksInventory = product?.tracks_inventory !== 0;
       const availableStock = Number(product?.stock || 0);
       const normalizedQty = Number(line.quantity || 0);
       if (!Number.isFinite(normalizedQty) || normalizedQty <= 0) return null;
-      if (availableStock <= 0) return null;
+      if (tracksInventory && availableStock <= 0) return null;
       return {
         ...line,
-        quantity: Math.min(normalizedQty, availableStock),
+        quantity: tracksInventory ? Math.min(normalizedQty, availableStock) : normalizedQty,
       };
     })
     .filter(Boolean);
@@ -1374,14 +1379,17 @@ function renderCart() {
     container.innerHTML = state.cart
       .map((line) => {
         const product = productById.get(line.id);
+        const tracksInventory = product?.tracks_inventory !== 0;
         const availableStock = Number(product?.stock || 0);
-        const maxReached = line.quantity >= availableStock;
+        const maxReached = tracksInventory && line.quantity >= availableStock;
         return `
       <div class="cart-line">
         <div>
           <strong>${line.name}</strong>
           <small>${money(getEffectiveUnitPrice(line))} c/u · IVA ${(line.tax_rate * 100).toFixed(0)}%</small>
-          <small>Disponible: ${formatQuantity(availableStock)}</small>
+          <small>${
+            tracksInventory ? `Disponible: ${formatQuantity(availableStock)}` : "Sin control de inventario"
+          }</small>
           ${
             line.wholesale_enabled && line.wholesale_min_qty > 0 && line.wholesale_discount_pct > 0
               ? `<small>Mayoreo: ${line.wholesale_min_qty}+ uds (-${line.wholesale_discount_pct}%)</small>`
@@ -1405,9 +1413,10 @@ function renderCart() {
         if (!line) return;
         if (button.dataset.action === "inc") {
           const product = state.products.find((item) => item.id === id);
+          const tracksInventory = product?.tracks_inventory !== 0;
           const availableStock = Number(product?.stock || 0);
           const currentQty = Number(line.quantity || 0);
-          if (currentQty >= availableStock) {
+          if (tracksInventory && currentQty >= availableStock) {
             alert(`No puedes vender mas de ${formatQuantity(availableStock)} unidades de ${line.name}.`);
             return;
           }
@@ -1596,14 +1605,15 @@ async function addToCart(productId) {
   if (!unlocked) return;
   const product = state.products.find((item) => item.id === productId);
   if (!product) return;
+  const tracksInventory = product.tracks_inventory !== 0;
   const availableStock = Number(product.stock || 0);
-  if (availableStock <= 0) {
+  if (tracksInventory && availableStock <= 0) {
     alert(`Producto sin existencia: ${product.name}.`);
     return;
   }
   const existing = state.cart.find((item) => item.id === productId);
   if (existing) {
-    if (existing.quantity >= availableStock) {
+    if (tracksInventory && existing.quantity >= availableStock) {
       alert(`No puedes vender mas de ${formatQuantity(availableStock)} unidades de ${product.name}.`);
       return;
     }
@@ -1621,6 +1631,16 @@ async function addToCart(productId) {
     });
   }
   renderCart();
+}
+
+function syncProductInventoryFields() {
+  const form = document.getElementById("product-form");
+  if (!form?.tracks_inventory) return;
+  const enabled = form.tracks_inventory.checked;
+  form.stock.disabled = !enabled;
+  form.min_stock.disabled = !enabled;
+  document.getElementById("product-stock-label")?.classList.toggle("disabled", !enabled);
+  document.getElementById("product-min-stock-label")?.classList.toggle("disabled", !enabled);
 }
 
 function openProductEditor(productId = null) {
@@ -1642,6 +1662,7 @@ function openProductEditor(productId = null) {
     form.barcode.value = "";
     form.description.value = "";
     form.tax_rate.value = "12";
+    form.tracks_inventory.checked = true;
     form.wholesale_enabled.checked = false;
     form.wholesale_min_qty.value = "0";
     form.wholesale_discount_pct.value = "0";
@@ -1652,6 +1673,7 @@ function openProductEditor(productId = null) {
     form.school_variant.value = "";
     supplierSelect.value = "";
     departmentSelect.value = "";
+    syncProductInventoryFields();
     productDialog.showModal();
     return;
   }
@@ -1669,6 +1691,7 @@ function openProductEditor(productId = null) {
   form.cost.value = product.cost;
   form.stock.value = product.stock;
   form.min_stock.value = product.min_stock || 0;
+  form.tracks_inventory.checked = product.tracks_inventory !== 0;
   form.tax_rate.value = Number(product.tax_rate * 100).toFixed(2);
   form.wholesale_enabled.checked = product.wholesale_enabled === 1;
   form.wholesale_min_qty.value = product.wholesale_min_qty || 0;
@@ -1679,6 +1702,7 @@ function openProductEditor(productId = null) {
   form.school_variant.value = product.school_variant || "";
   supplierSelect.value = product.supplier_id ? String(product.supplier_id) : "";
   departmentSelect.value = product.department_id ? String(product.department_id) : "";
+  syncProductInventoryFields();
   productDialog.showModal();
 }
 
@@ -3163,6 +3187,7 @@ function renderProductsTable() {
             ${showExtraColumns ? `<th>${escapeHtml(extraColumnLabel)}</th>` : ""}
             <th>Precio</th>
             <th>Mayoreo</th>
+            <th>Inventario</th>
             <th>Stock</th>
             <th>Min</th>
             <th>IVA</th>
@@ -3191,8 +3216,9 @@ function renderProductsTable() {
                   ? `${product.wholesale_min_qty}+ uds / -${product.wholesale_discount_pct}%`
                   : "-"
               }</td>
-              <td>${product.stock}</td>
-              <td>${product.min_stock || 0}</td>
+              <td>${product.tracks_inventory === 0 ? "No" : "Si"}</td>
+              <td>${product.tracks_inventory === 0 ? "-" : product.stock}</td>
+              <td>${product.tracks_inventory === 0 ? "-" : product.min_stock || 0}</td>
               <td>${(product.tax_rate * 100).toFixed(0)}%</td>
               ${
                 canEdit || canStockEntry
@@ -3200,7 +3226,11 @@ function renderProductsTable() {
                       ${canEdit ? `<button class="btn ghost edit-product-btn" data-product-id="${product.id}">Editar</button>` : ""}
                       ${canEdit && !product.barcode ? `<button class="btn ghost generate-barcode-btn" data-product-id="${product.id}">Generar CB</button>` : ""}
                       ${canEdit ? `<button class="btn ghost print-labels-btn" data-product-id="${product.id}">Etiquetas</button>` : ""}
-                      ${canStockEntry ? `<button class="btn ghost stock-entry-btn" data-product-id="${product.id}" data-product-name="${product.name}">Ingreso</button>` : ""}
+                      ${
+                        canStockEntry && product.tracks_inventory !== 0
+                          ? `<button class="btn ghost stock-entry-btn" data-product-id="${product.id}" data-product-name="${product.name}">Ingreso</button>`
+                          : ""
+                      }
                     </td>`
                   : ""
               }
@@ -7695,6 +7725,9 @@ function setupEvents() {
       button.classList.add("active");
     });
   });
+  document
+    .querySelector('#product-form input[name="tracks_inventory"]')
+    ?.addEventListener("change", syncProductInventoryFields);
   document.getElementById("product-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.target;
@@ -7710,6 +7743,7 @@ function setupEvents() {
       cost: Number(form.cost.value || 0),
       stock: Number(form.stock.value || 0),
       min_stock: Number(form.min_stock.value || 0),
+      tracks_inventory: form.tracks_inventory.checked ? 1 : 0,
       tax_rate: Number(form.tax_rate.value || 12) / 100,
       wholesale_enabled: form.wholesale_enabled.checked ? 1 : 0,
       wholesale_min_qty: Number(form.wholesale_min_qty.value || 0),
