@@ -188,6 +188,26 @@ function getProductBarcodeValue(product) {
   return normalizeBarcodeValue(product.barcode || product.sku || "");
 }
 
+function getStoredBarcodeValue(product) {
+  if (!product) return "";
+  return normalizeBarcodeValue(product.barcode || "");
+}
+
+function getLabelPrintCode(product) {
+  const barcode = getStoredBarcodeValue(product);
+  if (barcode) return barcode;
+  return normalizeBarcodeValue(product?.sku || "");
+}
+
+function sanitizeCode39Value(value) {
+  const normalized = normalizeBarcodeValue(value);
+  if (!normalized) return "";
+  if (isCode39Encodable(normalized)) return normalized;
+  // Reemplaza caracteres no soportados (ej. _) para poder imprimir etiquetas.
+  const cleaned = normalized.replace(/[^0-9A-Z .\-$\/+%]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  return isCode39Encodable(cleaned) ? cleaned : "";
+}
+
 function buildCode39Svg(value, options = {}) {
   const codeValue = normalizeBarcodeValue(value);
   if (!codeValue) {
@@ -1929,14 +1949,38 @@ async function openBarcodeLabelDialog(productId) {
   let product = state.products.find((item) => Number(item.id) === Number(productId));
   if (!product) return;
 
-  if (!product.barcode) {
+  let labelCode = getLabelPrintCode(product);
+  if (!labelCode) {
     const confirmed = confirm(
-      `El producto ${product.name} no tiene codigo de barras. Deseas generarlo automaticamente ahora?`
+      `El producto ${product.name} no tiene codigo de barras ni SKU. Deseas generar un codigo automaticamente ahora?`
     );
     if (!confirmed) return;
     const generated = await generateProductBarcode(product.id, { notify: false });
     if (!generated) return;
     product = generated;
+    labelCode = getLabelPrintCode(product);
+  }
+
+  let printable = sanitizeCode39Value(labelCode);
+  if (!printable) {
+    if (!getStoredBarcodeValue(product)) {
+      const confirmed = confirm(
+        `El SKU "${labelCode}" no se puede imprimir como codigo de barras.\n` +
+          `Deseas generar un codigo FEL imprimible?`
+      );
+      if (!confirmed) return;
+      const generated = await generateProductBarcode(product.id, { notify: false });
+      if (!generated) return;
+      product = generated;
+      printable = sanitizeCode39Value(getLabelPrintCode(product));
+    }
+    if (!printable) {
+      alert(
+        `El codigo "${labelCode}" tiene caracteres no validos para etiqueta.\n` +
+          `Edita el producto y usa solo letras A-Z, numeros y - . espacio $ / + %`
+      );
+      return;
+    }
   }
 
   if (!state.labelPrinterConfig) {
@@ -1957,10 +2001,13 @@ async function openBarcodeLabelDialog(productId) {
   const printerSelect = document.getElementById("barcode-label-printer");
   const printModeSelect = document.getElementById("barcode-label-print-mode");
   if (productNameEl) productNameEl.textContent = `Producto: ${product.name}`;
-  if (codeEl) codeEl.textContent = `Codigo: ${getProductBarcodeValue(product)}`;
+  if (codeEl) {
+    const source = getStoredBarcodeValue(product) ? "codigo de barras" : "SKU";
+    codeEl.textContent = `Codigo a imprimir (${source}): ${printable}`;
+  }
   if (descriptionEl) descriptionEl.value = product.description || "";
   if (qtyInput) qtyInput.value = "1";
-  if (generateBtn) generateBtn.hidden = Boolean(product.barcode);
+  if (generateBtn) generateBtn.hidden = Boolean(getStoredBarcodeValue(product));
 
   if (printerSelect) {
     const cfg = state.labelPrinterConfig || {};
@@ -1990,9 +2037,14 @@ function syncBarcodeLabelPrinterVisibility() {
 }
 
 function printBarcodeLabels(product, quantity, widthMm, heightMm, options = {}) {
-  const barcodeValue = getProductBarcodeValue(product);
+  const rawCode = options.code || getLabelPrintCode(product);
+  const barcodeValue = sanitizeCode39Value(rawCode);
   if (!barcodeValue) {
-    alert("Este producto no tiene codigo de barras.");
+    alert(
+      rawCode
+        ? `El codigo "${rawCode}" no es valido para etiqueta.`
+        : "Este producto no tiene codigo de barras ni SKU."
+    );
     return;
   }
   const labelsQty = Math.max(1, Math.min(300, Math.round(Number(quantity || 1))));
@@ -2089,10 +2141,16 @@ function submitBarcodeLabelForm(event) {
   const printerName = (form.printer_name?.value || "").trim() || null;
   const run = async () => {
     let workingProduct = product;
-    if (!workingProduct.barcode) {
+    let printCode = sanitizeCode39Value(getLabelPrintCode(workingProduct));
+    if (!printCode) {
       const generated = await generateProductBarcode(workingProduct.id, { notify: false });
       if (!generated) return;
       workingProduct = generated;
+      printCode = sanitizeCode39Value(getLabelPrintCode(workingProduct));
+    }
+    if (!printCode) {
+      alert("No hay un codigo imprimible para este producto.");
+      return;
     }
     if (description !== (product.description || "").trim()) {
       workingProduct = await saveProductDescription(workingProduct.id, description);
@@ -2121,6 +2179,7 @@ function submitBarcodeLabelForm(event) {
       includePrice,
       includeDescription,
       description,
+      code: printCode,
     });
     document.getElementById("barcode-label-dialog")?.close();
     state.barcodeLabelProductId = null;
@@ -3305,7 +3364,7 @@ function renderProductsTable() {
               (product) => `
             <tr>
               <td>${product.sku}</td>
-              <td>${getProductBarcodeValue(product) || "-"}</td>
+              <td>${product.barcode ? escapeHtml(normalizeBarcodeValue(product.barcode)) : "-"}</td>
               <td>${product.name}</td>
               <td>${escapeHtml(product.description || "-")}</td>
               <td>${product.department_name || getDepartmentNameById(product.department_id)}</td>

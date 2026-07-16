@@ -490,13 +490,27 @@ def print_product_barcode_labels(
 
     barcode = _normalize_barcode_value(product.barcode)
     if not barcode:
+        barcode = _normalize_barcode_value(product.sku)
+    if not barcode:
         _assign_generated_barcode(db, product)
         db.commit()
         db.refresh(product)
         barcode = _normalize_barcode_value(product.barcode)
 
     if not barcode:
-        raise HTTPException(status_code=400, detail="El producto no tiene codigo de barras.")
+        raise HTTPException(status_code=400, detail="El producto no tiene codigo de barras ni SKU.")
+
+    # Code39: normaliza caracteres incompatibles comunes.
+    printable = "".join(ch if ch in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%" else "-" for ch in barcode)
+    while "--" in printable:
+        printable = printable.replace("--", "-")
+    printable = printable.strip("- ").strip()
+    if not printable:
+        raise HTTPException(
+            status_code=400,
+            detail="El codigo no es valido para etiqueta. Usa letras A-Z, numeros y - . espacio $ / + %",
+        )
+    barcode = printable
 
     label_description = _clean_optional_text(payload.description) if payload.description is not None else product.description
     if payload.description is not None and label_description != product.description:
