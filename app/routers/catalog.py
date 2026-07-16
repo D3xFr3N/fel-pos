@@ -164,7 +164,6 @@ def list_low_stock_products(
         .filter(
             Product.active == 1,
             Product.tracks_inventory == 1,
-            Product.min_stock > 0,
             Product.stock <= Product.min_stock,
         )
         .order_by(Product.stock.asc(), Product.name.asc())
@@ -183,7 +182,6 @@ def low_stock_report(
         .filter(
             Product.active == 1,
             Product.tracks_inventory == 1,
-            Product.min_stock > 0,
             Product.stock <= Product.min_stock,
         )
         .order_by(Product.stock.asc(), Product.name.asc())

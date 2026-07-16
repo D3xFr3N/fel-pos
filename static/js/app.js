@@ -1633,6 +1633,60 @@ async function addToCart(productId) {
   renderCart();
 }
 
+function findProductsByExactCode(rawCode) {
+  const raw = String(rawCode || "").trim();
+  if (!raw) return [];
+  const term = raw.toLowerCase();
+  const normalized = normalizeBarcodeValue(raw);
+  return state.products.filter((product) => {
+    const sku = String(product.sku || "").trim().toLowerCase();
+    const barcode = normalizeBarcodeValue(product.barcode || "");
+    const skuNormalized = normalizeBarcodeValue(product.sku || "");
+    return sku === term || barcode === normalized || skuNormalized === normalized;
+  });
+}
+
+async function addProductFromSearchEnter() {
+  const searchInput = document.getElementById("product-search");
+  if (!searchInput || searchInput.disabled) return;
+  const raw = (searchInput.value || "").trim();
+  if (!raw) return;
+
+  let matches = findProductsByExactCode(raw);
+  if (!matches.length) {
+    const term = raw.toLowerCase();
+    const selectedDepartmentId = getSelectedPosDepartmentId();
+    matches = state.products.filter((product) => {
+      const barcodeValue = getProductBarcodeValue(product).toLowerCase();
+      const matchesText =
+        product.name.toLowerCase().includes(term) ||
+        String(product.sku || "")
+          .toLowerCase()
+          .includes(term) ||
+        barcodeValue.includes(term);
+      const matchesDepartment =
+        !selectedDepartmentId || Number(product.department_id || 0) === selectedDepartmentId;
+      return matchesText && matchesDepartment;
+    });
+  }
+
+  if (!matches.length) {
+    alert(`No se encontro producto con codigo: ${raw}`);
+    searchInput.select();
+    return;
+  }
+  if (matches.length > 1) {
+    alert(`Hay ${matches.length} coincidencias. Escribe el codigo exacto o elige el producto en la lista.`);
+    renderProducts();
+    return;
+  }
+
+  await addToCart(matches[0].id);
+  searchInput.value = "";
+  renderProducts();
+  searchInput.focus();
+}
+
 function syncProductInventoryFields() {
   const form = document.getElementById("product-form");
   if (!form?.tracks_inventory) return;
@@ -2032,8 +2086,14 @@ function submitBarcodeLabelForm(event) {
 }
 
 async function refreshLowStockProducts() {
-  state.lowStockProducts = await api("/api/products/low-stock");
-  state.lowStockReport = await api("/api/products/low-stock/report");
+  try {
+    state.lowStockProducts = await api("/api/products/low-stock");
+    state.lowStockReport = await api("/api/products/low-stock/report");
+  } catch (error) {
+    state.lowStockProducts = [];
+    state.lowStockReport = [];
+    alert(error.message || "No se pudo cargar inventario bajo.");
+  }
 }
 
 async function refreshStockCountData() {
@@ -7493,8 +7553,21 @@ function setupTabs() {
 }
 
 function setupEvents() {
-  document.getElementById("product-search").addEventListener("input", () => {
+  const productSearch = document.getElementById("product-search");
+  productSearch.addEventListener("input", () => {
     renderProducts();
+  });
+  productSearch.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    void addProductFromSearchEnter();
+  });
+  productSearch.addEventListener("search", () => {
+    if ((productSearch.value || "").trim()) {
+      void addProductFromSearchEnter();
+    } else {
+      renderProducts();
+    }
   });
   document.getElementById("pos-department-filter").addEventListener("change", () => {
     renderPosDepartmentChips();

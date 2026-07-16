@@ -12,7 +12,6 @@ def build_system_alerts(db: Session) -> list[dict]:
         .filter(
             Product.active == 1,
             Product.tracks_inventory == 1,
-            Product.min_stock > 0,
             Product.stock <= Product.min_stock,
         )
         .order_by(Product.stock.asc())
