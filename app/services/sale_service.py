@@ -585,6 +585,7 @@ def sale_to_schema(sale: Sale) -> SaleOut:
         total=sale.total,
         payment_method=sale.payment_method,
         status=sale.status,
+        cart_discount_amount=_round2(float(sale.cart_discount_amount or 0)),
         wholesale_savings=round(wholesale_savings, 2),
         returned_total=returned_total,
         net_total=net_total,

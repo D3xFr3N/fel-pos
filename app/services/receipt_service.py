@@ -75,10 +75,14 @@ def build_receipt_text(sale: SaleOut, layout: dict | None = None) -> str:
             lines.append(_left_right(f"{item.quantity:g}", total, width))
 
     lines.append(sep)
+    cart_discount = round(float(getattr(sale, "cart_discount_amount", 0) or 0), 2)
+    gross_total = round(float(sale.total or 0) + cart_discount, 2)
     if cfg.get("show_subtotal"):
-        lines.append(_left_right("Subtotal", _money(sale.subtotal), width))
+        lines.append(_left_right("Subtotal", _money(gross_total), width))
+    if cart_discount > 0:
+        lines.append(_left_right("Descuento", f"-{_money(cart_discount)}", width))
     if cfg.get("show_tax"):
-        lines.append(_left_right("IVA", _money(sale.tax_total), width))
+        lines.append(_left_right("IVA (incl.)", _money(sale.tax_total), width))
     lines.append(_left_right("TOTAL", _money(sale.total), width))
 
     payment_lines = sale.payments or []
@@ -120,14 +124,15 @@ def build_receipt_preview_text() -> str:
     preview_sale = SaleOut(
         id=1234,
         created_at=datetime.now(timezone.utc).replace(tzinfo=None),
-        subtotal=100.0,
-        tax_total=12.0,
-        total=112.0,
+        subtotal=91.07,
+        tax_total=10.93,
+        total=102.0,
         payment_method="efectivo",
         status="completed",
         wholesale_savings=5.0,
+        cart_discount_amount=10.0,
         returned_total=0,
-        net_total=112.0,
+        net_total=102.0,
         customer_nit="CF",
         customer_name="CLIENTE DE PRUEBA",
         items=[
@@ -145,7 +150,7 @@ def build_receipt_preview_text() -> str:
                 total=112.0,
             )
         ],
-        payments=[SalePaymentOut(payment_method="efectivo", amount=112.0)],
+                payments=[SalePaymentOut(payment_method="efectivo", amount=102.0)],
         fel=FelInvoiceOut(
             uuid="00000000-0000-0000-0000-000000000000",
             serie="DEMO",

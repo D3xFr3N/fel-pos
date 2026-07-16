@@ -362,6 +362,7 @@ class SaleOut(BaseModel):
     total: float
     payment_method: str
     status: str
+    cart_discount_amount: float = 0
     wholesale_savings: float = 0
     returned_total: float = 0
     net_total: float = 0

@@ -92,8 +92,8 @@ def _build_document_xml(
         SubElement(item_node, "dte:Descripcion").text = str(line["description"])
         # PrecioUnitario y Precio van con IVA incluido; MontoGravable es la base sin IVA.
         SubElement(item_node, "dte:PrecioUnitario").text = _format_amount(float(line["unit_price"]))
-        SubElement(item_node, "dte:Precio").text = _format_amount(float(line["total"]))
-        SubElement(item_node, "dte:Descuento").text = "0.000000"
+        SubElement(item_node, "dte:Precio").text = _format_amount(float(line.get("price", line["total"])))
+        SubElement(item_node, "dte:Descuento").text = _format_amount(float(line.get("discount", 0)))
         taxes = SubElement(item_node, "dte:Impuestos")
         tax = SubElement(taxes, "dte:Impuesto")
         SubElement(tax, "dte:NombreCorto").text = "IVA"
@@ -128,17 +128,42 @@ def _build_document_xml(
 
 
 def build_fel_xml(sale: Sale, customer: Customer | None) -> str:
-    lines = [
-        {
-            "quantity": item.quantity,
-            "description": item.product.name,
-            "unit_price": item.unit_price,
-            "subtotal": item.subtotal,
-            "tax_amount": item.tax_amount,
-            "total": item.total,
-        }
-        for item in sale.items
-    ]
+    items = list(sale.items)
+    gross_total = round(sum(float(item.total or 0) for item in items), 2)
+    cart_discount = min(round(float(sale.cart_discount_amount or 0), 2), gross_total)
+    remaining_discount = cart_discount
+    lines: list[dict] = []
+    for index, item in enumerate(items):
+        if index == len(items) - 1:
+            item_discount = remaining_discount
+        elif gross_total > 0:
+            item_discount = round(cart_discount * float(item.total or 0) / gross_total, 2)
+            item_discount = min(item_discount, remaining_discount)
+        else:
+            item_discount = 0.0
+        remaining_discount = round(remaining_discount - item_discount, 2)
+
+        line_total = round(max(float(item.total or 0) - item_discount, 0), 2)
+        tax_rate = float(item.tax_rate or 0)
+        line_tax = round(line_total - (line_total / (1 + tax_rate)), 2) if tax_rate > 0 else 0.0
+        line_subtotal = round(line_total - line_tax, 2)
+        lines.append(
+            {
+                "quantity": item.quantity,
+                "description": item.product.name,
+                "unit_price": item.unit_price,
+                "price": item.total,
+                "discount": item_discount,
+                "subtotal": line_subtotal,
+                "tax_amount": line_tax,
+                "total": line_total,
+            }
+        )
+    if lines:
+        tax_difference = round(float(sale.tax_total or 0) - sum(line["tax_amount"] for line in lines), 2)
+        if tax_difference:
+            lines[-1]["tax_amount"] = round(lines[-1]["tax_amount"] + tax_difference, 2)
+            lines[-1]["subtotal"] = round(lines[-1]["total"] - lines[-1]["tax_amount"], 2)
     return _build_document_xml(
         document_type="FACT",
         emission_date=sale.created_at,

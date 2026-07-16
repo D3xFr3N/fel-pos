@@ -299,6 +299,9 @@ dialog textarea {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.totals-discount.is-hidden {
+  display: none;
+}
 .totals-discount.is-active strong {
   color: #f0c14b;
 }

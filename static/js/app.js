@@ -1474,9 +1474,10 @@ function renderCart() {
 function renderTotals() {
   const totals = calcTotals(state.cart);
   const discountAmount = Number(totals.cartDiscount || 0);
-  document.getElementById("subtotal").textContent = money(totals.subtotal);
+  // Subtotal del ticket = importe de productos (IVA incluido) antes del descuento.
+  document.getElementById("subtotal").textContent = money(totals.rawSubtotal);
   const discountEl = document.getElementById("cart-discount-display");
-  if (discountEl) discountEl.textContent = money(discountAmount);
+  if (discountEl) discountEl.textContent = discountAmount > 0 ? `-${money(discountAmount)}` : money(0);
   document.getElementById("tax-total").textContent = money(totals.taxTotal);
   document.getElementById("grand-total").textContent = money(totals.total);
 
@@ -1485,6 +1486,7 @@ function renderTotals() {
   const discountBadge = document.getElementById("discount-badge");
   const hasDiscount = discountAmount > 0;
   discountRow?.classList.toggle("is-active", hasDiscount);
+  discountRow?.classList.toggle("is-hidden", !hasDiscount);
   discountPanel?.classList.toggle("is-active", hasDiscount);
   if (discountBadge) {
     discountBadge.textContent = hasDiscount ? `Ahorro ${money(discountAmount)}` : "Sin descuento";
@@ -1496,6 +1498,11 @@ function renderTotals() {
     const chipValue = Math.round(Number(chip.dataset.discount || 0) * 100) / 100;
     chip.classList.toggle("is-selected", hasDiscount && chipValue === currentValue && chipValue > 0);
   });
+}
+
+function resetCartDiscount() {
+  const input = document.getElementById("cart-discount-input");
+  if (input) input.value = "0";
 }
 
 function formatPaymentMethodLabel(method) {
@@ -1528,6 +1535,7 @@ function closeCurrentSaleDraft() {
     if (!confirmed) return;
   }
   state.cart = [];
+  resetCartDiscount();
   const cashDialog = document.getElementById("cash-checkout-dialog");
   if (cashDialog?.open) {
     cashDialog.close();
@@ -3982,6 +3990,7 @@ function renderSalesTable() {
           <th>Fecha</th>
           <th>Cliente</th>
           <th>Total</th>
+          <th>Descuento</th>
           <th>Devuelto</th>
           <th>Neto</th>
           <th>Ahorro mayoreo</th>
@@ -3998,6 +4007,7 @@ function renderSalesTable() {
             <td>${new Date(sale.created_at).toLocaleString("es-GT")}</td>
             <td>${sale.customer_name || "CONSUMIDOR FINAL"}</td>
             <td>${money(sale.total)}</td>
+            <td>${Number(sale.cart_discount_amount || 0) > 0 ? money(sale.cart_discount_amount) : "-"}</td>
             <td>${money(sale.returned_total || 0)}</td>
             <td>${money(sale.net_total ?? sale.total)}</td>
             <td>${money(sale.wholesale_savings || 0)}</td>
@@ -4183,11 +4193,22 @@ function openSaleDetail(saleId) {
     <h3>Venta #${sale.id}</h3>
     <p><strong>Estado:</strong> ${escapeHtml(sale.status || "completed")}</p>
     <p><strong>Cliente:</strong> ${sale.customer_name || "CONSUMIDOR FINAL"} (${sale.customer_nit || "CF"})</p>
+    <p><strong>Subtotal:</strong> ${money(Number(sale.total || 0) + Number(sale.cart_discount_amount || 0))}</p>
+    ${
+      Number(sale.cart_discount_amount || 0) > 0
+        ? `<p><strong>Descuento:</strong> -${money(sale.cart_discount_amount)}</p>`
+        : ""
+    }
+    <p><strong>IVA (incluido):</strong> ${money(sale.tax_total || 0)}</p>
     <p><strong>Total:</strong> ${money(sale.total)}</p>
     <p><strong>Total devuelto:</strong> ${money(sale.returned_total || 0)}</p>
     <p><strong>Total neto:</strong> ${money(sale.net_total ?? sale.total)}</p>
     <p><strong>Pago:</strong> ${formatSalePayments(sale)}</p>
-    <p><strong>Ahorro mayoreo:</strong> ${money(sale.wholesale_savings || 0)}</p>
+    ${
+      Number(sale.wholesale_savings || 0) > 0
+        ? `<p><strong>Ahorro mayoreo:</strong> ${money(sale.wholesale_savings || 0)}</p>`
+        : ""
+    }
     <p><strong>FEL UUID:</strong> ${sale.fel?.uuid || "-"}</p>
     <p><strong>Serie/Numero:</strong> ${sale.fel ? `${sale.fel.serie}-${sale.fel.numero}` : "-"}</p>
     ${cashGuardHint}
@@ -4849,7 +4870,9 @@ function buildSaleSuccessMessage(sale, suffix = "") {
     isFelEnabledInConfig() && sale.fel
       ? `FEL ${sale.fel.serie}-${sale.fel.numero}`
       : `Ticket #${sale.id}`;
-  return `Venta registrada. ${reference}.${suffix ? ` ${suffix}` : ""}`;
+  const discount = Number(sale.cart_discount_amount || 0);
+  const discountPart = discount > 0 ? ` Descuento: ${money(discount)}.` : "";
+  return `Venta registrada. ${reference}.${discountPart}${suffix ? ` ${suffix}` : ""}`;
 }
 
 function renderScannerBridgeSection() {
@@ -6665,6 +6688,7 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
       body: JSON.stringify(payload),
     });
     state.cart = [];
+    resetCartDiscount();
     resetSaleCustomerDefaults();
     document.getElementById("cash-checkout-dialog")?.close();
     document.getElementById("mixed-checkout-dialog")?.close();
@@ -7891,6 +7915,7 @@ function setupEvents() {
   });
   document.getElementById("clear-cart").addEventListener("click", () => {
     state.cart = [];
+    resetCartDiscount();
     renderCart();
   });
   document.getElementById("open-sale-session-btn").addEventListener("click", openSaleSessionWithPassword);
