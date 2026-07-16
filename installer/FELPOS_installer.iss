@@ -33,7 +33,7 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Crear acceso directo en el escritorio"; GroupDescription: "Accesos directos:"; Flags: unchecked
-Name: "cleaninstall"; Description: "Instalacion limpia (BORRA productos, ventas y caja anteriores de esta carpeta)"; GroupDescription: "Datos:"; Flags: unchecked
+Name: "cleaninstall"; Description: "Instalacion limpia (BORRA base de datos y respaldos: productos, ventas y caja)"; GroupDescription: "Datos:"; Flags: unchecked
 
 [Files]
 Source: "staging\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -535,16 +535,57 @@ begin
 end;
 
 procedure WipeStoreDatabase(const AppDir: String);
+var
+  FindRec: TFindRec;
+  BackupsDir, DataDir: String;
 begin
-  { Instalacion limpia: sin catalogo, ventas ni caja. Solo se recrean usuarios al primer arranque. }
+  { Instalacion limpia: sin catalogo, ventas ni caja.
+    Tambien borra respaldos; si no, al arrancar se restaura la base y vuelven los productos. }
   ForceDirectories(AppDir + '\data');
+  ForceDirectories(AppDir + '\data\backups');
   DeleteFileIfExists(AppDir + '\data\fel_pos.db');
   DeleteFileIfExists(AppDir + '\data\fel_pos.db-wal');
   DeleteFileIfExists(AppDir + '\data\fel_pos.db-shm');
   DeleteFileIfExists(AppDir + '\data\license_cache.json');
+  DeleteFileIfExists(AppDir + '\data\app_version.json');
   DeleteFileIfExists(AppDir + '\fel_pos.db');
   DeleteFileIfExists(AppDir + '\fel_pos.db-wal');
   DeleteFileIfExists(AppDir + '\fel_pos.db-shm');
+
+  DataDir := AppDir + '\data';
+  if FindFirst(DataDir + '\fel_pos.previous_*.db', FindRec) then
+  begin
+    try
+      repeat
+        DeleteFile(DataDir + '\' + FindRec.Name);
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+
+  BackupsDir := AppDir + '\data\backups';
+  if FindFirst(BackupsDir + '\*.db', FindRec) then
+  begin
+    try
+      repeat
+        DeleteFile(BackupsDir + '\' + FindRec.Name);
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+
+  if FindFirst(AppDir + '\backups\*.db', FindRec) then
+  begin
+    try
+      repeat
+        DeleteFile(AppDir + '\backups\' + FindRec.Name);
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
 end;
 
 function ShouldWipeDatabase(const FreshEnv: Boolean): Boolean;
