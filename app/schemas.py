@@ -671,6 +671,12 @@ class AppVersionOut(BaseModel):
     changed_on_startup: bool = False
 
 
+class LanIpOut(BaseModel):
+    ip: str | None = None
+    detected: bool = False
+    message: str = ""
+
+
 class UpdateCheckOut(BaseModel):
     enabled: bool
     current_version: str

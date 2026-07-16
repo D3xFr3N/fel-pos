@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import socket
 
 from app.config import settings
 from app.data_paths import ENV_FILE_NAME, get_runtime_root
@@ -52,12 +51,9 @@ def _write_env_values(values: dict[str, str]) -> None:
 
 
 def _detect_lan_ip() -> str:
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.connect(("8.8.8.8", 80))
-            return sock.getsockname()[0]
-    except OSError:
-        return "127.0.0.1"
+    from app.services.network_service import detect_lan_ip
+
+    return detect_lan_ip() or "127.0.0.1"
 
 
 def _apply_runtime(

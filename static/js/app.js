@@ -1027,9 +1027,18 @@ async function detectLocalIp() {
     return currentHost;
   }
 
+  try {
+    const result = await api("/api/system/lan-ip");
+    if (result?.detected && result?.ip) {
+      return result.ip;
+    }
+  } catch {
+    // Fall through to browser detection.
+  }
+
   const RTCPeer = window.RTCPeerConnection || window.webkitRTCPeerConnection;
   if (!RTCPeer) {
-    throw new Error("Este navegador no permite deteccion automatica de IP.");
+    throw new Error("No se pudo detectar IP automaticamente. Ingresala manualmente.");
   }
 
   return await new Promise((resolve) => {
@@ -3296,7 +3305,10 @@ function renderProductsTable() {
               (row) => `
             <tr>
               <td>${row.sku}</td>
-              <td>${getProductBarcodeValue(productById.get(Number(row.product_id))) || "-"}</td>
+              <td>${(() => {
+                const p = productById.get(Number(row.product_id));
+                return p?.barcode ? escapeHtml(normalizeBarcodeValue(p.barcode)) : "-";
+              })()}</td>
               <td>${row.name}</td>
               <td>${escapeHtml(productById.get(Number(row.product_id))?.description || "-")}</td>
               <td>${row.department_name || "Sin departamento"}</td>

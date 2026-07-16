@@ -7,10 +7,12 @@ from app.schemas import (
     BackupCreateOut,
     BackupFileOut,
     BackupRestoreOut,
+    LanIpOut,
     UpdateApplyOut,
     UpdateCheckOut,
 )
 from app.services.backup_service import create_backup, list_backups, restore_backup
+from app.services.network_service import detect_lan_ip
 from app.services.update_service import check_for_updates, prepare_update_apply
 from app.services.version_service import get_version_info
 
@@ -20,6 +22,18 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 @router.get("/version", response_model=AppVersionOut)
 def read_app_version():
     return get_version_info()
+
+
+@router.get("/lan-ip", response_model=LanIpOut)
+def read_lan_ip(user: User = Depends(require_roles("admin", "user"))):
+    ip = detect_lan_ip()
+    if not ip:
+        return LanIpOut(
+            ip=None,
+            detected=False,
+            message="No se pudo detectar una IP de red local. Revisa Wi-Fi/Ethernet o ingresala manualmente.",
+        )
+    return LanIpOut(ip=ip, detected=True, message=f"IP detectada: {ip}")
 
 
 @router.get("/update/check", response_model=UpdateCheckOut)
