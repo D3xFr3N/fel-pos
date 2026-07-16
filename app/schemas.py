@@ -417,6 +417,20 @@ class BusinessProfileConfigOut(BaseModel):
     business_profile_label: str
     cash_shared_session: bool = False
     nit_lookup_configured: bool = False
+    primary_color: str = "#00a884"
+    primary_dark: str = "#008f70"
+    primary_rgb: str = "0, 168, 132"
+
+
+class UiThemeConfigOut(BaseModel):
+    primary_color: str = "#00a884"
+    primary_dark: str = "#008f70"
+    primary_rgb: str = "0, 168, 132"
+    presets: list[dict] = Field(default_factory=list)
+
+
+class UiThemeConfigUpdateIn(BaseModel):
+    primary_color: str = Field(default="#00a884", min_length=4, max_length=7)
 
 
 class LoginRequest(BaseModel):

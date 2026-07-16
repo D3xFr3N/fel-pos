@@ -60,6 +60,8 @@ from app.schemas import (
     ScannerBridgeConfigUpdateIn,
     LicenseConfigOut,
     LicenseConfigUpdateIn,
+    UiThemeConfigOut,
+    UiThemeConfigUpdateIn,
     SupplierCreate,
     SupplierOut,
     SupplierUpdate,
@@ -778,16 +780,60 @@ config_router = APIRouter(prefix="/api/config", tags=["config"])
 @config_router.get("/profile", response_model=BusinessProfileConfigOut)
 def get_business_profile(db: Session = Depends(get_db), user=Depends(require_roles("admin", "user"))):
     from app.services.system_config_service import get_system_config
+    from app.services.ui_theme_service import get_ui_theme_config
 
     row = bootstrap_store_settings(db)
     profile = normalize_business_profile(row.business_profile)
     runtime = get_system_config()
+    theme = get_ui_theme_config()
     return BusinessProfileConfigOut(
         business_profile=profile,
         business_profile_label=business_profile_label(profile),
         cash_shared_session=runtime["cash_shared_session"],
         nit_lookup_configured=runtime["nit_lookup_configured"],
+        primary_color=theme["primary_color"],
+        primary_dark=theme["primary_dark"],
+        primary_rgb=theme["primary_rgb"],
     )
+
+
+@config_router.get("/ui-theme", response_model=UiThemeConfigOut)
+def get_ui_theme_config_route(
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "user")),
+):
+    from app.services.ui_theme_service import get_ui_theme_config
+
+    bootstrap_store_settings(db)
+    return UiThemeConfigOut(**get_ui_theme_config())
+
+
+@config_router.put("/ui-theme", response_model=UiThemeConfigOut)
+def save_ui_theme_config_route(
+    payload: UiThemeConfigUpdateIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    from app.services.ui_theme_service import update_ui_theme_config
+
+    bootstrap_store_settings(db)
+    try:
+        result = update_ui_theme_config(primary_color=payload.primary_color)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar .env: {exc}") from exc
+
+    log_action(
+        db,
+        user_id=user.id,
+        action="ui_theme_updated",
+        entity_type="ui_theme",
+        entity_id=1,
+        details=f"primary_color={result.get('primary_color')}",
+    )
+    db.commit()
+    return UiThemeConfigOut(**result)
 
 
 @config_router.get("", response_model=CompanyConfig)

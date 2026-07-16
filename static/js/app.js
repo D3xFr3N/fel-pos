@@ -23,6 +23,7 @@ const state = {
   backups: [],
   config: null,
   receiptPrinterConfig: null,
+  uiThemeConfig: null,
   labelPrinterConfig: null,
   systemConfig: null,
   notificationConfig: null,
@@ -107,6 +108,22 @@ const DEFAULT_RECEIPT_PRINTER_CONFIG = {
   preview_text: "",
 };
 
+const DEFAULT_UI_THEME = {
+  primary_color: "#00a884",
+  primary_dark: "#008f70",
+  primary_rgb: "0, 168, 132",
+  presets: [
+    { id: "verde", label: "Verde", color: "#00a884" },
+    { id: "azul", label: "Azul", color: "#3b82f6" },
+    { id: "rojo", label: "Rojo", color: "#e5534b" },
+    { id: "naranja", label: "Naranja", color: "#f59e0b" },
+    { id: "morado", label: "Morado", color: "#8b5cf6" },
+    { id: "rosa", label: "Rosa", color: "#ec4899" },
+    { id: "cian", label: "Cian", color: "#06b6d4" },
+    { id: "lima", label: "Lima", color: "#84cc16" },
+  ],
+};
+
 const money = (value) => `Q ${Number(value || 0).toFixed(2)}`;
 const formatQuantity = (value) => {
   const numeric = Number(value || 0);
@@ -127,6 +144,96 @@ const escapeHtml = (value) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+
+function normalizeHexColor(value, fallback = "#00a884") {
+  let raw = String(value || "").trim();
+  if (!raw) return fallback;
+  if (!raw.startsWith("#")) raw = `#${raw}`;
+  if (!/^#[0-9A-Fa-f]{6}$/.test(raw)) return fallback;
+  return raw.toLowerCase();
+}
+
+function hexToRgb(hexColor) {
+  const color = normalizeHexColor(hexColor);
+  return [
+    parseInt(color.slice(1, 3), 16),
+    parseInt(color.slice(3, 5), 16),
+    parseInt(color.slice(5, 7), 16),
+  ];
+}
+
+function darkenHex(hexColor, factor = 0.82) {
+  const [r, g, b] = hexToRgb(hexColor);
+  const toHex = (n) => Math.max(0, Math.min(255, Math.round(n * factor))).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function applyUiTheme(themeOrColor) {
+  let primary = DEFAULT_UI_THEME.primary_color;
+  let dark = DEFAULT_UI_THEME.primary_dark;
+  let rgb = DEFAULT_UI_THEME.primary_rgb;
+
+  if (typeof themeOrColor === "string") {
+    primary = normalizeHexColor(themeOrColor);
+    dark = darkenHex(primary);
+    rgb = hexToRgb(primary).join(", ");
+  } else if (themeOrColor && typeof themeOrColor === "object") {
+    primary = normalizeHexColor(themeOrColor.primary_color || primary);
+    dark = normalizeHexColor(themeOrColor.primary_dark || darkenHex(primary), darkenHex(primary));
+    rgb = String(themeOrColor.primary_rgb || hexToRgb(primary).join(", "));
+  }
+
+  const root = document.documentElement;
+  root.style.setProperty("--primary", primary);
+  root.style.setProperty("--primary-dark", dark);
+  root.style.setProperty("--primary-rgb", rgb);
+  return { primary_color: primary, primary_dark: dark, primary_rgb: rgb };
+}
+
+function renderUiThemeSection() {
+  const theme = state.uiThemeConfig || DEFAULT_UI_THEME;
+  const current = normalizeHexColor(theme.primary_color || DEFAULT_UI_THEME.primary_color);
+  const presets = Array.isArray(theme.presets) && theme.presets.length ? theme.presets : DEFAULT_UI_THEME.presets;
+  return `
+    <h3 style="margin: 0.2rem 0 0;">Apariencia del sistema</h3>
+    <p class="hint">Personaliza el color principal de botones, pestanas, totales y acentos de la interfaz.</p>
+    <form id="ui-theme-form" class="ui-theme-form">
+      <div class="ui-theme-preview" id="ui-theme-preview">
+        <span class="ui-theme-swatch" style="background:${current}"></span>
+        <div>
+          <strong>Color activo</strong>
+          <small id="ui-theme-preview-hex">${current}</small>
+        </div>
+        <button type="button" class="btn primary ui-theme-sample-btn">Ejemplo</button>
+      </div>
+      <div class="ui-theme-presets" id="ui-theme-presets">
+        ${presets
+          .map((preset) => {
+            const color = normalizeHexColor(preset.color);
+            const selected = color === current ? "is-selected" : "";
+            return `
+              <button type="button" class="ui-theme-preset ${selected}" data-color="${color}" title="${escapeHtml(preset.label || color)}" style="--swatch:${color}">
+                <span class="ui-theme-preset-dot"></span>
+                <span>${escapeHtml(preset.label || color)}</span>
+              </button>
+            `;
+          })
+          .join("")}
+      </div>
+      <label class="ui-theme-custom">
+        Color personalizado
+        <span class="ui-theme-custom-row">
+          <input type="color" name="primary_color_picker" value="${current}" aria-label="Selector de color">
+          <input type="text" name="primary_color" value="${current}" maxlength="7" placeholder="#00a884" pattern="#[0-9A-Fa-f]{6}">
+        </span>
+      </label>
+      <div class="panel-actions">
+        <button class="btn primary" type="submit">Guardar color</button>
+        <button class="btn ghost" type="button" id="ui-theme-reset-btn">Restaurar verde</button>
+      </div>
+    </form>
+  `;
+}
 const CODE39_PATTERNS = {
   "0": "nnnwwnwnn",
   "1": "wnnwnnnnw",
@@ -5217,6 +5324,8 @@ function renderConfig() {
     </p>
     <hr style="border-color: var(--border); width: 100%;">
     ${renderAutoUpdateSection()}
+    ${renderUiThemeSection()}
+    <hr style="border-color: var(--border); width: 100%;">
     <h3 style="margin: 0.2rem 0 0;">Configuracion de tienda</h3>
     <p class="hint">
       Configura tu negocio, NIT y si deseas factura contable (FEL) o solo ticket de venta.
@@ -5475,6 +5584,52 @@ function renderConfig() {
       certificadorUrlInput.value = certificadorDefaultUrls[selected] || "";
     }
   });
+
+  const uiThemeForm = document.getElementById("ui-theme-form");
+  if (uiThemeForm) {
+    const colorInput = uiThemeForm.querySelector('input[name="primary_color"]');
+    const pickerInput = uiThemeForm.querySelector('input[name="primary_color_picker"]');
+    const previewHex = document.getElementById("ui-theme-preview-hex");
+    const previewSwatch = document.querySelector("#ui-theme-preview .ui-theme-swatch");
+
+    const syncThemePreview = (rawColor, { applyLive = true } = {}) => {
+      const color = normalizeHexColor(rawColor);
+      if (colorInput) colorInput.value = color;
+      if (pickerInput) pickerInput.value = color;
+      if (previewHex) previewHex.textContent = color;
+      if (previewSwatch) previewSwatch.style.background = color;
+      uiThemeForm.querySelectorAll(".ui-theme-preset").forEach((btn) => {
+        btn.classList.toggle("is-selected", normalizeHexColor(btn.dataset.color) === color);
+      });
+      if (applyLive) applyUiTheme(color);
+      return color;
+    };
+
+    uiThemeForm.querySelectorAll(".ui-theme-preset").forEach((button) => {
+      button.addEventListener("click", () => syncThemePreview(button.dataset.color));
+    });
+    pickerInput?.addEventListener("input", () => syncThemePreview(pickerInput.value));
+    colorInput?.addEventListener("change", () => syncThemePreview(colorInput.value));
+    document.getElementById("ui-theme-reset-btn")?.addEventListener("click", () => {
+      syncThemePreview(DEFAULT_UI_THEME.primary_color);
+    });
+
+    uiThemeForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const color = syncThemePreview(colorInput?.value || DEFAULT_UI_THEME.primary_color, { applyLive: true });
+      try {
+        state.uiThemeConfig = await api("/api/config/ui-theme", {
+          method: "PUT",
+          body: JSON.stringify({ primary_color: color }),
+        });
+        applyUiTheme(state.uiThemeConfig);
+        renderConfig();
+        alert(`Color del sistema guardado: ${state.uiThemeConfig.primary_color}`);
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+  }
 
   document.getElementById("store-config-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -6046,6 +6201,7 @@ async function loadData() {
   const receiptPrinterPromise = isAdmin
     ? api("/api/config/receipt-printer").catch(() => null)
     : Promise.resolve(null);
+  const uiThemePromise = api("/api/config/ui-theme").catch(() => null);
   const labelPrinterPromise = api("/api/config/label-printer").catch(() => null);
   const systemConfigPromise = isAdmin ? api("/api/config/system").catch(() => null) : Promise.resolve(null);
   const notificationConfigPromise = isAdmin
@@ -6082,6 +6238,7 @@ async function loadData() {
     branches,
     updateInfo,
     receiptPrinterConfig,
+    uiThemeConfig,
     labelPrinterConfig,
     systemConfig,
     notificationConfig,
@@ -6114,6 +6271,7 @@ async function loadData() {
     branchesPromise,
     updateCheckPromise,
     receiptPrinterPromise,
+    uiThemePromise,
     labelPrinterPromise,
     systemConfigPromise,
     notificationConfigPromise,
@@ -6129,6 +6287,13 @@ async function loadData() {
   state.runtimeConfig = {
     nit_lookup_configured: Boolean(profileInfo?.nit_lookup_configured),
   };
+  state.uiThemeConfig = uiThemeConfig || {
+    ...DEFAULT_UI_THEME,
+    primary_color: profileInfo?.primary_color || DEFAULT_UI_THEME.primary_color,
+    primary_dark: profileInfo?.primary_dark || DEFAULT_UI_THEME.primary_dark,
+    primary_rgb: profileInfo?.primary_rgb || DEFAULT_UI_THEME.primary_rgb,
+  };
+  applyUiTheme(state.uiThemeConfig);
   state.config = config;
   state.users = users;
   state.backups = backups;
