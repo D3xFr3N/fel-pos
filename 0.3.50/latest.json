@@ -1,0 +1,7 @@
+{
+    "version":  "0.3.50",
+    "build_date":  "2026-07-16 11:51:04",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.50/felpos-update-0.3.50.zip",
+    "sha256":  "239c953325918f6bd4745d286e60733b4d3a19a7a3c40ca0d6d37b7aca142146",
+    "release_notes":  "IVA incluido: el precio de venta ya incluye IVA. Un producto a Q20 se cobra Q20 (antes sumaba el 12% encima).\r\n\r\nEl ticket muestra Subtotal + IVA como desglose, no como cargo extra. FEL usa el mismo modelo."
+}
