@@ -1,7 +1,0 @@
-{
-    "version":  "0.3.51",
-    "build_date":  "2026-07-16 12:04:55",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.51/felpos-update-0.3.51.zip",
-    "sha256":  "b6a7cca9c72397650a9fb1dfd3c1af270f0a28a8a6357fadc22958c91e8586b5",
-    "release_notes":  "Descuento visible: si la venta lleva descuento, ahora aparece en el ticket en pantalla, recibo impreso, detalle e historial de ventas y en el XML FEL (Subtotal, Descuento, IVA incluido, Total).\r\n\r\nEl descuento se limpia automaticamente al terminar o cancelar la venta."
-}

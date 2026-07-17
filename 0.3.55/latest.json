@@ -1,0 +1,7 @@
+{
+    "version":  "0.3.55",
+    "build_date":  "2026-07-16 22:28:19",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.55/felpos-update-0.3.55.zip",
+    "sha256":  "01989126bc1f6c4bd01c9f2fb0eace97b8a4b53864067b11c0a2aad9d5b6affe",
+    "release_notes":  "Tickets abiertos: puedes retener un ticket, cobrar otro y volver al anterior. Botones Retener y Nuevo, barra de tickets en espera (hasta 8)."
+}
