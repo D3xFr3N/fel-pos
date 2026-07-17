@@ -17,6 +17,9 @@ const state = {
   departments: [],
   purchaseOrders: [],
   cart: [],
+  openTickets: [],
+  activeTicketId: null,
+  nextTicketNumber: 1,
   sales: [],
   orders: [],
   users: [],
@@ -915,8 +918,243 @@ function isSaleSessionUnlocked() {
 function resetSaleCustomerDefaults() {
   const nitInput = document.getElementById("customer-nit");
   const nameInput = document.getElementById("customer-name");
+  const select = document.getElementById("customer-select");
   if (nitInput) nitInput.value = "CF";
   if (nameInput) nameInput.value = "CONSUMIDOR FINAL";
+  if (select) select.value = "";
+}
+
+function ensureActiveTicketId() {
+  if (state.activeTicketId) return state.activeTicketId;
+  const number = state.nextTicketNumber++;
+  state.activeTicketId = `ticket-${number}`;
+  return state.activeTicketId;
+}
+
+function cloneCartLines(cart) {
+  return (cart || []).map((line) => ({ ...line }));
+}
+
+function snapshotActiveTicket() {
+  const id = ensureActiveTicketId();
+  const existing = state.openTickets.find((ticket) => ticket.id === id);
+  const number = existing?.number || Number(String(id).replace(/\D/g, "")) || state.nextTicketNumber;
+  const paymentMethod = document.getElementById("payment-method")?.value || "efectivo";
+  const snapshot = {
+    id,
+    number,
+    cart: cloneCartLines(state.cart),
+    customerNit: document.getElementById("customer-nit")?.value || "CF",
+    customerName: document.getElementById("customer-name")?.value || "CONSUMIDOR FINAL",
+    customerSelect: document.getElementById("customer-select")?.value || "",
+    cartDiscount: Math.round(Number(document.getElementById("cart-discount-input")?.value || 0) * 100) / 100,
+    paymentMethod,
+    updatedAt: Date.now(),
+  };
+  const index = state.openTickets.findIndex((ticket) => ticket.id === id);
+  if (index >= 0) {
+    state.openTickets[index] = snapshot;
+  } else if (snapshot.cart.length > 0 || snapshot.cartDiscount > 0 || snapshot.customerNit !== "CF") {
+    state.openTickets.push(snapshot);
+  }
+  return snapshot;
+}
+
+function ticketHasContent(ticket) {
+  if (!ticket) return false;
+  return (
+    (ticket.cart && ticket.cart.length > 0) ||
+    Number(ticket.cartDiscount || 0) > 0 ||
+    (ticket.customerNit && ticket.customerNit !== "CF") ||
+    (ticket.customerName && ticket.customerName !== "CONSUMIDOR FINAL")
+  );
+}
+
+function clearActiveTicketWorkspace({ keepPaymentMethod = false } = {}) {
+  state.cart = [];
+  resetCartDiscount();
+  resetSaleCustomerDefaults();
+  if (!keepPaymentMethod) {
+    const payment = document.getElementById("payment-method");
+    if (payment) payment.value = "efectivo";
+  }
+  const cashDialog = document.getElementById("cash-checkout-dialog");
+  if (cashDialog?.open) cashDialog.close();
+  const mixedDialog = document.getElementById("mixed-checkout-dialog");
+  if (mixedDialog?.open) mixedDialog.close();
+}
+
+function startBlankTicket() {
+  const number = state.nextTicketNumber++;
+  state.activeTicketId = `ticket-${number}`;
+  clearActiveTicketWorkspace();
+  renderCart();
+  if (isCashierSaleLockEnabled() && state.saleSessionUnlocked) {
+    resetSaleSessionAutoLockTimer();
+    renderSaleSessionIndicator();
+  }
+}
+
+function restoreTicket(ticket) {
+  if (!ticket) return;
+  state.activeTicketId = ticket.id;
+  state.cart = cloneCartLines(ticket.cart);
+  const nitInput = document.getElementById("customer-nit");
+  const nameInput = document.getElementById("customer-name");
+  const select = document.getElementById("customer-select");
+  const discountInput = document.getElementById("cart-discount-input");
+  const payment = document.getElementById("payment-method");
+  if (nitInput) nitInput.value = ticket.customerNit || "CF";
+  if (nameInput) nameInput.value = ticket.customerName || "CONSUMIDOR FINAL";
+  if (select) select.value = ticket.customerSelect || "";
+  if (discountInput) discountInput.value = String(Number(ticket.cartDiscount || 0));
+  if (payment) payment.value = ticket.paymentMethod || "efectivo";
+  renderCart();
+  if (isCashierSaleLockEnabled() && state.saleSessionUnlocked) {
+    resetSaleSessionAutoLockTimer();
+    renderSaleSessionIndicator();
+  }
+}
+
+function holdCurrentTicket() {
+  if (!state.cart.length && Number(document.getElementById("cart-discount-input")?.value || 0) <= 0) {
+    alert("El ticket actual esta vacio. Agrega productos antes de retenerlo.");
+    return false;
+  }
+  if (state.openTickets.filter((t) => t.id !== state.activeTicketId).length >= 8) {
+    alert("Ya hay demasiados tickets abiertos (maximo 8). Cobra o cierra alguno primero.");
+    return false;
+  }
+  snapshotActiveTicket();
+  startBlankTicket();
+  return true;
+}
+
+function createNewTicket() {
+  const hasItems =
+    state.cart.length > 0 || Number(document.getElementById("cart-discount-input")?.value || 0) > 0;
+  if (hasItems) {
+    if (state.openTickets.filter((t) => t.id !== state.activeTicketId).length >= 8) {
+      alert("Ya hay demasiados tickets abiertos (maximo 8). Cobra o cierra alguno primero.");
+      return false;
+    }
+    snapshotActiveTicket();
+  } else if (state.activeTicketId) {
+    state.openTickets = state.openTickets.filter((ticket) => ticket.id !== state.activeTicketId);
+  }
+  startBlankTicket();
+  return true;
+}
+
+function switchToOpenTicket(ticketId) {
+  if (!ticketId || ticketId === state.activeTicketId) return;
+  const target = state.openTickets.find((ticket) => ticket.id === ticketId);
+  if (!target) return;
+  snapshotActiveTicket();
+  // Quita vacios retenidos al cambiar
+  state.openTickets = state.openTickets.filter((ticket) => ticket.id === target.id || ticketHasContent(ticket));
+  restoreTicket(target);
+}
+
+function discardOpenTicket(ticketId) {
+  const ticket = state.openTickets.find((item) => item.id === ticketId);
+  if (!ticket) return;
+  const label = `Ticket #${ticket.number}`;
+  if (ticketHasContent(ticket)) {
+    const confirmed = confirm(`Se eliminara ${label} con sus productos. Deseas continuar?`);
+    if (!confirmed) return;
+  }
+  state.openTickets = state.openTickets.filter((item) => item.id !== ticketId);
+  if (state.activeTicketId === ticketId) {
+    startBlankTicket();
+  } else {
+    renderOpenTicketsBar();
+  }
+}
+
+function removeActiveTicketFromOpenList() {
+  if (!state.activeTicketId) return;
+  state.openTickets = state.openTickets.filter((ticket) => ticket.id !== state.activeTicketId);
+}
+
+function getTicketLabel(ticket) {
+  if (!ticket) return "Ticket";
+  const name = (ticket.customerName || "").trim();
+  const isDefault = !name || name === "CONSUMIDOR FINAL";
+  return isDefault ? `Ticket #${ticket.number}` : `Ticket #${ticket.number} · ${name}`;
+}
+
+function getTicketTotal(ticket) {
+  if (!ticket) return 0;
+  let total = 0;
+  (ticket.cart || []).forEach((line) => {
+    const unit = getEffectiveUnitPrice(line);
+    total += unit * Number(line.quantity || 0);
+  });
+  const discount = Math.min(Number(ticket.cartDiscount || 0), total);
+  return Math.round((total - discount) * 100) / 100;
+}
+
+function renderOpenTicketsBar() {
+  const bar = document.getElementById("open-tickets-bar");
+  const title = document.getElementById("active-ticket-title");
+  const subtitle = document.getElementById("active-ticket-subtitle");
+  ensureActiveTicketId();
+
+  const active =
+    state.openTickets.find((ticket) => ticket.id === state.activeTicketId) ||
+    snapshotActiveTicket();
+  // snapshot may have pushed empty; keep bar clean
+  state.openTickets = state.openTickets.filter(
+    (ticket) => ticket.id === state.activeTicketId || ticketHasContent(ticket)
+  );
+
+  if (title) {
+    title.textContent = `Ticket #${active?.number || "—"}`;
+  }
+  if (subtitle) {
+    const heldCount = state.openTickets.filter((ticket) => ticket.id !== state.activeTicketId).length;
+    subtitle.textContent =
+      heldCount > 0
+        ? `${heldCount} ticket${heldCount === 1 ? "" : "s"} en espera · puedes cobrar este y volver al otro`
+        : "Usa Retener para dejarlo abierto y cobrar otro";
+  }
+
+  if (!bar) return;
+  const tickets = [...state.openTickets].sort((a, b) => a.number - b.number);
+  if (!tickets.length) {
+    bar.hidden = true;
+    bar.innerHTML = "";
+    return;
+  }
+
+  bar.hidden = false;
+  bar.innerHTML = tickets
+    .map((ticket) => {
+      const isActive = ticket.id === state.activeTicketId;
+      const total = getTicketTotal(ticket);
+      const items = (ticket.cart || []).length;
+      return `
+        <div class="open-ticket-chip ${isActive ? "is-active" : ""}" data-ticket-id="${ticket.id}" title="${escapeHtml(getTicketLabel(ticket))}">
+          <button type="button" class="ticket-chip-select" data-ticket-id="${ticket.id}">
+            ${escapeHtml(getTicketLabel(ticket))}
+            <span class="ticket-chip-total">${items} ud · ${money(total)}</span>
+          </button>
+          <button type="button" class="ticket-chip-close" data-discard-ticket="${ticket.id}" title="Cerrar ticket" aria-label="Cerrar ticket">×</button>
+        </div>
+      `;
+    })
+    .join("");
+
+  bar.querySelectorAll(".ticket-chip-select").forEach((button) => {
+    button.addEventListener("click", () => switchToOpenTicket(button.dataset.ticketId));
+  });
+  bar.querySelectorAll("[data-discard-ticket]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      discardOpenTicket(button.dataset.discardTicket);
+    });
+  });
 }
 
 function lockSaleSessionForNextSale() {
@@ -1608,6 +1846,7 @@ function renderCart() {
     });
   }
   renderTotals();
+  renderOpenTicketsBar();
 }
 
 function renderTotals() {
@@ -1673,22 +1912,9 @@ function closeCurrentSaleDraft() {
     const confirmed = confirm("Se cerrara la venta actual y se limpiara el ticket. Deseas continuar?");
     if (!confirmed) return;
   }
-  state.cart = [];
-  resetCartDiscount();
-  const cashDialog = document.getElementById("cash-checkout-dialog");
-  if (cashDialog?.open) {
-    cashDialog.close();
-  }
-  const mixedDialog = document.getElementById("mixed-checkout-dialog");
-  if (mixedDialog?.open) {
-    mixedDialog.close();
-  }
-  resetSaleCustomerDefaults();
-  renderCart();
-  if (isCashierSaleLockEnabled() && state.saleSessionUnlocked) {
-    resetSaleSessionAutoLockTimer();
-    renderSaleSessionIndicator();
-  }
+  removeActiveTicketFromOpenList();
+  clearActiveTicketWorkspace();
+  startBlankTicket();
 }
 
 function updateCashCheckoutChange() {
@@ -6469,6 +6695,8 @@ function renderSaleSessionIndicator() {
   const captureBtn = document.getElementById("open-cash-capture-btn");
   const clearBtn = document.getElementById("clear-cart");
   const closeDraftBtn = document.getElementById("close-current-sale-btn");
+  const holdBtn = document.getElementById("hold-ticket-btn");
+  const newTicketBtn = document.getElementById("new-ticket-btn");
   const searchInput = document.getElementById("product-search");
   const deptFilter = document.getElementById("pos-department-filter");
   if (!indicator || !unlockBtn) return;
@@ -6481,6 +6709,8 @@ function renderSaleSessionIndicator() {
     unlockBtn.disabled = true;
     if (clearBtn) clearBtn.disabled = false;
     if (closeDraftBtn) closeDraftBtn.disabled = false;
+    if (holdBtn) holdBtn.disabled = false;
+    if (newTicketBtn) newTicketBtn.disabled = false;
     if (searchInput) searchInput.disabled = false;
     if (deptFilter) deptFilter.disabled = false;
     return;
@@ -6502,6 +6732,8 @@ function renderSaleSessionIndicator() {
     if (captureBtn) captureBtn.disabled = true;
     if (clearBtn) clearBtn.disabled = true;
     if (closeDraftBtn) closeDraftBtn.disabled = true;
+    if (holdBtn) holdBtn.disabled = true;
+    if (newTicketBtn) newTicketBtn.disabled = true;
     if (searchInput) searchInput.disabled = true;
     if (deptFilter) deptFilter.disabled = true;
     renderProducts();
@@ -6517,6 +6749,8 @@ function renderSaleSessionIndicator() {
     if (captureBtn) captureBtn.disabled = true;
     if (clearBtn) clearBtn.disabled = true;
     if (closeDraftBtn) closeDraftBtn.disabled = true;
+    if (holdBtn) holdBtn.disabled = true;
+    if (newTicketBtn) newTicketBtn.disabled = true;
     if (searchInput) searchInput.disabled = true;
     if (deptFilter) deptFilter.disabled = true;
     renderProducts();
@@ -6531,6 +6765,8 @@ function renderSaleSessionIndicator() {
     unlockBtn.disabled = true;
     if (clearBtn) clearBtn.disabled = false;
     if (closeDraftBtn) closeDraftBtn.disabled = false;
+    if (holdBtn) holdBtn.disabled = false;
+    if (newTicketBtn) newTicketBtn.disabled = false;
     if (searchInput) searchInput.disabled = false;
     if (deptFilter) deptFilter.disabled = false;
     renderProducts();
@@ -6545,6 +6781,8 @@ function renderSaleSessionIndicator() {
   if (captureBtn) captureBtn.disabled = true;
   if (clearBtn) clearBtn.disabled = true;
   if (closeDraftBtn) closeDraftBtn.disabled = true;
+  if (holdBtn) holdBtn.disabled = true;
+  if (newTicketBtn) newTicketBtn.disabled = true;
   if (searchInput) searchInput.disabled = true;
   if (deptFilter) deptFilter.disabled = true;
   renderProducts();
@@ -6898,9 +7136,9 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
       method: "POST",
       body: JSON.stringify(payload),
     });
-    state.cart = [];
-    resetCartDiscount();
-    resetSaleCustomerDefaults();
+    removeActiveTicketFromOpenList();
+    clearActiveTicketWorkspace();
+    startBlankTicket();
     document.getElementById("cash-checkout-dialog")?.close();
     document.getElementById("mixed-checkout-dialog")?.close();
     document.getElementById("sale-dialog")?.close();
@@ -6914,12 +7152,17 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
     } else if (shouldOpenDrawerForPayment(paymentMethod, payments)) {
       await openCashDrawer(false);
     }
+    const waiting = state.openTickets.length;
+    const waitingHint =
+      waiting > 0
+        ? ` Quedan ${waiting} ticket${waiting === 1 ? "" : "s"} en espera: pulsa el ticket arriba para continuar.`
+        : "";
     if (paymentMethod === "efectivo") {
-      alert(buildSaleSuccessMessage(sale));
+      alert(buildSaleSuccessMessage(sale) + waitingHint);
     } else if (paymentMethod === "mixto" && payments) {
-      alert(buildSaleSuccessMessage(sale, `Pago: ${formatSalePayments(sale)}.`));
+      alert(buildSaleSuccessMessage(sale, `Pago: ${formatSalePayments(sale)}.`) + waitingHint);
     } else {
-      alert(buildSaleSuccessMessage(sale));
+      alert(buildSaleSuccessMessage(sale) + waitingHint);
     }
     return true;
   } catch (error) {
@@ -8118,6 +8361,12 @@ function setupEvents() {
     state.cart = [];
     resetCartDiscount();
     renderCart();
+  });
+  document.getElementById("hold-ticket-btn")?.addEventListener("click", () => {
+    holdCurrentTicket();
+  });
+  document.getElementById("new-ticket-btn")?.addEventListener("click", () => {
+    createNewTicket();
   });
   document.getElementById("open-sale-session-btn").addEventListener("click", openSaleSessionWithPassword);
   document.getElementById("open-cash-capture-btn").addEventListener("click", requestCashCapture);

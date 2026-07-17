@@ -230,6 +230,78 @@ main { padding: 1.5rem; }
   color: var(--text);
 }
 .ticket-header h2, .panel-header h2 { margin: 0; }
+.ticket-subtitle {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.open-tickets-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.55rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.open-tickets-bar[hidden] {
+  display: none !important;
+}
+.open-ticket-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.45rem 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.open-ticket-chip:hover {
+  border-color: rgba(var(--primary-rgb), 0.55);
+}
+.open-ticket-chip.is-active {
+  border-color: var(--primary);
+  background: rgba(var(--primary-rgb), 0.16);
+  color: var(--primary);
+  font-weight: 600;
+}
+.open-ticket-chip .ticket-chip-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+.open-ticket-chip .ticket-chip-total {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.open-ticket-chip.is-active .ticket-chip-total {
+  color: inherit;
+}
+.open-ticket-chip .ticket-chip-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  line-height: 1;
+  padding: 0;
+}
+.open-ticket-chip .ticket-chip-close:hover {
+  background: rgba(229, 83, 75, 0.2);
+  color: #ff8f88;
+}
 
 .customer-fields { display: grid; gap: 0.75rem; }
 .customer-fields label, dialog label {
