@@ -92,7 +92,7 @@ class Sale(Base):
     __tablename__ = "sales"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"), nullable=True)
     subtotal: Mapped[float] = mapped_column(Float, default=0)
     tax_total: Mapped[float] = mapped_column(Float, default=0)
@@ -138,7 +138,7 @@ class SaleItem(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     sale_id: Mapped[int] = mapped_column(ForeignKey("sales.id"))
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
     quantity: Mapped[float] = mapped_column(Float, default=1)
     tracks_inventory: Mapped[int] = mapped_column(Integer, default=1)
     base_unit_price: Mapped[float] = mapped_column(Float, default=0)
@@ -271,7 +271,7 @@ class CashMovement(Base):
     __tablename__ = "cash_movements"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    cash_session_id: Mapped[int] = mapped_column(ForeignKey("cash_sessions.id"))
+    cash_session_id: Mapped[int] = mapped_column(ForeignKey("cash_sessions.id"), index=True)
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     movement_type: Mapped[str] = mapped_column(String(20))
@@ -369,8 +369,8 @@ class InventoryMovement(Base):
     __tablename__ = "inventory_movements"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     movement_type: Mapped[str] = mapped_column(String(20), default="entry")
     quantity: Mapped[float] = mapped_column(Float, default=0)

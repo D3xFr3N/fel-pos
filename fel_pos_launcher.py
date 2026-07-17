@@ -143,6 +143,99 @@ def _load_env_file(runtime_root: Path) -> None:
         pass
 
 
+def _screen_size(webview_module) -> tuple[int, int]:
+    """Best-effort primary screen size for initial window dimensions."""
+    try:
+        screens = getattr(webview_module, "screens", None)
+        if screens:
+            primary = screens[0]
+            width = int(getattr(primary, "width", 0) or 0)
+            height = int(getattr(primary, "height", 0) or 0)
+            if width >= 800 and height >= 600:
+                return width, height
+    except Exception:
+        pass
+
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            width = int(user32.GetSystemMetrics(0) or 0)
+            height = int(user32.GetSystemMetrics(1) or 0)
+            if width >= 800 and height >= 600:
+                return width, height
+        except Exception:
+            pass
+    return 1360, 860
+
+
+def _maximize_window(window) -> None:
+    """Maximize after the native window exists (compatible with older pywebview)."""
+    try:
+        maximize = getattr(window, "maximize", None)
+        if callable(maximize):
+            maximize()
+            return
+    except Exception:
+        pass
+
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+
+            hwnd = None
+            native = getattr(window, "native", None)
+            if native is not None:
+                hwnd = getattr(native, "Handle", None) or getattr(native, "handle", None)
+            if not hwnd:
+                hwnd = ctypes.windll.user32.GetForegroundWindow()
+            if hwnd:
+                ctypes.windll.user32.ShowWindow(int(hwnd), 3)  # SW_MAXIMIZE
+        except Exception:
+            pass
+
+
+def _create_desktop_window(webview_module, *, url: str, js_api: DesktopApi):
+    screen_width, screen_height = _screen_size(webview_module)
+    # Leave a little margin so Windows taskbar / DPI quirks don't clip the frame
+    # before maximize; maximize fills the usable work area afterwards.
+    initial_width = max(1024, min(screen_width, screen_width - 16))
+    initial_height = max(700, min(screen_height, screen_height - 48))
+
+    create_kwargs = {
+        "title": "FEL POS",
+        "url": url,
+        "width": initial_width,
+        "height": initial_height,
+        "min_size": (1024, 700),
+        "resizable": True,
+        "js_api": js_api,
+    }
+
+    window = None
+    try:
+        window = webview_module.create_window(**create_kwargs, maximized=True)
+    except TypeError:
+        # Older pywebview without maximized= support.
+        window = webview_module.create_window(**create_kwargs)
+
+    def _on_shown() -> None:
+        _maximize_window(window)
+
+    try:
+        if hasattr(window.events, "shown"):
+            window.events.shown += _on_shown
+        elif hasattr(window.events, "loaded"):
+            window.events.loaded += _on_shown
+        else:
+            threading.Timer(0.35, _on_shown).start()
+    except Exception:
+        threading.Timer(0.35, _on_shown).start()
+
+    return window
+
+
 def main() -> None:
     runtime_root = _runtime_root()
     os.chdir(runtime_root)
@@ -206,12 +299,9 @@ def main() -> None:
                 "Hay una actualizacion pendiente y otra copia de FEL POS sigue activa. "
                 "Cierra todas las ventanas de FEL POS e intenta de nuevo."
             )
-        window = webview.create_window(
-            "FEL POS",
-            f"http://{WINDOW_HOST}:{port}",
-            width=1360,
-            height=860,
-            min_size=(1024, 700),
+        window = _create_desktop_window(
+            webview,
+            url=f"http://{WINDOW_HOST}:{port}",
             js_api=desktop_api,
         )
         webview.start(gui="edgechromium")
@@ -231,12 +321,9 @@ def main() -> None:
     if not _wait_for_port(WINDOW_HOST, port):
         raise RuntimeError("No se pudo iniciar el servidor local en FEL POS.")
 
-    window = webview.create_window(
-        "FEL POS",
-        f"http://{WINDOW_HOST}:{port}",
-        width=1360,
-        height=860,
-        min_size=(1024, 700),
+    window = _create_desktop_window(
+        webview,
+        url=f"http://{WINDOW_HOST}:{port}",
         js_api=desktop_api,
     )
 

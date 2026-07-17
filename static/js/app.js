@@ -2,7 +2,7 @@ const SALE_INACTIVITY_SECONDS_STORAGE_KEY = "felpos_sale_inactivity_seconds";
 const SALE_INACTIVITY_SECONDS_DEFAULT = 60;
 const SALE_INACTIVITY_SECONDS_MIN = 15;
 const SALE_INACTIVITY_SECONDS_MAX = 600;
-const ADMIN_MONITOR_REFRESH_MS = 15000;
+const ADMIN_MONITOR_REFRESH_MS = 30000;
 
 function getConfiguredSaleInactivitySeconds() {
   const raw = Number(localStorage.getItem(SALE_INACTIVITY_SECONDS_STORAGE_KEY) || SALE_INACTIVITY_SECONDS_DEFAULT);
@@ -17,9 +17,9 @@ const state = {
   departments: [],
   purchaseOrders: [],
   cart: [],
+  selectedCartProductId: null,
   openTickets: [],
   activeTicketId: null,
-  nextTicketNumber: 1,
   sales: [],
   orders: [],
   users: [],
@@ -28,14 +28,11 @@ const state = {
   receiptPrinterConfig: null,
   uiThemeConfig: null,
   labelPrinterConfig: null,
-  systemConfig: null,
   notificationConfig: null,
   scannerBridgeConfig: null,
   licenseConfig: null,
-  runtimeConfig: { nit_lookup_configured: false },
   currentCash: null,
   selectedSaleId: null,
-  selectedSale: null,
   editingProductId: null,
   editingSupplierId: null,
   editingDepartmentId: null,
@@ -46,7 +43,6 @@ const state = {
   autoPurchaseIncludeWarning: true,
   postLoginFundAdded: false,
   showLowStockOnly: false,
-  lowStockProducts: [],
   lowStockReport: [],
   stockCountCurrent: null,
   stockCountSessions: [],
@@ -924,10 +920,13 @@ function resetSaleCustomerDefaults() {
   if (select) select.value = "";
 }
 
+function createTicketId() {
+  return `ticket-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function ensureActiveTicketId() {
   if (state.activeTicketId) return state.activeTicketId;
-  const number = state.nextTicketNumber++;
-  state.activeTicketId = `ticket-${number}`;
+  state.activeTicketId = createTicketId();
   return state.activeTicketId;
 }
 
@@ -938,18 +937,19 @@ function cloneCartLines(cart) {
 function snapshotActiveTicket() {
   const id = ensureActiveTicketId();
   const existing = state.openTickets.find((ticket) => ticket.id === id);
-  const number = existing?.number || Number(String(id).replace(/\D/g, "")) || state.nextTicketNumber;
   const paymentMethod = document.getElementById("payment-method")?.value || "efectivo";
+  const now = Date.now();
   const snapshot = {
     id,
-    number,
+    heldAt: existing?.heldAt || now,
     cart: cloneCartLines(state.cart),
     customerNit: document.getElementById("customer-nit")?.value || "CF",
     customerName: document.getElementById("customer-name")?.value || "CONSUMIDOR FINAL",
     customerSelect: document.getElementById("customer-select")?.value || "",
     cartDiscount: Math.round(Number(document.getElementById("cart-discount-input")?.value || 0) * 100) / 100,
     paymentMethod,
-    updatedAt: Date.now(),
+    selectedCartProductId: state.selectedCartProductId,
+    updatedAt: now,
   };
   const index = state.openTickets.findIndex((ticket) => ticket.id === id);
   if (index >= 0) {
@@ -972,6 +972,7 @@ function ticketHasContent(ticket) {
 
 function clearActiveTicketWorkspace({ keepPaymentMethod = false } = {}) {
   state.cart = [];
+  state.selectedCartProductId = null;
   resetCartDiscount();
   resetSaleCustomerDefaults();
   if (!keepPaymentMethod) {
@@ -985,8 +986,7 @@ function clearActiveTicketWorkspace({ keepPaymentMethod = false } = {}) {
 }
 
 function startBlankTicket() {
-  const number = state.nextTicketNumber++;
-  state.activeTicketId = `ticket-${number}`;
+  state.activeTicketId = createTicketId();
   clearActiveTicketWorkspace();
   renderCart();
   if (isCashierSaleLockEnabled() && state.saleSessionUnlocked) {
@@ -1009,6 +1009,7 @@ function restoreTicket(ticket) {
   if (select) select.value = ticket.customerSelect || "";
   if (discountInput) discountInput.value = String(Number(ticket.cartDiscount || 0));
   if (payment) payment.value = ticket.paymentMethod || "efectivo";
+  state.selectedCartProductId = ticket.selectedCartProductId || ticket.cart?.[ticket.cart.length - 1]?.id || null;
   renderCart();
   if (isCashierSaleLockEnabled() && state.saleSessionUnlocked) {
     resetSaleSessionAutoLockTimer();
@@ -1059,7 +1060,7 @@ function switchToOpenTicket(ticketId) {
 function discardOpenTicket(ticketId) {
   const ticket = state.openTickets.find((item) => item.id === ticketId);
   if (!ticket) return;
-  const label = `Ticket #${ticket.number}`;
+  const label = getTicketLabel(ticket);
   if (ticketHasContent(ticket)) {
     const confirmed = confirm(`Se eliminara ${label} con sus productos. Deseas continuar?`);
     if (!confirmed) return;
@@ -1077,11 +1078,30 @@ function removeActiveTicketFromOpenList() {
   state.openTickets = state.openTickets.filter((ticket) => ticket.id !== state.activeTicketId);
 }
 
+function compareTicketsByHoldOrder(a, b) {
+  const aTime = Number(a?.heldAt || a?.updatedAt || 0);
+  const bTime = Number(b?.heldAt || b?.updatedAt || 0);
+  if (aTime !== bTime) return aTime - bTime;
+  return String(a?.id || "").localeCompare(String(b?.id || ""));
+}
+
+function getRetainedTicketNumber(ticketId) {
+  const retained = state.openTickets
+    .filter((ticket) => ticket.id !== state.activeTicketId)
+    .sort(compareTicketsByHoldOrder);
+  const index = retained.findIndex((ticket) => ticket.id === ticketId);
+  return index >= 0 ? index + 1 : null;
+}
+
 function getTicketLabel(ticket) {
-  if (!ticket) return "Ticket";
+  if (!ticket) return "Ticket actual";
   const name = (ticket.customerName || "").trim();
   const isDefault = !name || name === "CONSUMIDOR FINAL";
-  return isDefault ? `Ticket #${ticket.number}` : `Ticket #${ticket.number} · ${name}`;
+  const isActive = ticket.id === state.activeTicketId;
+  const base = isActive
+    ? "Ticket actual"
+    : `Retenido ${getRetainedTicketNumber(ticket.id) || ""}`.trim();
+  return isDefault ? base : `${base} · ${name}`;
 }
 
 function getTicketTotal(ticket) {
@@ -1110,7 +1130,7 @@ function renderOpenTicketsBar() {
   );
 
   if (title) {
-    title.textContent = `Ticket #${active?.number || "—"}`;
+    title.textContent = getTicketLabel(active);
   }
   if (subtitle) {
     const heldCount = state.openTickets.filter((ticket) => ticket.id !== state.activeTicketId).length;
@@ -1121,7 +1141,11 @@ function renderOpenTicketsBar() {
   }
 
   if (!bar) return;
-  const tickets = [...state.openTickets].sort((a, b) => a.number - b.number);
+  const tickets = [...state.openTickets].sort((a, b) => {
+    if (a.id === state.activeTicketId) return -1;
+    if (b.id === state.activeTicketId) return 1;
+    return compareTicketsByHoldOrder(a, b);
+  });
   if (!tickets.length) {
     bar.hidden = true;
     bar.innerHTML = "";
@@ -1212,11 +1236,6 @@ function showSalePasswordGate() {
   }, 0);
 }
 
-function maybeAutoOpenSalePasswordDialog() {
-  if (!shouldAutoPromptSalePassword()) return;
-  showSalePasswordGate();
-}
-
 function getSaleInactivitySeconds() {
   const seconds = Number(state.saleSessionInactivityMs || 0) / 1000;
   if (!Number.isFinite(seconds) || seconds <= 0) return SALE_INACTIVITY_SECONDS_DEFAULT;
@@ -1294,16 +1313,12 @@ function summarizeCashMonitor(session, movements = []) {
 async function refreshAdminCashMonitorData() {
   if (state.user?.role !== "admin") return;
   try {
-    const openSessions = await api("/api/cash/sessions/open");
-    const sessions = [];
-    for (const session of openSessions || []) {
-      const movements = await api(`/api/cash/sessions/${session.id}/movements`);
-      sessions.push({
-        session,
-        movements,
-        metrics: summarizeCashMonitor(session, movements),
-      });
-    }
+    const rows = await api("/api/cash/sessions/open/monitor");
+    const sessions = (rows || []).map((row) => ({
+      session: row.session,
+      movements: row.movements || [],
+      metrics: summarizeCashMonitor(row.session, row.movements || []),
+    }));
     state.adminCashMonitor = {
       sessions,
       updatedAt: new Date().toISOString(),
@@ -1786,6 +1801,10 @@ function renderCart() {
     })
     .filter(Boolean);
 
+  if (!state.cart.some((line) => line.id === state.selectedCartProductId)) {
+    state.selectedCartProductId = state.cart.length ? state.cart[state.cart.length - 1].id : null;
+  }
+
   if (!state.cart.length) {
     container.innerHTML = '<div class="empty">Agrega productos al ticket.</div>';
   } else {
@@ -1796,11 +1815,12 @@ function renderCart() {
         const tracksInventory = productTracksInventory(product ?? line);
         const availableStock = Number(product?.stock || 0);
         const maxReached = tracksInventory && line.quantity >= availableStock;
+        const isSelected = line.id === state.selectedCartProductId;
         return `
-      <div class="cart-line">
+      <div class="cart-line ${isSelected ? "is-selected" : ""}" data-cart-line-id="${line.id}">
         <div>
           <strong>${line.name}</strong>
-          <small>${money(getEffectiveUnitPrice(line))} c/u${line.tax_rate > 0 ? ` · IVA ${(line.tax_rate * 100).toFixed(0)}% incluido` : ""}</small>
+          <small>${money(getEffectiveUnitPrice(line))} c/u${line.tax_rate > 0 ? ` · IVA ${(line.tax_rate * 100).toFixed(0)}% incluido` : ""}${isSelected ? " · seleccionado (+/-)" : ""}</small>
           <small>${
             tracksInventory ? `Disponible: ${formatQuantity(availableStock)}` : "Sin control de inventario"
           }</small>
@@ -1823,30 +1843,74 @@ function renderCart() {
     container.querySelectorAll("button").forEach((button) => {
       button.addEventListener("click", () => {
         const id = Number(button.dataset.id);
-        const line = state.cart.find((item) => item.id === id);
-        if (!line) return;
-        if (button.dataset.action === "inc") {
-          const product = state.products.find((item) => item.id === id);
-          const tracksInventory = productTracksInventory(product ?? line);
-          const availableStock = Number(product?.stock || 0);
-          const currentQty = Number(line.quantity || 0);
-          if (tracksInventory && currentQty >= availableStock) {
-            alert(`No puedes vender mas de ${formatQuantity(availableStock)} unidades de ${line.name}.`);
-            return;
-          }
-          line.quantity = currentQty + 1;
-        }
-        if (button.dataset.action === "dec") {
-          const currentQty = Number(line.quantity || 0);
-          line.quantity = currentQty - 1;
-        }
-        state.cart = state.cart.filter((item) => item.quantity > 0);
+        adjustCartLineQuantity(id, button.dataset.action === "inc" ? 1 : -1);
+      });
+    });
+    container.querySelectorAll(".cart-line[data-cart-line-id]").forEach((lineEl) => {
+      lineEl.addEventListener("click", (event) => {
+        if (event.target.closest("button")) return;
+        state.selectedCartProductId = Number(lineEl.dataset.cartLineId);
         renderCart();
       });
     });
   }
   renderTotals();
   renderOpenTicketsBar();
+}
+
+function adjustCartLineQuantity(productId, delta) {
+  const id = Number(productId);
+  const line = state.cart.find((item) => item.id === id);
+  if (!line) return false;
+  state.selectedCartProductId = id;
+
+  const product = state.products.find((item) => item.id === id);
+  const tracksInventory = productTracksInventory(product ?? line);
+  const availableStock = Number(product?.stock || 0);
+  const currentQty = Number(line.quantity || 0);
+
+  if (delta > 0 && tracksInventory && currentQty >= availableStock) {
+    alert(`No puedes vender mas de ${formatQuantity(availableStock)} unidades de ${line.name}.`);
+    return false;
+  }
+
+  line.quantity = currentQty + delta;
+  state.cart = state.cart.filter((item) => item.quantity > 0);
+  renderCart();
+  return true;
+}
+
+function adjustSelectedCartLine(delta) {
+  if (!state.cart.length) return false;
+  const selectedId = state.selectedCartProductId || state.cart[state.cart.length - 1].id;
+  return adjustCartLineQuantity(selectedId, delta);
+}
+
+function isTypingInField(target) {
+  if (!target) return false;
+  const tagName = String(target.tagName || "").toLowerCase();
+  return (
+    tagName === "input" ||
+    tagName === "textarea" ||
+    tagName === "select" ||
+    Boolean(target.isContentEditable)
+  );
+}
+
+function handleCartQuantityShortcuts(event) {
+  if (event.ctrlKey || event.altKey || event.metaKey) return;
+  if (isTypingInField(event.target)) return;
+  if (document.querySelector("dialog[open]")) return;
+  if (!document.getElementById("tab-pos")?.classList.contains("active")) return;
+  if (!state.cart.length) return;
+
+  let delta = 0;
+  if (event.key === "+" || event.code === "NumpadAdd") delta = 1;
+  if (event.key === "-" || event.code === "NumpadSubtract") delta = -1;
+  if (!delta) return;
+
+  event.preventDefault();
+  adjustSelectedCartLine(delta);
 }
 
 function renderTotals() {
@@ -1909,7 +1973,7 @@ function formatSalePayments(sale) {
 
 function closeCurrentSaleDraft() {
   if (state.cart.length) {
-    const confirmed = confirm("Se cerrara la venta actual y se limpiara el ticket. Deseas continuar?");
+    const confirmed = confirm("Se descartara el ticket actual sin cobrar. Deseas continuar?");
     if (!confirmed) return;
   }
   removeActiveTicketFromOpenList();
@@ -1924,6 +1988,17 @@ function updateCashCheckoutChange() {
   const cashReceived = Number(document.getElementById("cash-checkout-received")?.value || 0);
   const change = Math.round((cashReceived - totals.total) * 100) / 100;
   changeEl.textContent = money(change > 0 ? change : 0);
+}
+
+function focusCashReceivedInput(input) {
+  if (!input) return;
+  input.focus();
+  // Deja el valor seleccionado para escribir encima sin borrar manualmente.
+  try {
+    input.select();
+  } catch {
+    /* ignore */
+  }
 }
 
 function openCashCheckoutDialog() {
@@ -1944,10 +2019,11 @@ function openCashCheckoutDialog() {
   if (printModeEl) {
     printModeEl.textContent = "Captura efectivo (F12). Cobro final: F1 imprime, F2 no imprime.";
   }
+  // Si paga exacto puede cobrar de inmediato. Al escribir, la selección reemplaza el total.
   receivedInput.value = totals.total.toFixed(2);
   updateCashCheckoutChange();
   dialog.showModal();
-  setTimeout(() => receivedInput.focus(), 0);
+  setTimeout(() => focusCashReceivedInput(receivedInput), 0);
 }
 
 function updateMixedCheckoutAmounts() {
@@ -2073,6 +2149,7 @@ async function addToCart(productId) {
       quantity: 1,
     });
   }
+  state.selectedCartProductId = product.id;
   renderCart();
 }
 
@@ -2613,10 +2690,8 @@ function submitBarcodeLabelForm(event) {
 
 async function refreshLowStockProducts() {
   try {
-    state.lowStockProducts = await api("/api/products/low-stock");
     state.lowStockReport = await api("/api/products/low-stock/report");
   } catch (error) {
-    state.lowStockProducts = [];
     state.lowStockReport = [];
     alert(error.message || "No se pudo cargar inventario bajo.");
   }
@@ -4508,7 +4583,6 @@ function openSaleDetail(saleId) {
   const sale = state.sales.find((item) => item.id === saleId);
   if (!sale) return;
   state.selectedSaleId = saleId;
-  state.selectedSale = sale;
   const detail = document.getElementById("sale-detail");
   const returnedByLine = getReturnedQtyBySaleItem(sale);
   const cashOwnerName =
@@ -4715,7 +4789,7 @@ async function submitSaleReturnForm(event) {
       }),
     });
     document.getElementById("sale-return-dialog")?.close();
-    await loadData();
+    await refreshPosCore();
     openSaleDetail(sale.id);
     alert(
       `Devolucion registrada correctamente.\nNC ${result.fel_serie || "-"}-${result.fel_numero || "-"}\nTotal: ${money(
@@ -5041,6 +5115,7 @@ function ensureAdminCashMonitorAutoRefresh() {
   clearAdminCashMonitorTimer();
   if (state.user?.role !== "admin") return;
   state.adminCashMonitorTimerId = setInterval(async () => {
+    if (document.hidden) return;
     await refreshAdminCashMonitorData();
     renderAdminCashMonitorCard();
   }, ADMIN_MONITOR_REFRESH_MS);
@@ -5366,15 +5441,6 @@ function bindStockCountScannerBridgeActions(container) {
       alert(error.message);
     }
   });
-}
-
-async function refreshScannerBridgeConfig() {
-  if (state.user?.role !== "admin") return;
-  try {
-    state.scannerBridgeConfig = await api("/api/config/scanner-bridge");
-  } catch {
-    state.scannerBridgeConfig = null;
-  }
 }
 
 function renderReceiptPrinterSection() {
@@ -6440,6 +6506,51 @@ function validateNitField(showAlert = false) {
   return true;
 }
 
+async function refreshPosCore() {
+  const isAdmin = state.user?.role === "admin";
+  const [
+    products,
+    sales,
+    currentCash,
+    systemAlerts,
+    promotions,
+    schoolPackages,
+    lowStockReport,
+  ] = await Promise.all([
+    api("/api/products"),
+    api("/api/sales"),
+    api("/api/cash/sessions/current"),
+    api("/api/reports/alerts").catch(() => []),
+    api("/api/promotions").catch(() => []),
+    api("/api/school-packages").catch(() => []),
+    isAdmin ? api("/api/products/low-stock/report").catch(() => []) : Promise.resolve(state.lowStockReport || []),
+  ]);
+
+  state.products = products;
+  state.sales = sales;
+  state.currentCash = currentCash;
+  state.systemAlerts = systemAlerts;
+  state.promotions = promotions;
+  state.schoolPackages = schoolPackages;
+  if (isAdmin) state.lowStockReport = lowStockReport;
+
+  renderSystemAlertsBar();
+  populateCustomerSelect();
+  renderSchoolPackagesPos();
+  renderCashOwnerIndicator();
+  renderSaleSessionIndicator();
+  populatePosDepartmentFilter();
+  renderPosDepartmentChips();
+  renderProducts();
+  renderCart();
+  renderSalesTable();
+  renderCashCard();
+  if (isAdmin) {
+    renderProductsTable();
+    renderInventoryDashboard();
+  }
+}
+
 async function loadData() {
   const isAdmin = state.user?.role === "admin";
   const profilePromise = api("/api/config/profile");
@@ -6450,7 +6561,6 @@ async function loadData() {
   const departmentsPromise = api("/api/departments");
   const purchaseOrdersPromise = isAdmin ? api("/api/purchase-orders") : Promise.resolve([]);
   const ordersPromise = isAdmin ? api("/api/orders") : Promise.resolve([]);
-  const lowStockPromise = isAdmin ? api("/api/products/low-stock") : Promise.resolve([]);
   const lowStockReportPromise = isAdmin ? api("/api/products/low-stock/report") : Promise.resolve([]);
   const stockCountCurrentPromise = isAdmin ? api("/api/stock-count/sessions/current") : Promise.resolve(null);
   const stockCountSessionsPromise = isAdmin ? api("/api/stock-count/sessions") : Promise.resolve([]);
@@ -6458,7 +6568,8 @@ async function loadData() {
   const customersPromise = isAdmin ? api("/api/customers") : Promise.resolve([]);
   const promotionsPromise = api("/api/promotions").catch(() => []);
   const schoolPackagesPromise = api("/api/school-packages").catch(() => []);
-  const alertsPromise = api("/api/reports/alerts").catch(() => []);
+  // Admin dashboard already includes alerts; cashiers only need the light alerts endpoint.
+  const alertsPromise = isAdmin ? Promise.resolve(null) : api("/api/reports/alerts").catch(() => []);
   const reportsPromise = isAdmin ? api("/api/reports/dashboard").catch(() => null) : Promise.resolve(null);
   const auditPromise = isAdmin ? api("/api/audit-logs?limit=50").catch(() => []) : Promise.resolve([]);
   const pendingFelPromise = isAdmin ? api("/api/fel/pending").catch(() => []) : Promise.resolve([]);
@@ -6471,7 +6582,6 @@ async function loadData() {
     : Promise.resolve(null);
   const uiThemePromise = api("/api/config/ui-theme").catch(() => null);
   const labelPrinterPromise = api("/api/config/label-printer").catch(() => null);
-  const systemConfigPromise = isAdmin ? api("/api/config/system").catch(() => null) : Promise.resolve(null);
   const notificationConfigPromise = isAdmin
     ? api("/api/config/notifications").catch(() => null)
     : Promise.resolve(null);
@@ -6488,7 +6598,6 @@ async function loadData() {
     backups,
     orders,
     currentCash,
-    lowStock,
     lowStockReport,
     suppliers,
     departments,
@@ -6508,7 +6617,6 @@ async function loadData() {
     receiptPrinterConfig,
     uiThemeConfig,
     labelPrinterConfig,
-    systemConfig,
     notificationConfig,
     scannerBridgeConfig,
     licenseConfig,
@@ -6521,7 +6629,6 @@ async function loadData() {
     backupsPromise,
     ordersPromise,
     api("/api/cash/sessions/current"),
-    lowStockPromise,
     lowStockReportPromise,
     suppliersPromise,
     departmentsPromise,
@@ -6541,7 +6648,6 @@ async function loadData() {
     receiptPrinterPromise,
     uiThemePromise,
     labelPrinterPromise,
-    systemConfigPromise,
     notificationConfigPromise,
     scannerBridgeConfigPromise,
     licenseConfigPromise,
@@ -6552,9 +6658,6 @@ async function loadData() {
   state.purchaseOrders = purchaseOrders;
   state.sales = sales;
   state.businessProfile = String(profileInfo?.business_profile || state.businessProfile || "abarrotes").toLowerCase();
-  state.runtimeConfig = {
-    nit_lookup_configured: Boolean(profileInfo?.nit_lookup_configured),
-  };
   state.uiThemeConfig = uiThemeConfig || {
     ...DEFAULT_UI_THEME,
     primary_color: profileInfo?.primary_color || DEFAULT_UI_THEME.primary_color,
@@ -6567,7 +6670,6 @@ async function loadData() {
   state.backups = backups;
   state.orders = orders;
   state.currentCash = currentCash;
-  state.lowStockProducts = lowStock;
   state.lowStockReport = lowStockReport;
   state.stockCountCurrent = stockCountCurrent;
   state.stockCountSessions = stockCountSessions;
@@ -6575,7 +6677,7 @@ async function loadData() {
   state.customers = customers;
   state.promotions = promotions;
   state.schoolPackages = schoolPackages;
-  state.systemAlerts = systemAlerts;
+  state.systemAlerts = isAdmin ? reports?.alerts || [] : systemAlerts || [];
   state.reports = reports;
   state.auditLogs = auditLogs;
   state.pendingFelSales = pendingFelSales;
@@ -6583,7 +6685,6 @@ async function loadData() {
   state.updateInfo = updateInfo;
   state.receiptPrinterConfig = receiptPrinterConfig;
   state.labelPrinterConfig = labelPrinterConfig;
-  state.systemConfig = systemConfig;
   state.notificationConfig = notificationConfig;
   state.scannerBridgeConfig = scannerBridgeConfig;
   state.licenseConfig = licenseConfig;
@@ -7091,7 +7192,7 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
           requestedQty
         )}.`
       );
-      await loadData();
+      await refreshPosCore();
       return false;
     }
   }
@@ -7143,7 +7244,7 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
     document.getElementById("mixed-checkout-dialog")?.close();
     document.getElementById("sale-dialog")?.close();
     lockSaleSessionForNextSale();
-    await loadData();
+    await refreshPosCore();
     if (!isCashierSaleLockEnabled()) {
       openSaleDetail(sale.id);
     }
@@ -7173,10 +7274,18 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
 
 async function finalizeCashCheckout(printTicket = true) {
   const totals = calcTotals(state.cart);
-  const cashReceived = Number(document.getElementById("cash-checkout-received").value || 0);
-  if (cashReceived < totals.total) {
-    const missing = Math.round((totals.total - cashReceived) * 100) / 100;
+  const receivedInput = document.getElementById("cash-checkout-received");
+  const raw = String(receivedInput?.value || "").trim();
+  if (!raw) {
+    alert("Ingresa el efectivo recibido o pulsa Exacto.");
+    focusCashReceivedInput(receivedInput);
+    return false;
+  }
+  const cashReceived = Number(raw || 0);
+  if (!Number.isFinite(cashReceived) || cashReceived < totals.total) {
+    const missing = Math.round((totals.total - (Number.isFinite(cashReceived) ? cashReceived : 0)) * 100) / 100;
     alert(`Efectivo insuficiente. Faltan ${money(missing)} para completar el cobro.`);
+    focusCashReceivedInput(receivedInput);
     return false;
   }
 
@@ -7274,7 +7383,7 @@ async function openCashSession(event) {
   }
   try {
     await openCashSessionWithValues(amount, null);
-    await loadData();
+    await refreshPosCore();
   } catch (error) {
     alert(error.message);
   }
@@ -7293,39 +7402,6 @@ async function openCashSessionWithValues(openingAmount, notes = null) {
   state.salePasswordPromptDismissed = false;
   closeSalePasswordDialog();
   return session;
-}
-
-async function registerCashMovement(event) {
-  event.preventDefault();
-  const form = event.target;
-  try {
-    await api("/api/cash/movements", {
-      method: "POST",
-      body: JSON.stringify({
-        movement_type: form.movement_type.value,
-        amount: Number(form.amount.value || 0),
-        description: form.description.value.trim() || null,
-      }),
-    });
-    await loadData();
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
-async function closeCashSession(event) {
-  event.preventDefault();
-  if (!state.currentCash) return;
-  const form = event.target;
-  try {
-    const result = await closeCashSessionWithValues(
-      Number(form.counted_amount.value || 0),
-      form.notes.value.trim() || null
-    );
-    await handleCashCloseSuccess(result);
-  } catch (error) {
-    alert(error.message);
-  }
 }
 
 async function closeCashSessionWithValues(countedAmount, notes = null) {
@@ -7983,12 +8059,13 @@ function renderCustomersTable() {
           .map(
             (customer) => `
           <tr>
-            <td>${customer.nit}</td>
-            <td>${customer.name}</td>
-            <td>${customer.phone || "-"}</td>
+            <td>${escapeHtml(customer.nit || "")}</td>
+            <td>${escapeHtml(customer.name || "")}</td>
+            <td>${escapeHtml(customer.phone || "-")}</td>
             <td>${money(customer.credit_limit || 0)}</td>
             <td>${money(customer.credit_balance || 0)}</td>
             <td>
+              <button class="btn ghost edit-customer-btn" data-id="${customer.id}">Editar</button>
               <button class="btn ghost customer-payment-btn" data-id="${customer.id}">Abono</button>
             </td>
           </tr>`
@@ -7997,16 +8074,42 @@ function renderCustomersTable() {
       </tbody>
     </table>
   `;
+  container.querySelectorAll(".edit-customer-btn").forEach((button) => {
+    button.addEventListener("click", () => openCustomerDialog(Number(button.dataset.id)));
+  });
   container.querySelectorAll(".customer-payment-btn").forEach((button) => {
     button.addEventListener("click", () => openCreditPaymentDialog(Number(button.dataset.id)));
   });
 }
 
-function openCustomerDialog() {
-  state.editingCustomerId = null;
+function openCustomerDialog(customerId = null) {
   const form = document.getElementById("customer-form");
-  form?.reset();
-  document.getElementById("customer-dialog-title").textContent = "Nuevo cliente";
+  const title = document.getElementById("customer-dialog-title");
+  const nitInput = form?.nit;
+  if (!form || !title) return;
+
+  state.editingCustomerId = customerId || null;
+  form.reset();
+
+  if (!customerId) {
+    title.textContent = "Nuevo cliente";
+    if (nitInput) nitInput.readOnly = false;
+    document.getElementById("customer-dialog")?.showModal();
+    return;
+  }
+
+  const customer = (state.customers || []).find((item) => item.id === customerId);
+  if (!customer) return;
+
+  title.textContent = "Editar cliente";
+  form.nit.value = customer.nit || "";
+  form.name.value = customer.name || "";
+  form.email.value = customer.email || "";
+  form.phone.value = customer.phone || "";
+  form.address.value = customer.address || "";
+  form.credit_limit.value = Number(customer.credit_limit || 0);
+  form.notes.value = customer.notes || "";
+  if (nitInput) nitInput.readOnly = true;
   document.getElementById("customer-dialog")?.showModal();
 }
 
@@ -8025,8 +8128,8 @@ function openCreditPaymentDialog(customerId) {
 async function submitCustomerForm(event) {
   event.preventDefault();
   const form = event.target;
+  const editingId = state.editingCustomerId;
   const payload = {
-    nit: form.nit.value.trim(),
     name: form.name.value.trim(),
     email: form.email.value.trim() || null,
     phone: form.phone.value.trim() || null,
@@ -8035,10 +8138,24 @@ async function submitCustomerForm(event) {
     notes: form.notes.value.trim() || null,
   };
   try {
-    await api("/api/customers", { method: "POST", body: JSON.stringify(payload) });
+    if (editingId) {
+      await api(`/api/customers/${editingId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+    } else {
+      await api("/api/customers", {
+        method: "POST",
+        body: JSON.stringify({
+          ...payload,
+          nit: form.nit.value.trim(),
+        }),
+      });
+    }
+    state.editingCustomerId = null;
     document.getElementById("customer-dialog")?.close();
     await loadData();
-    alert("Cliente guardado.");
+    alert(editingId ? "Cliente actualizado." : "Cliente guardado.");
   } catch (error) {
     alert(error.message);
   }
@@ -8337,6 +8454,7 @@ function setupTabs() {
 }
 
 function setupEvents() {
+  document.addEventListener("keydown", handleCartQuantityShortcuts);
   const productSearch = document.getElementById("product-search");
   productSearch.addEventListener("input", () => {
     renderProducts();
@@ -8450,7 +8568,7 @@ function setupEvents() {
     }
     try {
       await openCashSessionWithValues(amount, null);
-      await loadData();
+      await refreshPosCore();
       postLoginHint.textContent = "Fondo agregado. Ingresando al sistema de venta...";
       postLoginAmount.disabled = true;
       postLoginOpenCashBtn.disabled = true;
@@ -8883,6 +9001,7 @@ function setupEvents() {
   document.getElementById("new-customer-btn")?.addEventListener("click", openCustomerDialog);
   document.getElementById("new-promotion-btn")?.addEventListener("click", openPromotionDialog);
   document.getElementById("close-customer-dialog")?.addEventListener("click", () => {
+    state.editingCustomerId = null;
     document.getElementById("customer-dialog")?.close();
   });
   document.getElementById("close-credit-payment-dialog")?.addEventListener("click", () => {

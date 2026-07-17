@@ -4,7 +4,15 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.dependencies import require_roles
 from app.models import CashMovement, CashSession, User
-from app.schemas import CashMovementCreate, CashMovementOut, CashSessionClose, CashSessionOpen, CashSessionOut, CashSessionTransferIn
+from app.schemas import (
+    CashMovementCreate,
+    CashMovementOut,
+    CashSessionClose,
+    CashSessionMonitorOut,
+    CashSessionOpen,
+    CashSessionOut,
+    CashSessionTransferIn,
+)
 from app.services.cash_service import (
     add_cash_movement,
     can_use_cash_session,
@@ -32,6 +40,33 @@ def list_open_sessions(
     user: User = Depends(require_roles("admin")),
 ):
     return list_open_cash_sessions(db)
+
+
+@router.get("/sessions/open/monitor", response_model=list[CashSessionMonitorOut])
+def list_open_sessions_monitor(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles("admin")),
+):
+    sessions = list_open_cash_sessions(db)
+    if not sessions:
+        return []
+    session_ids = [session.id for session in sessions]
+    movements = (
+        db.query(CashMovement)
+        .filter(CashMovement.cash_session_id.in_(session_ids))
+        .order_by(CashMovement.created_at.asc())
+        .all()
+    )
+    movements_by_session: dict[int, list[CashMovement]] = {}
+    for movement in movements:
+        movements_by_session.setdefault(movement.cash_session_id, []).append(movement)
+    return [
+        CashSessionMonitorOut(
+            session=session,
+            movements=movements_by_session.get(session.id, []),
+        )
+        for session in sessions
+    ]
 
 
 @router.get("/sessions", response_model=list[CashSessionOut])

@@ -544,6 +544,11 @@ class CashSessionOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CashSessionMonitorOut(BaseModel):
+    session: CashSessionOut
+    movements: list[CashMovementOut] = []
+
+
 class OrderCreate(BaseModel):
     customer_name: str
     customer_phone: str | None = None

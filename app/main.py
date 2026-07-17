@@ -240,12 +240,23 @@ def ensure_schema_updates() -> None:
                 "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
             )
 
-    if not alter_statements:
-        return
-
     with engine.begin() as connection:
         for statement in alter_statements:
             connection.execute(text(statement))
+
+        # Indexes for hot report/alert paths (safe to re-run).
+        for index_sql in (
+            "CREATE INDEX IF NOT EXISTS ix_sales_created_at ON sales (created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_sale_items_product_id ON sale_items (product_id)",
+            "CREATE INDEX IF NOT EXISTS ix_inventory_movements_product_id ON inventory_movements (product_id)",
+            "CREATE INDEX IF NOT EXISTS ix_inventory_movements_product_created ON inventory_movements (product_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_cash_movements_cash_session_id ON cash_movements (cash_session_id)",
+        ):
+            try:
+                connection.execute(text(index_sql))
+            except Exception:
+                # Older SQLite/corrupt catalogs should not block startup.
+                pass
 
 
 @app.get("/")

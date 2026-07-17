@@ -195,19 +195,25 @@ def low_stock_report(
         .order_by(Product.stock.asc(), Product.name.asc())
         .all()
     )
+    if not low_products:
+        return []
+
+    product_ids = [product.id for product in low_products]
+    movements = (
+        db.query(InventoryMovement)
+        .filter(InventoryMovement.product_id.in_(product_ids))
+        .order_by(InventoryMovement.product_id.asc(), InventoryMovement.created_at.asc())
+        .all()
+    )
+    movements_by_product: dict[int, list[InventoryMovement]] = {}
+    for movement in movements:
+        movements_by_product.setdefault(movement.product_id, []).append(movement)
 
     now = datetime.utcnow()
     report: list[LowStockReportOut] = []
     for product in low_products:
-        movements = (
-            db.query(InventoryMovement)
-            .filter(InventoryMovement.product_id == product.id)
-            .order_by(InventoryMovement.created_at.asc())
-            .all()
-        )
-
         low_since_at = None
-        for movement in movements:
+        for movement in movements_by_product.get(product.id, []):
             if movement.after_stock <= product.min_stock:
                 if low_since_at is None:
                     low_since_at = movement.created_at
@@ -237,7 +243,6 @@ def low_stock_report(
                 wholesale_discount_pct=product.wholesale_discount_pct,
             )
         )
-
     return report
 
 
