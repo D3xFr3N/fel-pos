@@ -1,0 +1,7 @@
+{
+    "version":  "0.3.56",
+    "build_date":  "2026-07-17 17:15:09",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.56/felpos-update-0.3.56.zip",
+    "sha256":  "072798d618b8460f92086421ccb50b76efe0637b48fbce8b0836e76174744ae3",
+    "release_notes":  "## Cambios\r\n\r\n- Corrige edicion de clientes (ya actualiza en lugar de crear duplicado).\r\n- Tickets: \"Ticket actual\" y \"Retenido N\"; descartar no gasta numeros.\r\n- Alertas del sistema mas legibles (sin ventas 60d, stock bajo, etc.).\r\n- Cobro en efectivo: escribe el billete recibido encima del total exacto.\r\n- Ventana se maximiza automaticamente segun la pantalla de cada PC.\r\n- Vista de ventas y tablas usan mejor el alto de pantalla (menos scroll general).\r\n- Rendimiento: cobro mas rapido, reporte de stock bajo optimizado, indices en base de datos.\r\n\r\n### Instalacion\r\n\r\nDescarga FELPOS_Setup.exe para instalaciones nuevas.\r\n\r\n### Actualizacion\r\n\r\nConfiguracion -\u003e Buscar actualizaciones."
+}
