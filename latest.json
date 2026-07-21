@@ -1,7 +1,7 @@
 {
-    "version":  "0.3.58",
-    "build_date":  "2026-07-21 09:25:47",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.58/felpos-update-0.3.58.zip",
-    "sha256":  "c38b70259d8fb6a27c6e69531c9eaf03642726e5c61f9aa97ba9b93357ef850f",
-    "release_notes":  "## Cambios\r\n\r\n- Corrige la presentación de los productos en el ticket actual.\r\n- Separa nombre, precio e información de inventario para evitar que los textos se encimen.\r\n- Mantiene los controles de cantidad alineados y mejora la lectura de nombres largos.\r\n\r\n### Actualización\r\n\r\nEn FEL POS abre Configuración y pulsa Buscar actualizaciones."
+    "version":  "0.3.59",
+    "build_date":  "2026-07-21 09:36:04",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.59/felpos-update-0.3.59.zip",
+    "sha256":  "6ff1bf89cd495a082cff6ebd3e68dad2887477b365241fb3e50c57a50aab0500",
+    "release_notes":  "## Cambios\r\n\r\n- Separa completamente el precio de la información del producto en el ticket actual.\r\n- Alinea el precio y los controles de cantidad en una columna independiente.\r\n- Evita que nombres, inventario, IVA y precios se encimen.\r\n- Desactiva la caché de los archivos visuales para que las correcciones aparezcan inmediatamente después de actualizar.\r\n\r\n### Actualización\r\n\r\nEn FEL POS abre Configuración y pulsa Buscar actualizaciones."
 }
