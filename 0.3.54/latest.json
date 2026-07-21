@@ -1,7 +1,0 @@
-{
-    "version":  "0.3.54",
-    "build_date":  "2026-07-16 14:21:08",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.54/felpos-update-0.3.54.zip",
-    "sha256":  "7716355b5523592c243c2fb5684c5b66f5fc364c4b01da832a10542c7d769faf",
-    "release_notes":  "Fechas corregidas: el historial de ventas y todas las pantallas ahora muestran la hora local de Guatemala (antes aparecia adelantada ~6 horas)."
-}

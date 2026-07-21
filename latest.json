@@ -1,7 +1,7 @@
 {
-    "version":  "0.3.57",
-    "build_date":  "2026-07-21 09:03:43",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.57/felpos-update-0.3.57.zip",
-    "sha256":  "57283e3d91f7c0a720382aec59296d6337766bcddf2fba8be74314cf4bc4755c",
-    "release_notes":  "## Cambios\r\n\r\n- Agrega la opcion de eliminar productos para administradores.\r\n- Los productos sin historial se eliminan definitivamente; los que tienen historial se desactivan para conservar ventas y reportes.\r\n- Agrega el panel Hoy con el resumen diario de ventas, pagos y productos.\r\n- Mejora la continuidad FEL con reintentos de facturas pendientes.\r\n- Hace mas robusta la impresion de tickets y la apertura de gaveta.\r\n- Evita ventas duplicadas cuando se reintenta una solicitud.\r\n- Mejora la navegacion, el diseño de Configuracion y el enfoque automatico al buscar productos.\r\n- Corrige el boton Nuevo cliente para que abra correctamente su formulario.\r\n- Retira el panel de seguridad de venta que ya no estaba en uso.\r\n\r\n### Actualizacion\r\n\r\nEn FEL POS abre Configuracion y pulsa Buscar actualizaciones."
+    "version":  "0.3.58",
+    "build_date":  "2026-07-21 09:25:47",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.58/felpos-update-0.3.58.zip",
+    "sha256":  "c38b70259d8fb6a27c6e69531c9eaf03642726e5c61f9aa97ba9b93357ef850f",
+    "release_notes":  "## Cambios\r\n\r\n- Corrige la presentación de los productos en el ticket actual.\r\n- Separa nombre, precio e información de inventario para evitar que los textos se encimen.\r\n- Mantiene los controles de cantidad alineados y mejora la lectura de nombres largos.\r\n\r\n### Actualización\r\n\r\nEn FEL POS abre Configuración y pulsa Buscar actualizaciones."
 }
