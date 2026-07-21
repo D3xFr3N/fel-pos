@@ -1,7 +1,7 @@
 {
-    "version":  "0.3.59",
-    "build_date":  "2026-07-21 09:36:04",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.59/felpos-update-0.3.59.zip",
-    "sha256":  "6ff1bf89cd495a082cff6ebd3e68dad2887477b365241fb3e50c57a50aab0500",
-    "release_notes":  "## Cambios\r\n\r\n- Separa completamente el precio de la información del producto en el ticket actual.\r\n- Alinea el precio y los controles de cantidad en una columna independiente.\r\n- Evita que nombres, inventario, IVA y precios se encimen.\r\n- Desactiva la caché de los archivos visuales para que las correcciones aparezcan inmediatamente después de actualizar.\r\n\r\n### Actualización\r\n\r\nEn FEL POS abre Configuración y pulsa Buscar actualizaciones."
+    "version":  "0.3.60",
+    "build_date":  "2026-07-21 09:51:12",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.60/felpos-update-0.3.60.zip",
+    "sha256":  "0f82b47bf079682812aa87fa9d5174ad084f0ca139a50f91b889eb3debfb2dab",
+    "release_notes":  "## Cambios\r\n\r\n- Mantiene fija el área donde se agregan los productos al ticket.\r\n- Evita que los productos del carrito se desplacen debajo de los precios.\r\n- Agrega desplazamiento vertical dentro del carrito cuando contiene muchos productos.\r\n- Mantiene los totales y controles en su posición.\r\n\r\n### Actualización\r\n\r\nEn FEL POS abre Configuración y pulsa Buscar actualizaciones."
 }
