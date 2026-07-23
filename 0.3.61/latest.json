@@ -1,7 +1,0 @@
-{
-    "version":  "0.3.61",
-    "build_date":  "2026-07-21 10:31:53",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.61/felpos-update-0.3.61.zip",
-    "sha256":  "e98cfc725799a444f44679cfb14d63703ac70e815ad7dae2f244f50ea249581c",
-    "release_notes":  "## Cambios\r\n\r\n- Agrega fondos personalizables para todo el sistema.\r\n- Permite elegir entre los temas Oscuro, Claro, Azul, Gris y Crema.\r\n- Permite combinar el fondo con cualquier color de botones y acentos.\r\n- Guarda la apariencia seleccionada para los siguientes inicios.\r\n\r\n### Actualización\r\n\r\nEn FEL POS abre Configuración y pulsa Buscar actualizaciones."
-}
