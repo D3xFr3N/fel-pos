@@ -1,7 +1,0 @@
-{
-    "version":  "0.3.58",
-    "build_date":  "2026-07-21 09:25:47",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.3.58/felpos-update-0.3.58.zip",
-    "sha256":  "c38b70259d8fb6a27c6e69531c9eaf03642726e5c61f9aa97ba9b93357ef850f",
-    "release_notes":  "## Cambios\r\n\r\n- Corrige la presentación de los productos en el ticket actual.\r\n- Separa nombre, precio e información de inventario para evitar que los textos se encimen.\r\n- Mantiene los controles de cantidad alineados y mejora la lectura de nombres largos.\r\n\r\n### Actualización\r\n\r\nEn FEL POS abre Configuración y pulsa Buscar actualizaciones."
-}
