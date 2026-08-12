@@ -1,7 +1,7 @@
 {
-    "version":  "0.6.10",
-    "build_date":  "2026-08-12 12:56:11",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.10/felpos-update-0.6.10.zip",
-    "sha256":  "044c884285da38892f70d32854ab283e3179934f271774d42446db7bbb3c114f",
-    "release_notes":  "## FEL POS 0.6.10\r\n\r\n- Corrige el reinicio tras actualizar en instalaciones en `Program Files (x86)`: CMD ya no parte la ruta por los paréntesis.\r\n- Tras actualizar, el reinicio usa `C:\\Users\\Public\\FELPOS\\relaunch.vbs` (ruta sin espacios ni `(x86)`).\r\n- Boot / reparación también prefieren ese relaunch seguro."
+    "version":  "0.6.11",
+    "build_date":  "2026-08-12 14:30:33",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.11/felpos-update-0.6.11.zip",
+    "sha256":  "8147574b5a369d1d051af408ff1d88db26937878cbd7b182bf8773185ef48198",
+    "release_notes":  "## FEL POS 0.6.11\r\n\r\n- En Vender se quitan el catalogo de productos y los filtros de departamentos.\r\n- La venta queda centrada en busqueda/escaneo (SKU o codigo) y el ticket."
 }
