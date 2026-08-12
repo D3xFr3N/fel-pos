@@ -1093,8 +1093,6 @@ function clearActiveTicketWorkspace({ keepPaymentMethod = false } = {}) {
   }
   const cashDialog = document.getElementById("cash-checkout-dialog");
   if (cashDialog?.open) cashDialog.close();
-  const mixedDialog = document.getElementById("mixed-checkout-dialog");
-  if (mixedDialog?.open) mixedDialog.close();
 }
 
 function startBlankTicket() {
@@ -1707,6 +1705,123 @@ function isPosCatalogProductVisible(product, { allowOutOfStockSearch = false, te
   return true;
 }
 
+function getPosSearchSuggestionMatches(rawTerm, { limit = 10 } = {}) {
+  const term = String(rawTerm || "").trim().toLowerCase();
+  if (!term) return [];
+  const normalized = normalizeBarcodeValue(rawTerm);
+  const scored = [];
+  for (const product of state.products || []) {
+    if (!isPosCatalogProductVisible(product, { allowOutOfStockSearch: true, term })) continue;
+    const name = String(product.name || "").toLowerCase();
+    const sku = String(product.sku || "").trim().toLowerCase();
+    const barcode = getProductBarcodeValue(product).toLowerCase();
+    const barcodeNorm = normalizeBarcodeValue(product.barcode || product.sku || "");
+    let score = 0;
+    if (sku === term || barcode === term || barcodeNorm === normalized) score = 100;
+    else if (sku.startsWith(term) || barcode.startsWith(term)) score = 80;
+    else if (name.startsWith(term)) score = 70;
+    else if (sku.includes(term) || barcode.includes(term)) score = 50;
+    else if (name.includes(term)) score = 40;
+    else if ((product.department_name || "").toLowerCase().includes(term)) score = 20;
+    else continue;
+    const outOfStock =
+      productTracksInventory(product) && getPosAvailableStock(product) <= 0;
+    if (outOfStock) score -= 5;
+    scored.push({ product, score, outOfStock });
+  }
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return String(a.product.name || "").localeCompare(String(b.product.name || ""), "es");
+  });
+  return scored.slice(0, limit);
+}
+
+function hideProductSearchSuggestions() {
+  const box = document.getElementById("product-search-suggestions");
+  if (!box) return;
+  box.hidden = true;
+  box.innerHTML = "";
+  state.posSearchSuggestionIndex = -1;
+}
+
+function getActiveSuggestionProductId() {
+  const box = document.getElementById("product-search-suggestions");
+  if (!box || box.hidden) return null;
+  const active = box.querySelector(".pos-suggestion-item.is-active");
+  if (!active) return null;
+  return Number(active.dataset.productId || 0) || null;
+}
+
+function setActiveSuggestionIndex(index) {
+  const box = document.getElementById("product-search-suggestions");
+  if (!box || box.hidden) return;
+  const items = [...box.querySelectorAll(".pos-suggestion-item")];
+  if (!items.length) {
+    state.posSearchSuggestionIndex = -1;
+    return;
+  }
+  const next = ((index % items.length) + items.length) % items.length;
+  state.posSearchSuggestionIndex = next;
+  items.forEach((item, i) => item.classList.toggle("is-active", i === next));
+  items[next]?.scrollIntoView({ block: "nearest" });
+}
+
+function renderProductSearchSuggestions() {
+  const searchInput = document.getElementById("product-search");
+  const box = document.getElementById("product-search-suggestions");
+  if (!searchInput || !box) return;
+  const raw = (searchInput.value || "").trim();
+  if (raw.length < 1) {
+    hideProductSearchSuggestions();
+    return;
+  }
+  const matches = getPosSearchSuggestionMatches(raw, { limit: 10 });
+  if (!matches.length) {
+    box.hidden = false;
+    box.innerHTML = `<div class="pos-suggestion-empty">Sin coincidencias para "${escapeHtml(raw)}"</div>`;
+    state.posSearchSuggestionIndex = -1;
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = matches
+    .map(({ product, outOfStock }, index) => {
+      const code = getProductBarcodeValue(product) || product.sku || "—";
+      const name = String(product.name || product.sku || "Sin nombre").trim();
+      return `
+        <button
+          type="button"
+          class="pos-suggestion-item ${outOfStock ? "is-out" : ""} ${index === 0 ? "is-active" : ""}"
+          role="option"
+          data-product-id="${product.id}"
+          data-index="${index}"
+        >
+          <span class="pos-suggestion-name">${escapeHtml(name)}${outOfStock ? " (sin stock)" : ""}</span>
+          <span class="pos-suggestion-code">${escapeHtml(code)}</span>
+          <span class="pos-suggestion-price">${money(product.price)}</span>
+        </button>
+      `;
+    })
+    .join("");
+  state.posSearchSuggestionIndex = 0;
+  box.querySelectorAll(".pos-suggestion-item").forEach((btn) => {
+    btn.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      void selectProductSearchSuggestion(Number(btn.dataset.productId));
+    });
+  });
+}
+
+async function selectProductSearchSuggestion(productId) {
+  const id = Number(productId || 0);
+  if (!id) return;
+  hideProductSearchSuggestions();
+  const searchInput = document.getElementById("product-search");
+  if (searchInput) searchInput.value = "";
+  await addToCart(id);
+  renderProducts();
+  focusProductSearch();
+}
+
 function getFilteredPosProducts() {
   const searchInput = document.getElementById("product-search");
   const term = (searchInput?.value || "").trim().toLowerCase();
@@ -1948,6 +2063,185 @@ function handleCartQuantityShortcuts(event) {
   adjustSelectedCartLine(delta);
 }
 
+function getCartDiscountInput() {
+  return document.getElementById("cart-discount-input");
+}
+
+function getCartDiscountAmount() {
+  return Math.round(Number(getCartDiscountInput()?.value || 0) * 100) / 100;
+}
+
+function setCartDiscountAmount(amount, { syncUi = true } = {}) {
+  const value = Math.max(0, Math.round(Number(amount || 0) * 100) / 100);
+  const master = getCartDiscountInput();
+  if (master) master.value = String(value);
+  if (syncUi) syncCheckoutDiscountInputsFromMaster();
+  return value;
+}
+
+function syncCheckoutDiscountInputsFromMaster() {
+  const value = String(getCartDiscountAmount());
+  const input = document.getElementById("cash-checkout-discount");
+  if (input && document.activeElement !== input) input.value = value;
+  updateCheckoutDiscountBadges();
+}
+
+function updateCheckoutDiscountBadges() {
+  const amount = getCartDiscountAmount();
+  const label = amount > 0 ? `Ahorro ${money(amount)}` : "Sin descuento";
+  const el = document.getElementById("discount-badge");
+  if (el) el.textContent = label;
+  document.getElementById("discount-panel")?.classList.toggle("is-active", true);
+}
+
+function applyDiscountChipValue(chipValue) {
+  const master = getCartDiscountInput();
+  const previous = master?.value ?? "0";
+  if (master) master.value = "0";
+  const rawSubtotal = Number(calcTotals(state.cart).rawSubtotal || 0);
+  if (master) master.value = previous;
+  const maxDiscount = Math.round(rawSubtotal * 0.5 * 100) / 100;
+  const next = Math.min(Math.round(Number(chipValue || 0) * 100) / 100, maxDiscount);
+  setCartDiscountAmount(next);
+  renderTotals();
+  refreshOpenCheckoutTotals();
+}
+
+function onCheckoutDiscountInput(rawValue) {
+  setCartDiscountAmount(rawValue);
+  renderTotals();
+  refreshOpenCheckoutTotals();
+}
+
+function refreshOpenCheckoutTotals() {
+  const totals = calcTotals(state.cart);
+  const dialog = document.getElementById("cash-checkout-dialog");
+  if (!dialog?.open) return;
+  const cashTotal = document.getElementById("cash-checkout-total");
+  if (cashTotal) cashTotal.textContent = money(totals.total);
+  const method = document.getElementById("payment-method")?.value || "efectivo";
+  if (method === "efectivo") {
+    const received = document.getElementById("cash-checkout-received");
+    if (received?.dataset.replaceOnType === "1") {
+      received.value = totals.total.toFixed(2);
+    }
+    updateCashCheckoutChange();
+  } else if (method === "mixto") {
+    updateMixedCheckoutAmounts();
+  }
+}
+
+function syncCheckoutPaymentChoices(method = null) {
+  const value = method || document.getElementById("payment-method")?.value || "efectivo";
+  const select = document.getElementById("payment-method");
+  if (select && select.value !== value) select.value = value;
+  document.querySelectorAll(".checkout-pay-choice[data-payment]").forEach((btn) => {
+    btn.classList.toggle("is-active", btn.dataset.payment === value);
+  });
+}
+
+function setCheckoutPaymentMethod(method) {
+  const value = String(method || "efectivo");
+  const select = document.getElementById("payment-method");
+  if (select) select.value = value;
+  syncCheckoutPaymentChoices(value);
+  if (value === "mixto") {
+    const totals = calcTotals(state.cart);
+    const cashAmountInput = document.getElementById("mixed-cash-amount");
+    const cashReceivedInput = document.getElementById("mixed-cash-received");
+    const suggestedCash = Math.round(totals.total * 0.5 * 100) / 100;
+    if (cashAmountInput && (!cashAmountInput.value || Number(cashAmountInput.value) <= 0)) {
+      cashAmountInput.value = suggestedCash.toFixed(2);
+    }
+    if (cashReceivedInput && (!cashReceivedInput.value || Number(cashReceivedInput.value) <= 0)) {
+      cashReceivedInput.value = String(cashAmountInput?.value || suggestedCash.toFixed(2));
+    }
+    const otherMethod = document.getElementById("mixed-other-method");
+    if (otherMethod && !otherMethod.value) otherMethod.value = "tarjeta";
+  }
+  updateCheckoutMethodSections();
+}
+
+function updateCheckoutMethodSections() {
+  const method = document.getElementById("payment-method")?.value || "efectivo";
+  syncCheckoutPaymentChoices(method);
+  const cashSec = document.getElementById("checkout-section-efectivo");
+  const mixedSec = document.getElementById("checkout-section-mixto");
+  const otherSec = document.getElementById("checkout-section-other");
+  const title = document.getElementById("checkout-dialog-title");
+  const hint = document.getElementById("checkout-other-hint");
+  const printMode = document.getElementById("cash-checkout-print-mode");
+  if (cashSec) cashSec.hidden = method !== "efectivo";
+  if (mixedSec) mixedSec.hidden = method !== "mixto";
+  if (otherSec) otherSec.hidden = method === "efectivo" || method === "mixto";
+  if (title) title.textContent = `Cobrar · ${formatPaymentMethodLabel(method)}`;
+  if (hint) {
+    hint.textContent = `Confirmas recibir pago con ${formatPaymentMethodLabel(method).toLowerCase()}.`;
+  }
+  if (printMode) {
+    printMode.textContent = "¿Que metodo de pago estas recibiendo?";
+  }
+  syncCheckoutCreditOptions();
+  refreshOpenCheckoutTotals();
+}
+
+function openCheckoutDialog() {
+  state.checkoutClientRequestId = createClientRequestId();
+  const dialog = document.getElementById("cash-checkout-dialog");
+  const totalEl = document.getElementById("cash-checkout-total");
+  const receivedInput = document.getElementById("cash-checkout-received");
+  if (!dialog || !totalEl) return;
+  if (!ensureCashOwnership("cobrar")) return;
+
+  syncCheckoutDiscountInputsFromMaster();
+  const totals = calcTotals(state.cart);
+  totalEl.textContent = money(totals.total);
+
+  const method = document.getElementById("payment-method")?.value || "efectivo";
+  if (method === "mixto") {
+    const cashAmountInput = document.getElementById("mixed-cash-amount");
+    const cashReceivedInput = document.getElementById("mixed-cash-received");
+    const suggestedCash = Math.round(totals.total * 0.5 * 100) / 100;
+    if (cashAmountInput) cashAmountInput.value = suggestedCash.toFixed(2);
+    if (cashReceivedInput) cashReceivedInput.value = suggestedCash.toFixed(2);
+    const otherMethod = document.getElementById("mixed-other-method");
+    if (otherMethod && !otherMethod.value) otherMethod.value = "tarjeta";
+  }
+
+  if (receivedInput) {
+    const paidPreview = Number(String(document.getElementById("pos-paid-with")?.value || "").replace(",", "."));
+    if (Number.isFinite(paidPreview) && paidPreview > 0) {
+      receivedInput.value = paidPreview.toFixed(2);
+      delete receivedInput.dataset.replaceOnType;
+    } else {
+      receivedInput.value = totals.total.toFixed(2);
+      receivedInput.dataset.replaceOnType = "1";
+    }
+    updateCashCheckoutChange();
+  }
+
+  updateCheckoutMethodSections();
+  wireCashCheckoutKeypad();
+  if (!dialog.open) dialog.showModal();
+  setTimeout(() => {
+    document.querySelector(".checkout-pay-choice.is-active")?.focus();
+  }, 0);
+}
+
+function openCashCheckoutDialog() {
+  openCheckoutDialog();
+}
+
+function openMixedCheckoutDialog() {
+  const payment = document.getElementById("payment-method");
+  if (payment) payment.value = "mixto";
+  openCheckoutDialog();
+}
+
+function openSimpleCheckoutDialog() {
+  openCheckoutDialog();
+}
+
 function renderTotals() {
   const totals = calcTotals(state.cart);
   const discountAmount = Number(totals.cartDiscount || 0);
@@ -1964,18 +2258,12 @@ function renderTotals() {
   if (bigTotal) bigTotal.textContent = money(totals.total);
 
   const discountRow = document.getElementById("totals-discount-row");
-  const discountPanel = document.getElementById("discount-panel");
-  const discountBadge = document.getElementById("discount-badge");
   const hasDiscount = discountAmount > 0;
   discountRow?.classList.toggle("is-active", hasDiscount);
   discountRow?.classList.toggle("is-hidden", !hasDiscount);
-  discountPanel?.classList.toggle("is-active", hasDiscount);
-  if (discountBadge) {
-    discountBadge.textContent = hasDiscount ? `Ahorro ${money(discountAmount)}` : "Sin descuento";
-  }
+  syncCheckoutDiscountInputsFromMaster();
 
-  const input = document.getElementById("cart-discount-input");
-  const currentValue = Math.round(Number(input?.value || 0) * 100) / 100;
+  const currentValue = getCartDiscountAmount();
   document.querySelectorAll(".discount-chip[data-discount]").forEach((chip) => {
     const chipValue = Math.round(Number(chip.dataset.discount || 0) * 100) / 100;
     chip.classList.toggle("is-selected", hasDiscount && chipValue === currentValue && chipValue > 0);
@@ -2156,8 +2444,11 @@ function goToSalesTab() {
 }
 
 function resetCartDiscount() {
-  const input = document.getElementById("cart-discount-input");
-  if (input) input.value = "0";
+  setCartDiscountAmount(0);
+}
+
+async function finalizeSimpleCheckout(printTicket = true) {
+  return finalizeCheckoutFromDialog(printTicket);
 }
 
 function formatPaymentMethodLabel(method) {
@@ -2484,36 +2775,17 @@ function focusCashReceivedInput(input) {
 }
 
 function openCashCheckoutDialog() {
-  state.checkoutClientRequestId = createClientRequestId();
-  const paymentMethod = document.getElementById("payment-method")?.value || "efectivo";
-  if (paymentMethod === "mixto") {
-    openMixedCheckoutDialog();
-    return;
-  }
-  const dialog = document.getElementById("cash-checkout-dialog");
-  const totalEl = document.getElementById("cash-checkout-total");
-  const receivedInput = document.getElementById("cash-checkout-received");
-  const printModeEl = document.getElementById("cash-checkout-print-mode");
-  if (!dialog || !totalEl || !receivedInput) return;
-  if (!ensureCashOwnership("cobrar")) return;
+  openCheckoutDialog();
+}
 
-  const totals = calcTotals(state.cart);
-  totalEl.textContent = money(totals.total);
-  if (printModeEl) {
-    printModeEl.textContent = "Captura efectivo (F12). Cobro final: F1 imprime, F2 no imprime.";
-  }
-  // Si Pagó Con tiene monto, usarlo; si no, exacto.
-  const paidPreview = Number(String(document.getElementById("pos-paid-with")?.value || "").replace(",", "."));
-  if (Number.isFinite(paidPreview) && paidPreview > 0) {
-    receivedInput.value = paidPreview.toFixed(2);
-  } else {
-    receivedInput.value = totals.total.toFixed(2);
-  }
-  receivedInput.dataset.replaceOnType = "1";
-  updateCashCheckoutChange();
-  wireCashCheckoutKeypad();
-  dialog.showModal();
-  setTimeout(() => focusCashReceivedInput(receivedInput), 0);
+function openMixedCheckoutDialog() {
+  const payment = document.getElementById("payment-method");
+  if (payment) payment.value = "mixto";
+  openCheckoutDialog();
+}
+
+function openSimpleCheckoutDialog() {
+  openCheckoutDialog();
 }
 
 function updateMixedCheckoutAmounts() {
@@ -2528,25 +2800,6 @@ function updateMixedCheckoutAmounts() {
   const change = Math.round((cashReceived - cashAmount) * 100) / 100;
   const changeEl = document.getElementById("mixed-cash-change");
   if (changeEl) changeEl.textContent = money(change > 0 ? change : 0);
-}
-
-function openMixedCheckoutDialog() {
-  const dialog = document.getElementById("mixed-checkout-dialog");
-  const totalEl = document.getElementById("mixed-checkout-total");
-  const cashAmountInput = document.getElementById("mixed-cash-amount");
-  const cashReceivedInput = document.getElementById("mixed-cash-received");
-  if (!dialog || !totalEl || !cashAmountInput || !cashReceivedInput) return;
-  if (!ensureCashOwnership("cobrar")) return;
-
-  const totals = calcTotals(state.cart);
-  totalEl.textContent = money(totals.total);
-  const suggestedCash = Math.round(totals.total * 0.5 * 100) / 100;
-  cashAmountInput.value = suggestedCash.toFixed(2);
-  cashReceivedInput.value = suggestedCash.toFixed(2);
-  document.getElementById("mixed-other-method").value = "tarjeta";
-  updateMixedCheckoutAmounts();
-  dialog.showModal();
-  setTimeout(() => cashAmountInput.focus(), 0);
 }
 
 function buildMixedPaymentsFromDialog() {
@@ -2589,7 +2842,7 @@ async function finalizeMixedCheckout(printTicket = true) {
 
   const success = await processCheckout("mixto", cashReceived, printTicket, payments);
   if (success) {
-    document.getElementById("mixed-checkout-dialog")?.close();
+    document.getElementById("cash-checkout-dialog")?.close();
   }
   return success;
 }
@@ -2833,39 +3086,30 @@ async function addProductFromSearchEnter() {
   const raw = (searchInput.value || "").trim();
   if (!raw) return;
 
+  const activeSuggestionId = getActiveSuggestionProductId();
+  if (activeSuggestionId) {
+    await selectProductSearchSuggestion(activeSuggestionId);
+    return;
+  }
+
   let matches = findProductsByExactCode(raw);
   if (!matches.length) {
-    const term = raw.toLowerCase();
-    const selectedDepartmentId = getSelectedPosDepartmentId();
-    matches = state.products.filter((product) => {
-      const barcodeValue = getProductBarcodeValue(product).toLowerCase();
-      const matchesText =
-        product.name.toLowerCase().includes(term) ||
-        String(product.sku || "")
-          .toLowerCase()
-          .includes(term) ||
-        barcodeValue.includes(term);
-      const matchesDepartment =
-        !selectedDepartmentId || Number(product.department_id || 0) === selectedDepartmentId;
-      return matchesText && matchesDepartment;
-    });
+    matches = getPosSearchSuggestionMatches(raw, { limit: 20 }).map((row) => row.product);
   }
 
   if (!matches.length) {
+    renderProductSearchSuggestions();
     alert(`No se encontro producto con codigo: ${raw}`);
     searchInput.select();
     return;
   }
   if (matches.length > 1) {
-    alert(`Hay ${matches.length} coincidencias. Escribe el codigo exacto (SKU o codigo de barras).`);
-    searchInput.select();
+    renderProductSearchSuggestions();
+    setActiveSuggestionIndex(0);
     return;
   }
 
-  await addToCart(matches[0].id);
-  searchInput.value = "";
-  renderProducts();
-  searchInput.focus();
+  await selectProductSearchSuggestion(matches[0].id);
 }
 
 function isMultiBranchEnabled() {
@@ -8778,7 +9022,6 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
     clearActiveTicketWorkspace();
     startBlankTicket();
     document.getElementById("cash-checkout-dialog")?.close();
-    document.getElementById("mixed-checkout-dialog")?.close();
     document.getElementById("sale-dialog")?.close();
     await refreshPosCore();
     openSaleDetail(sale.id);
@@ -8832,30 +9075,26 @@ async function finalizeCashCheckout(printTicket = true) {
 }
 
 async function requestPosCharge() {
-  const paymentMethod = document.getElementById("payment-method")?.value || "efectivo";
-  if (paymentMethod === "efectivo" || paymentMethod === "mixto") {
-    return requestCashCapture();
-  }
   if (!state.cart.length) {
     await showAppAlert("Agrega productos antes de cobrar.");
     return false;
   }
-  return checkout(true);
+  if (!ensureCashOwnership("cobrar")) return false;
+  openCheckoutDialog();
+  return true;
 }
 
 async function requestCashCapture() {
-  const paymentMethod = document.getElementById("payment-method")?.value || "efectivo";
-  if (paymentMethod !== "efectivo" && paymentMethod !== "mixto") {
-    alert("F12 aplica para cobro en efectivo o pago mixto.");
-    return false;
-  }
-  if (!ensureCashOwnership("capturar efectivo")) return false;
-  if (!state.cart.length) {
-    alert("Agrega productos antes de cobrar.");
-    return false;
-  }
-  openCashCheckoutDialog();
-  return true;
+  return requestPosCharge();
+}
+
+async function finalizeCheckoutFromDialog(printTicket = true) {
+  const method = document.getElementById("payment-method")?.value || "efectivo";
+  if (method === "efectivo") return finalizeCashCheckout(printTicket);
+  if (method === "mixto") return finalizeMixedCheckout(printTicket);
+  const success = await checkout(printTicket);
+  if (success) document.getElementById("cash-checkout-dialog")?.close();
+  return success;
 }
 
 function isTypingTarget(target) {
@@ -8912,9 +9151,7 @@ function handleCheckoutShortcuts(event) {
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
   if (!state.user) return;
   if (document.getElementById("login-dialog")?.open) return;
-  const paymentMethod = document.getElementById("payment-method")?.value || "efectivo";
   const cashDialogOpen = document.getElementById("cash-checkout-dialog")?.open;
-  const mixedDialogOpen = document.getElementById("mixed-checkout-dialog")?.open;
   const anyDialogOpen = Array.from(document.querySelectorAll("dialog")).some((dialog) => dialog.open);
 
   if (event.key === "Escape") {
@@ -8968,44 +9205,20 @@ function handleCheckoutShortcuts(event) {
   }
   if (event.key === "F1") {
     event.preventDefault();
-    if (paymentMethod === "efectivo") {
-      if (!cashDialogOpen) {
-        alert("Primero presiona F12 para capturar efectivo recibido.");
-        return;
-      }
-      finalizeCashCheckout(true);
+    if (!cashDialogOpen) {
+      alert("Primero presiona F12 para cobrar.");
       return;
     }
-    if (paymentMethod === "mixto") {
-      if (!mixedDialogOpen) {
-        alert("Primero presiona F12 para capturar el cobro mixto.");
-        return;
-      }
-      finalizeMixedCheckout(true);
-      return;
-    }
-    checkout(true);
+    void finalizeCheckoutFromDialog(true);
     return;
   }
   if (event.key === "F2") {
     event.preventDefault();
-    if (paymentMethod === "efectivo") {
-      if (!cashDialogOpen) {
-        alert("Primero presiona F12 para capturar efectivo recibido.");
-        return;
-      }
-      finalizeCashCheckout(false);
+    if (!cashDialogOpen) {
+      alert("Primero presiona F12 para cobrar.");
       return;
     }
-    if (paymentMethod === "mixto") {
-      if (!mixedDialogOpen) {
-        alert("Primero presiona F12 para capturar el cobro mixto.");
-        return;
-      }
-      finalizeMixedCheckout(false);
-      return;
-    }
-    checkout(false);
+    void finalizeCheckoutFromDialog(false);
   }
 }
 
@@ -11218,8 +11431,26 @@ function setupEvents() {
   productSearch.addEventListener("input", () => {
     resetCatalogPage();
     renderProducts();
+    renderProductSearchSuggestions();
   });
   productSearch.addEventListener("keydown", (event) => {
+    const box = document.getElementById("product-search-suggestions");
+    const suggestionsOpen = Boolean(box && !box.hidden);
+    if (event.key === "ArrowDown" && suggestionsOpen) {
+      event.preventDefault();
+      setActiveSuggestionIndex((state.posSearchSuggestionIndex ?? -1) + 1);
+      return;
+    }
+    if (event.key === "ArrowUp" && suggestionsOpen) {
+      event.preventDefault();
+      setActiveSuggestionIndex((state.posSearchSuggestionIndex ?? 0) - 1);
+      return;
+    }
+    if (event.key === "Escape" && suggestionsOpen) {
+      event.preventDefault();
+      hideProductSearchSuggestions();
+      return;
+    }
     if (event.key !== "Enter") return;
     event.preventDefault();
     void addProductFromSearchEnter();
@@ -11229,8 +11460,12 @@ function setupEvents() {
     if ((productSearch.value || "").trim()) {
       void addProductFromSearchEnter();
     } else {
+      hideProductSearchSuggestions();
       renderProducts();
     }
+  });
+  productSearch.addEventListener("blur", () => {
+    setTimeout(() => hideProductSearchSuggestions(), 150);
   });
   document.getElementById("pos-department-filter")?.addEventListener("change", () => {
     resetCatalogPage();
@@ -11473,17 +11708,28 @@ function setupEvents() {
   document.getElementById("mixed-cash-amount")?.addEventListener("input", updateMixedCheckoutAmounts);
   document.getElementById("mixed-cash-received")?.addEventListener("input", updateMixedCheckoutAmounts);
   document.getElementById("mixed-other-method")?.addEventListener("change", updateMixedCheckoutAmounts);
-  document.getElementById("close-mixed-checkout-dialog")?.addEventListener("click", () => {
-    document.getElementById("mixed-checkout-dialog")?.close();
+  document.getElementById("cash-final-print-btn").addEventListener("click", () => {
+    void finalizeCheckoutFromDialog(true);
   });
-  document.getElementById("mixed-final-print-btn")?.addEventListener("click", () => {
-    finalizeMixedCheckout(true);
+  document.getElementById("cash-final-no-print-btn")?.addEventListener("click", () => {
+    void finalizeCheckoutFromDialog(false);
   });
-  document.getElementById("mixed-final-no-print-btn")?.addEventListener("click", () => {
-    finalizeMixedCheckout(false);
+  document.getElementById("cash-checkout-discount")?.addEventListener("input", (event) => {
+    onCheckoutDiscountInput(event.target.value);
   });
-  document.getElementById("cash-final-print-btn").addEventListener("click", () => finalizeCashCheckout(true));
-  document.getElementById("cash-final-no-print-btn").addEventListener("click", () => finalizeCashCheckout(false));
+  document.getElementById("discount-quick")?.addEventListener("click", (event) => {
+    const chip = event.target.closest(".discount-chip[data-discount]");
+    if (!chip) return;
+    applyDiscountChipValue(chip.dataset.discount);
+  });
+  document.getElementById("payment-method")?.addEventListener("change", () => {
+    setCheckoutPaymentMethod(document.getElementById("payment-method")?.value || "efectivo");
+  });
+  document.getElementById("checkout-payment-choices")?.addEventListener("click", (event) => {
+    const btn = event.target.closest(".checkout-pay-choice[data-payment]");
+    if (!btn) return;
+    setCheckoutPaymentMethod(btn.dataset.payment);
+  });
   document.getElementById("new-product-btn").addEventListener("click", () => openProductEditor(null));
   document.getElementById("products-table-search")?.addEventListener("input", (event) => {
     state.productsTableSearch = String(event.target.value || "").trim().toLowerCase();
@@ -11945,20 +12191,6 @@ function setupEvents() {
   document.addEventListener("keydown", handleShortcutsHelpHotkey);
 
   document.getElementById("customer-select")?.addEventListener("change", onCustomerSelectChange);
-  document.getElementById("payment-method")?.addEventListener("change", () => syncCheckoutCreditOptions());
-  document.getElementById("cart-discount-input")?.addEventListener("input", renderTotals);
-  document.getElementById("discount-quick")?.addEventListener("click", (event) => {
-    const chip = event.target.closest(".discount-chip[data-discount]");
-    if (!chip) return;
-    const input = document.getElementById("cart-discount-input");
-    if (!input) return;
-    const totalsPreview = calcTotals(state.cart);
-    const maxDiscount = Math.round(Number(totalsPreview.rawSubtotal || 0) * 0.5 * 100) / 100;
-    const chipValue = Math.round(Number(chip.dataset.discount || 0) * 100) / 100;
-    input.value = String(Math.min(chipValue, maxDiscount));
-    renderTotals();
-    input.focus();
-  });
   document.getElementById("add-school-package-btn")?.addEventListener("click", addSchoolPackageToCart);
   document.getElementById("manage-school-packages-btn")?.addEventListener("click", () => {
     const panel = document.getElementById("school-packages-admin");

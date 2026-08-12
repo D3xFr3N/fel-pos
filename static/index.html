@@ -63,7 +63,10 @@
           </div>
 
           <div class="pos-scan-row">
-            <input id="product-search" type="search" placeholder="Teclee o escanee el codigo del producto..." autocomplete="off">
+            <div class="pos-search-wrap">
+              <input id="product-search" type="search" placeholder="Teclee o escanee el codigo del producto..." autocomplete="off" aria-autocomplete="list" aria-controls="product-search-suggestions">
+              <div id="product-search-suggestions" class="pos-search-suggestions" hidden role="listbox"></div>
+            </div>
             <div class="search-bar-filters" id="pos-branch-filter-wrap" hidden>
               <select id="pos-branch-filter" title="Sucursal de venta">
                 <option value="">Sucursal principal</option>
@@ -130,48 +133,6 @@
               <div class="pos-big-total" id="pos-big-total">Q 0.00</div>
               <button id="pos-reprint-last-btn" class="btn ghost" type="button">Reimprimir ultimo ticket</button>
               <button id="pos-go-sales-btn" class="btn ghost" type="button">Ventas del dia y devoluciones</button>
-              <details class="pos-more-options">
-                <summary>Pago / descuento</summary>
-                <div class="pos-more-options-body">
-                  <label>
-                    Metodo de pago
-                    <select id="payment-method">
-                      <option value="efectivo">Efectivo</option>
-                      <option value="tarjeta">Tarjeta</option>
-                      <option value="transferencia">Transferencia</option>
-                      <option value="mixto">Pago mixto</option>
-                      <option value="credito">Credito cliente</option>
-                    </select>
-                  </label>
-                  <div id="checkout-credit-options" class="checkout-credit-options" hidden>
-                    <label class="inline-option">
-                      <input id="checkout-use-fcam" type="checkbox">
-                      FCAM (factura cambiaria)
-                    </label>
-                    <label id="checkout-loyalty-wrap" hidden>
-                      Canjear puntos lealtad
-                      <input id="checkout-loyalty-redeem" type="number" step="0.01" min="0" value="0" placeholder="0">
-                    </label>
-                  </div>
-                  <div class="discount-panel" id="discount-panel">
-                    <div class="discount-panel-header">
-                      <strong>Descuento del ticket</strong>
-                      <span class="discount-badge" id="discount-badge">Sin descuento</span>
-                    </div>
-                    <label class="discount-input-wrap">
-                      <span class="discount-currency">Q</span>
-                      <input id="cart-discount-input" type="number" step="0.01" min="0" value="0" placeholder="0.00" aria-label="Descuento del ticket en quetzales">
-                    </label>
-                    <div class="discount-quick" id="discount-quick">
-                      <button type="button" class="discount-chip" data-discount="5">Q 5</button>
-                      <button type="button" class="discount-chip" data-discount="10">Q 10</button>
-                      <button type="button" class="discount-chip" data-discount="20">Q 20</button>
-                      <button type="button" class="discount-chip" data-discount="50">Q 50</button>
-                      <button type="button" class="discount-chip discount-chip-clear" data-discount="0">Quitar</button>
-                    </div>
-                  </div>
-                </div>
-              </details>
             </div>
           </div>
 
@@ -185,6 +146,7 @@
             <input id="customer-name" type="text" value="CONSUMIDOR FINAL">
             <select id="customer-select"><option value="">Nuevo / por NIT</option></select>
             <small id="customer-nit-status" class="nit-status">CF · Consumidor final</small>
+            <input id="cart-discount-input" type="hidden" value="0">
           </div>
         </div>
 
@@ -693,84 +655,129 @@
     </form>
   </dialog>
 
-  <dialog id="mixed-checkout-dialog">
-    <form id="mixed-checkout-form" method="dialog">
-      <h3>Cobro mixto</h3>
-      <p class="hint">Divide el total entre efectivo y tarjeta o transferencia.</p>
-      <div class="change-box">
-        <span>Total a cobrar</span>
-        <strong id="mixed-checkout-total">Q 0.00</strong>
-      </div>
-      <label>
-        Monto en efectivo
-        <input id="mixed-cash-amount" type="number" min="0" step="0.01" required>
-      </label>
-      <label>
-        Otro metodo de pago
-        <select id="mixed-other-method">
-          <option value="tarjeta">Tarjeta</option>
-          <option value="transferencia">Transferencia</option>
-        </select>
-      </label>
-      <div class="change-box">
-        <span>Monto otro metodo</span>
-        <strong id="mixed-other-amount">Q 0.00</strong>
-      </div>
-      <label>
-        Efectivo recibido (para cambio)
-        <input id="mixed-cash-received" type="number" min="0" step="0.01" required>
-      </label>
-      <div class="change-box">
-        <span>Cambio a entregar</span>
-        <strong id="mixed-cash-change">Q 0.00</strong>
-      </div>
-      <div class="dialog-actions">
-        <button type="button" class="btn ghost" id="close-mixed-checkout-dialog">Cancelar</button>
-        <button type="button" class="btn primary" id="mixed-final-print-btn">Cobro final e imprimir (F1)</button>
-        <button type="button" class="btn ghost" id="mixed-final-no-print-btn">Cobro final sin imprimir (F2)</button>
-      </div>
-    </form>
-  </dialog>
-
   <dialog id="cash-checkout-dialog">
     <form id="cash-checkout-form" method="dialog">
-      <h3>Cobro en efectivo</h3>
-      <p id="cash-checkout-print-mode" class="hint"></p>
+      <h3 id="checkout-dialog-title">Cobrar</h3>
+      <p id="cash-checkout-print-mode" class="hint">¿Que metodo de pago estas recibiendo?</p>
+
+      <div class="checkout-payment-ask" role="group" aria-label="Metodo de pago recibido">
+        <strong class="checkout-payment-ask-title">Metodo de pago que recibes</strong>
+        <div class="checkout-payment-choices" id="checkout-payment-choices">
+          <button type="button" class="checkout-pay-choice is-active" data-payment="efectivo">Efectivo</button>
+          <button type="button" class="checkout-pay-choice" data-payment="tarjeta">Tarjeta</button>
+          <button type="button" class="checkout-pay-choice" data-payment="transferencia">Transferencia</button>
+          <button type="button" class="checkout-pay-choice" data-payment="mixto">Mixto</button>
+          <button type="button" class="checkout-pay-choice" data-payment="credito">Credito</button>
+        </div>
+        <select id="payment-method" class="visually-hidden" aria-hidden="true" tabindex="-1">
+          <option value="efectivo" selected>Efectivo</option>
+          <option value="tarjeta">Tarjeta</option>
+          <option value="transferencia">Transferencia</option>
+          <option value="mixto">Pago mixto</option>
+          <option value="credito">Credito cliente</option>
+        </select>
+      </div>
+      <div id="checkout-credit-options" class="checkout-credit-options" hidden>
+        <label class="inline-option">
+          <input id="checkout-use-fcam" type="checkbox">
+          FCAM (factura cambiaria)
+        </label>
+        <label id="checkout-loyalty-wrap" hidden>
+          Canjear puntos lealtad
+          <input id="checkout-loyalty-redeem" type="number" step="0.01" min="0" value="0" placeholder="0">
+        </label>
+      </div>
+
+      <div class="discount-panel checkout-discount-panel is-active" id="discount-panel">
+        <div class="discount-panel-header">
+          <div>
+            <strong>Descuento</strong>
+            <small>Aplica un monto fijo sobre la venta</small>
+          </div>
+          <span class="discount-badge" id="discount-badge">Sin descuento</span>
+        </div>
+        <label class="discount-input-wrap">
+          <span class="discount-currency">Q</span>
+          <input id="cash-checkout-discount" type="number" step="0.01" min="0" value="0" placeholder="0.00" aria-label="Descuento del ticket en quetzales">
+        </label>
+        <div class="discount-quick" id="discount-quick">
+          <button type="button" class="discount-chip" data-discount="5">Q 5</button>
+          <button type="button" class="discount-chip" data-discount="10">Q 10</button>
+          <button type="button" class="discount-chip" data-discount="20">Q 20</button>
+          <button type="button" class="discount-chip" data-discount="50">Q 50</button>
+          <button type="button" class="discount-chip discount-chip-clear" data-discount="0">Quitar</button>
+        </div>
+      </div>
+
       <div class="change-box">
         <span>Total a cobrar</span>
         <strong id="cash-checkout-total">Q 0.00</strong>
       </div>
-      <label>
-        Efectivo recibido
-        <input id="cash-checkout-received" type="text" inputmode="decimal" autocomplete="off" required>
-      </label>
-      <div id="cash-checkout-keypad" class="cash-keypad" aria-label="Teclado de cobro">
-        <button type="button" class="cash-key" data-cash-key="1">1</button>
-        <button type="button" class="cash-key" data-cash-key="2">2</button>
-        <button type="button" class="cash-key" data-cash-key="3">3</button>
-        <button type="button" class="cash-key" data-cash-key="50">Q50</button>
-        <button type="button" class="cash-key" data-cash-key="4">4</button>
-        <button type="button" class="cash-key" data-cash-key="5">5</button>
-        <button type="button" class="cash-key" data-cash-key="6">6</button>
-        <button type="button" class="cash-key" data-cash-key="100">Q100</button>
-        <button type="button" class="cash-key" data-cash-key="7">7</button>
-        <button type="button" class="cash-key" data-cash-key="8">8</button>
-        <button type="button" class="cash-key" data-cash-key="9">9</button>
-        <button type="button" class="cash-key" data-cash-key="200">Q200</button>
-        <button type="button" class="cash-key" data-cash-key=".">.</button>
-        <button type="button" class="cash-key" data-cash-key="0">0</button>
-        <button type="button" class="cash-key" data-cash-key="back">⌫</button>
-        <button type="button" class="cash-key cash-key-exact" data-cash-key="exact">Exacto</button>
+
+      <div id="checkout-section-efectivo" class="checkout-method-section">
+        <label>
+          Efectivo recibido
+          <input id="cash-checkout-received" type="text" inputmode="decimal" autocomplete="off">
+        </label>
+        <div id="cash-checkout-keypad" class="cash-keypad" aria-label="Teclado de cobro">
+          <button type="button" class="cash-key" data-cash-key="1">1</button>
+          <button type="button" class="cash-key" data-cash-key="2">2</button>
+          <button type="button" class="cash-key" data-cash-key="3">3</button>
+          <button type="button" class="cash-key" data-cash-key="50">Q50</button>
+          <button type="button" class="cash-key" data-cash-key="4">4</button>
+          <button type="button" class="cash-key" data-cash-key="5">5</button>
+          <button type="button" class="cash-key" data-cash-key="6">6</button>
+          <button type="button" class="cash-key" data-cash-key="100">Q100</button>
+          <button type="button" class="cash-key" data-cash-key="7">7</button>
+          <button type="button" class="cash-key" data-cash-key="8">8</button>
+          <button type="button" class="cash-key" data-cash-key="9">9</button>
+          <button type="button" class="cash-key" data-cash-key="200">Q200</button>
+          <button type="button" class="cash-key" data-cash-key=".">.</button>
+          <button type="button" class="cash-key" data-cash-key="0">0</button>
+          <button type="button" class="cash-key" data-cash-key="back">⌫</button>
+          <button type="button" class="cash-key cash-key-exact" data-cash-key="exact">Exacto</button>
+        </div>
+        <p class="hint">Teclado tactil: escribe el monto o usa billetes rapidos. Exacto = paga el total.</p>
+        <div class="change-box">
+          <span>Cambio a entregar</span>
+          <strong id="cash-checkout-change">Q 0.00</strong>
+        </div>
       </div>
-      <p class="hint">Teclado tactil: escribe el monto o usa billetes rapidos. Exacto = paga el total.</p>
-      <div class="change-box">
-        <span>Cambio a entregar</span>
-        <strong id="cash-checkout-change">Q 0.00</strong>
+
+      <div id="checkout-section-mixto" class="checkout-method-section" hidden>
+        <label>
+          Monto en efectivo
+          <input id="mixed-cash-amount" type="number" min="0" step="0.01">
+        </label>
+        <label>
+          Otro metodo de pago
+          <select id="mixed-other-method">
+            <option value="tarjeta">Tarjeta</option>
+            <option value="transferencia">Transferencia</option>
+          </select>
+        </label>
+        <div class="change-box">
+          <span>Monto otro metodo</span>
+          <strong id="mixed-other-amount">Q 0.00</strong>
+        </div>
+        <label>
+          Efectivo recibido (para cambio)
+          <input id="mixed-cash-received" type="number" min="0" step="0.01">
+        </label>
+        <div class="change-box">
+          <span>Cambio a entregar</span>
+          <strong id="mixed-cash-change">Q 0.00</strong>
+        </div>
       </div>
+
+      <div id="checkout-section-other" class="checkout-method-section" hidden>
+        <p class="hint" id="checkout-other-hint">Confirma el cobro con el metodo seleccionado.</p>
+      </div>
+
       <div class="dialog-actions">
         <button type="button" class="btn ghost" id="close-cash-checkout-dialog">Cancelar</button>
-        <button type="button" class="btn primary" id="cash-final-print-btn">Cobro final e imprimir (F1)</button>
-        <button type="button" class="btn ghost" id="cash-final-no-print-btn">Cobro final sin imprimir (F2)</button>
+        <button type="button" class="btn primary" id="cash-final-print-btn">Cobrar e imprimir (F1)</button>
+        <button type="button" class="btn ghost" id="cash-final-no-print-btn">Cobrar sin imprimir (F2)</button>
       </div>
     </form>
   </dialog>

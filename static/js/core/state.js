@@ -85,6 +85,7 @@
     deviceId: localStorage.getItem("felpos_device_id") || "",
     deviceHostname: localStorage.getItem("felpos_device_hostname") || "",
     catalogPage: 0,
+    posSearchSuggestionIndex: -1,
     orderLines: [],
     checkoutClientRequestId: null,
     lastCheckoutSaleId: null,
