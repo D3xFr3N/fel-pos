@@ -105,6 +105,11 @@ def create_branch(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles("admin")),
 ):
+    from app.services.store_settings_service import is_multi_branch_enabled, set_multi_branch_enabled
+
+    if not is_multi_branch_enabled(db):
+        # Activar al crear la primera sucursal extra.
+        set_multi_branch_enabled(db, True)
     branch = Branch(**payload.model_dump())
     db.add(branch)
     log_action(db, user_id=user.id, action="branch_create", entity_type="branch", details=branch.name)
@@ -197,6 +202,13 @@ def transfer_stock(
     user: User = Depends(require_roles("admin")),
 ):
     from app.services.inventory_branch_service import transfer_between_branches
+    from app.services.store_settings_service import is_multi_branch_enabled
+
+    if not is_multi_branch_enabled(db):
+        raise HTTPException(
+            status_code=400,
+            detail="Activa multi-sucursal en Configuracion para transferir inventario.",
+        )
 
     try:
         result = transfer_between_branches(
@@ -228,9 +240,13 @@ def list_audit_logs(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles("admin")),
 ):
+    from app.services.report_service import guatemala_day_bounds_utc_naive, guatemala_today_str
+
+    start_utc, end_utc = guatemala_day_bounds_utc_naive(guatemala_today_str())
     rows = (
         db.query(AuditLog)
         .options(joinedload(AuditLog.user))
+        .filter(AuditLog.created_at >= start_utc, AuditLog.created_at < end_utc)
         .order_by(AuditLog.created_at.desc())
         .limit(limit)
         .all()

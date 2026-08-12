@@ -445,6 +445,7 @@ class CompanyConfig(BaseModel):
     certificador_llave_configured: bool = False
     certificador_url: str = ""
     business_profile: BusinessProfile = "abarrotes"
+    multi_branch_enabled: bool = False
 
 
 class CompanyConfigUpdateIn(BaseModel):
@@ -463,6 +464,7 @@ class CompanyConfigUpdateIn(BaseModel):
     certificador_llave: str = Field(default="", max_length=500)
     certificador_url: str = Field(default="", max_length=300)
     business_profile: BusinessProfile = "abarrotes"
+    multi_branch_enabled: bool | None = None
 
 
 class BusinessProfileConfigOut(BaseModel):
@@ -471,9 +473,14 @@ class BusinessProfileConfigOut(BaseModel):
     capabilities: dict = Field(default_factory=dict)
     cash_shared_session: bool = False
     nit_lookup_configured: bool = False
+    multi_branch_enabled: bool = False
     primary_color: str = "#00a884"
     primary_dark: str = "#008f70"
     primary_rgb: str = "0, 168, 132"
+
+
+class MultiBranchConfigUpdateIn(BaseModel):
+    enabled: bool
 
 
 class UiThemeConfigOut(BaseModel):

@@ -16,6 +16,8 @@ from app.services.printer_config_service import (
 )
 from app.services.store_settings_service import (
     bootstrap_store_settings,
+    is_multi_branch_enabled,
+    set_multi_branch_enabled,
     store_settings_to_schema,
     update_store_settings,
 )
@@ -32,6 +34,7 @@ from app.schemas import (
     BusinessProfileConfigOut,
     CompanyConfig,
     CompanyConfigUpdateIn,
+    MultiBranchConfigUpdateIn,
     CreditPaymentCreate,
     CreditPaymentOut,
     CustomerCreate,
@@ -470,12 +473,28 @@ def update_product(
             product.track_expiry = 1
         if not caps.get("pharmacy"):
             product.requires_prescription = 0
-    # No editar Product.stock como suma global: eso corrompe multi-sucursal.
-    # El stock se ajusta por sucursal (ingresos, conteo, transferencias) o al crear producto.
+    # En multi-sucursal no se edita Product.stock aqui (suma global).
+    # En tienda unica (multi-sucursal off) si se permite fijar stock desde el producto.
     if stock_override is not None and int(product.tracks_inventory or 0) == 1:
-        from app.services.inventory_branch_service import sync_product_stock_from_branches
+        from app.services.store_settings_service import is_multi_branch_enabled
 
-        sync_product_stock_from_branches(db, product)
+        if is_multi_branch_enabled(db):
+            from app.services.inventory_branch_service import sync_product_stock_from_branches
+
+            sync_product_stock_from_branches(db, product)
+        else:
+            from app.services.inventory_branch_service import set_single_store_stock
+
+            try:
+                set_single_store_stock(
+                    db,
+                    product,
+                    float(stock_override),
+                    user_id=user.id,
+                    notes="Ajuste de stock desde edicion de producto",
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
     if previous_track_expiry == 0 and int(product.track_expiry or 0) == 1:
         from app.services.lot_service import ensure_lots_cover_branch_stock
 
@@ -1062,6 +1081,53 @@ def get_business_profile(db: Session = Depends(get_db), user=Depends(require_rol
         capabilities=profile_capabilities(profile),
         cash_shared_session=runtime["cash_shared_session"],
         nit_lookup_configured=runtime["nit_lookup_configured"],
+        multi_branch_enabled=is_multi_branch_enabled(db),
+        primary_color=theme["primary_color"],
+        primary_dark=theme["primary_dark"],
+        primary_rgb=theme["primary_rgb"],
+    )
+
+
+@config_router.put("/multi-branch", response_model=BusinessProfileConfigOut)
+def save_multi_branch_config(
+    payload: MultiBranchConfigUpdateIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    from app.models import Branch
+    from app.services.system_config_service import get_system_config
+    from app.services.ui_theme_service import get_ui_theme_config
+
+    if not payload.enabled:
+        active_extra = (
+            db.query(Branch)
+            .filter(Branch.active == 1, Branch.code != "MAIN")
+            .count()
+        )
+        if active_extra > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Desactiva o elimina las sucursales extras antes de apagar multi-sucursal.",
+            )
+
+    set_multi_branch_enabled(db, payload.enabled)
+    if payload.enabled:
+        from app.services.inventory_branch_service import get_or_create_main_branch
+
+        get_or_create_main_branch(db)
+        db.commit()
+
+    row = bootstrap_store_settings(db)
+    profile = normalize_business_profile(row.business_profile)
+    runtime = get_system_config()
+    theme = get_ui_theme_config()
+    return BusinessProfileConfigOut(
+        business_profile=profile,
+        business_profile_label=business_profile_label(profile),
+        capabilities=profile_capabilities(profile),
+        cash_shared_session=runtime["cash_shared_session"],
+        nit_lookup_configured=runtime["nit_lookup_configured"],
+        multi_branch_enabled=is_multi_branch_enabled(db),
         primary_color=theme["primary_color"],
         primary_dark=theme["primary_dark"],
         primary_rgb=theme["primary_rgb"],

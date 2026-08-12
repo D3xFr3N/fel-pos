@@ -63,9 +63,9 @@ Name: "{app}\data\backups"; Permissions: users-full
 Name: "{app}\update_backups"; Permissions: users-full
 
 [Icons]
-Name: "{group}\FEL POS"; Filename: "{app}\Iniciar_FELPOS.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsLocalMode
-Name: "{group}\FEL POS Servidor"; Filename: "{app}\Iniciar_FELPOS_Servidor.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsServerMode
-Name: "{group}\FEL POS Caja (red)"; Filename: "{app}\Iniciar_FELPOS_Caja.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsClientMode
+Name: "{group}\FEL POS"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\Iniciar_FELPOS.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsLocalMode
+Name: "{group}\FEL POS Servidor"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\Iniciar_FELPOS_Servidor.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsServerMode
+Name: "{group}\FEL POS Caja (red)"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\Iniciar_FELPOS_Caja.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsClientMode
 Name: "{group}\Respaldo antes de actualizar"; Filename: "{app}\pre_update_backup.bat"; WorkingDir: "{app}"; Check: IsLocalOrServerMode
 Name: "{group}\Actualizar sistema (seguro)"; Filename: "{app}\update_system_safe.bat"; WorkingDir: "{app}"
 Name: "{group}\Aplicar actualizacion pendiente"; Filename: "{app}\Aplicar_actualizacion_pendiente.bat"; WorkingDir: "{app}"
@@ -73,14 +73,14 @@ Name: "{group}\Reparar instalacion"; Filename: "{app}\Reparar_instalacion.bat"; 
 Name: "{group}\Limpiar actualizacion pendiente"; Filename: "{app}\Limpiar_actualizacion_pendiente.bat"; WorkingDir: "{app}"
 Name: "{group}\Diagnostico instalacion"; Filename: "{app}\Diagnostico_instalacion.bat"; WorkingDir: "{app}"
 Name: "{group}\Reparar permisos (actualizaciones)"; Filename: "{app}\Reparar_permisos_instalacion.bat"; WorkingDir: "{app}"
-Name: "{autodesktop}\FEL POS"; Filename: "{app}\Iniciar_FELPOS.vbs"; Tasks: desktopicon; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsLocalMode
-Name: "{autodesktop}\FEL POS Servidor"; Filename: "{app}\Iniciar_FELPOS_Servidor.vbs"; Tasks: desktopicon; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsServerMode
-Name: "{autodesktop}\FEL POS Caja (red)"; Filename: "{app}\Iniciar_FELPOS_Caja.vbs"; Tasks: desktopicon; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsClientMode
+Name: "{autodesktop}\FEL POS"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\Iniciar_FELPOS.vbs"""; Tasks: desktopicon; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsLocalMode
+Name: "{autodesktop}\FEL POS Servidor"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\Iniciar_FELPOS_Servidor.vbs"""; Tasks: desktopicon; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsServerMode
+Name: "{autodesktop}\FEL POS Caja (red)"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\Iniciar_FELPOS_Caja.vbs"""; Tasks: desktopicon; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsClientMode
 
 [Run]
-Filename: "{app}\Iniciar_FELPOS.vbs"; Description: "Abrir FEL POS ahora"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"; Check: IsLocalMode
-Filename: "{app}\Iniciar_FELPOS_Servidor.vbs"; Description: "Iniciar servidor FEL POS ahora"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"; Check: IsServerMode
-Filename: "{app}\Iniciar_FELPOS_Caja.vbs"; Description: "Abrir caja FEL POS ahora"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"; Check: IsClientMode
+Filename: "{sys}\wscript.exe"; Parameters: """{app}\Iniciar_FELPOS.vbs"""; Description: "Abrir FEL POS ahora"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"; Check: IsLocalMode
+Filename: "{sys}\wscript.exe"; Parameters: """{app}\Iniciar_FELPOS_Servidor.vbs"""; Description: "Iniciar servidor FEL POS ahora"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"; Check: IsServerMode
+Filename: "{sys}\wscript.exe"; Parameters: """{app}\Iniciar_FELPOS_Caja.vbs"""; Description: "Abrir caja FEL POS ahora"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"; Check: IsClientMode
 
 [Code]
 var

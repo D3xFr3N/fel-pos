@@ -80,6 +80,36 @@ def sync_product_stock_from_branches(db: Session, product: Product) -> None:
     product.stock = round(sum(float(r.stock or 0) for r in total), 2)
 
 
+def set_single_store_stock(
+    db: Session,
+    product: Product,
+    new_stock: float,
+    *,
+    user_id: int | None,
+    notes: str | None = None,
+) -> float:
+    """Fija el stock de la sucursal principal (modo tienda unica)."""
+    if int(product.tracks_inventory or 0) != 1:
+        product.stock = 0
+        return 0.0
+    main = get_or_create_main_branch(db)
+    target = max(round(float(new_stock or 0), 2), 0.0)
+    current = float(get_available_stock(db, product, main.id) or 0)
+    delta = round(target - current, 2)
+    if abs(delta) < 0.0001:
+        sync_product_stock_from_branches(db, product)
+        return current
+    return adjust_branch_stock(
+        db,
+        product,
+        delta,
+        branch_id=main.id,
+        user_id=user_id,
+        movement_type="adjustment",
+        notes=notes or "Ajuste de stock desde producto",
+    )
+
+
 def adjust_branch_stock(
     db: Session,
     product: Product,

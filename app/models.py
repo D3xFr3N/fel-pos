@@ -722,6 +722,7 @@ class StoreSettings(Base):
     emisor_establecimiento: Mapped[str] = mapped_column(String(10), default="1")
     fel_mode: Mapped[str] = mapped_column(String(20), default="demo")
     business_profile: Mapped[str] = mapped_column(String(30), default="abarrotes")
+    multi_branch_enabled: Mapped[int] = mapped_column(Integer, default=0)
     certificador: Mapped[str] = mapped_column(String(40), default="infile")
     certificador_usuario: Mapped[str] = mapped_column(String(120), default="")
     certificador_llave: Mapped[str] = mapped_column(String(500), default="")

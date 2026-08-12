@@ -400,9 +400,31 @@ def ensure_schema_updates() -> None:
         if "branch_id" not in device_columns:
             alter_statements.append("ALTER TABLE authorized_devices ADD COLUMN branch_id INTEGER")
 
+    if "store_settings" in table_names:
+        store_columns = {col["name"] for col in inspector.get_columns("store_settings")}
+        if "multi_branch_enabled" not in store_columns:
+            alter_statements.append(
+                "ALTER TABLE store_settings ADD COLUMN multi_branch_enabled INTEGER NOT NULL DEFAULT 0"
+            )
+
     with engine.begin() as connection:
         for statement in alter_statements:
             connection.execute(text(statement))
+
+        # Si ya hay sucursales extras, activa multi-sucursal automaticamente.
+        try:
+            if "branches" in table_names:
+                extra = connection.execute(
+                    text(
+                        "SELECT COUNT(*) FROM branches WHERE active = 1 AND UPPER(COALESCE(code, '')) != 'MAIN'"
+                    )
+                ).scalar()
+                if int(extra or 0) > 0:
+                    connection.execute(
+                        text("UPDATE store_settings SET multi_branch_enabled = 1 WHERE id = 1")
+                    )
+        except Exception:
+            pass
 
         # Indexes for hot report/alert paths (safe to re-run).
         for index_sql in (

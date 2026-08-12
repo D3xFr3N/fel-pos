@@ -30,7 +30,16 @@ function applyUiTheme(themeOrColor) {
   return FP.applyUiTheme(themeOrColor, state.uiThemeConfig);
 }
 
-const wrapConfigSection = FP.wrapConfigSection;
+const wrapConfigSection =
+  FP.wrapConfigSection ||
+  function wrapConfigSectionFallback(id, title, contentHtml, { open = false } = {}) {
+    return `
+      <details class="config-section" data-section="${escapeHtml(id)}" ${open ? "open" : ""}>
+        <summary class="config-section-summary">${escapeHtml(title)}</summary>
+        <div class="config-section-body">${contentHtml || ""}</div>
+      </details>
+    `;
+  };
 const createTicketId = FP.createTicketId;
 const cloneCartLines = FP.cloneCartLines;
 const ticketHasContent = FP.ticketHasContent;
@@ -41,14 +50,16 @@ const buildCheckoutStatusSuffix = FP.buildCheckoutStatusSuffix;
 function renderUiThemeSection() {
   const theme = state.uiThemeConfig || DEFAULT_UI_THEME;
   const current = normalizeHexColor(theme.primary_color || DEFAULT_UI_THEME.primary_color);
-  const presets = Array.isArray(theme.presets) && theme.presets.length ? theme.presets : DEFAULT_UI_THEME.presets;
+  const presets = Array.isArray(theme.presets) && theme.presets.length
+    ? theme.presets
+    : DEFAULT_UI_THEME.presets || [];
   const currentBackground = normalizeBackgroundTheme(
     theme.background_theme || DEFAULT_UI_THEME.background_theme
   );
   const backgroundPresets =
     Array.isArray(theme.background_presets) && theme.background_presets.length
       ? theme.background_presets
-      : DEFAULT_UI_THEME.background_presets;
+      : DEFAULT_UI_THEME.background_presets || [];
   return `
     <p class="hint">Cambia el fondo completo del sistema y el color principal de botones, pestanas y totales.</p>
     <form id="ui-theme-form" class="ui-theme-form">
@@ -1710,11 +1721,28 @@ function renderPosDepartmentChips() {
   });
 }
 
+function isPosCatalogProductVisible(product, { allowOutOfStockSearch = false, term = "" } = {}) {
+  if (!product) return false;
+  const name = String(product.name || "").trim();
+  const sku = String(product.sku || "").trim();
+  if (!name && !sku) return false;
+  const stockReady = !isMultiBranchEnabled() || Boolean(state.branchStockMapReady);
+  const outOfStock =
+    productTracksInventory(product) &&
+    stockReady &&
+    getPosAvailableStock(product) <= 0;
+  if (outOfStock && !(allowOutOfStockSearch && term)) return false;
+  return true;
+}
+
 function getFilteredPosProducts() {
   const searchInput = document.getElementById("product-search");
   const term = (searchInput?.value || "").trim().toLowerCase();
   const selectedDepartmentId = getSelectedPosDepartmentId();
   return state.products.filter((product) => {
+    if (!isPosCatalogProductVisible(product, { allowOutOfStockSearch: false, term })) {
+      return false;
+    }
     const barcodeValue = getProductBarcodeValue(product).toLowerCase();
     const schoolSearchBlob = [
       product.school_category,
@@ -2446,6 +2474,9 @@ function getEffectiveBranchId() {
 function getPosAvailableStock(product) {
   if (!product) return 0;
   if (!productTracksInventory(product)) return 999999;
+  if (!isMultiBranchEnabled()) {
+    return Number(product.stock || 0);
+  }
   const map = state.branchStockByProductId || {};
   const pid = Number(product.id);
   if (state.branchStockMapReady) {
@@ -2617,19 +2648,25 @@ async function addProductFromSearchEnter() {
   searchInput.focus();
 }
 
+function isMultiBranchEnabled() {
+  return Boolean(state.multiBranchEnabled);
+}
+
 function syncProductInventoryFields() {
   const form = document.getElementById("product-form");
   if (!form?.tracks_inventory) return;
   const enabled = form.tracks_inventory.checked;
   const editing = Boolean(state.editingProductId);
-  // En edicion el stock es solo lectura (suma de sucursales); se ajusta por ingreso/conteo/transferencia.
-  form.stock.disabled = !enabled || editing;
+  const lockStock = editing && isMultiBranchEnabled();
+  // Con multi-sucursal, el stock en edicion es solo lectura (suma).
+  // En tienda unica se puede editar directo desde el producto.
+  form.stock.disabled = !enabled || lockStock;
   form.min_stock.disabled = !enabled;
-  document.getElementById("product-stock-label")?.classList.toggle("disabled", !enabled || editing);
+  document.getElementById("product-stock-label")?.classList.toggle("disabled", !enabled || lockStock);
   document.getElementById("product-min-stock-label")?.classList.toggle("disabled", !enabled);
   const stockHint = document.getElementById("product-stock-edit-hint");
   if (stockHint) {
-    stockHint.hidden = !editing || !enabled;
+    stockHint.hidden = !lockStock || !enabled;
   }
 }
 
@@ -2723,6 +2760,10 @@ function openStockEntryDialog(productId, productName) {
   form.reset();
   const branchSelect = form.branch_id || document.getElementById("stock-entry-branch");
   if (branchSelect) {
+    const multi = isMultiBranchEnabled();
+    const branchLabel = branchSelect.closest("label");
+    if (branchLabel) branchLabel.hidden = !multi;
+    branchSelect.hidden = !multi;
     const branches = (state.branches || []).filter((b) => Number(b.active) === 1);
     const effective = getEffectiveBranchId();
     branchSelect.innerHTML = branches
@@ -3271,7 +3312,7 @@ function renderStockCountPanel() {
                   ${getStockCountDepartmentOptions()}
                 </select>
               </label>
-              <label>
+              <label ${isMultiBranchEnabled() ? "" : "hidden"}>
                 Sucursal
                 <select id="stock-count-order-branch" name="branch_id">
                   ${(state.branches || [])
@@ -3370,7 +3411,7 @@ function renderStockCountPanel() {
           </form>
           <p class="hint">Cada producto escaneado se guarda automaticamente hasta cerrar conteo.</p>
           ${
-            isAdmin
+            isAdminUser()
               ? '<p class="hint">Como admin puedes cerrar conteo y ajustar, o mandar reconteo.</p>'
               : '<p class="hint">Solo admin puede cerrar conteo con ajuste o mandar reconteo.</p>'
           }
@@ -4218,6 +4259,35 @@ async function submitAutoPurchaseOrders(event) {
   }
 }
 
+function getProductsTableSearchTerm() {
+  const input = document.getElementById("products-table-search");
+  const fromInput = String(input?.value || "").trim().toLowerCase();
+  if (input) state.productsTableSearch = fromInput;
+  return String(state.productsTableSearch || "").trim().toLowerCase();
+}
+
+function productMatchesTableSearch(product, term = getProductsTableSearchTerm()) {
+  if (!term) return true;
+  if (!product) return false;
+  const haystack = [
+    product.sku,
+    product.barcode,
+    product.name,
+    product.description,
+    product.department_name,
+    getDepartmentNameById(product.department_id),
+    product.supplier_name,
+    product.school_category,
+    product.school_grade,
+    product.school_brand,
+    product.school_variant,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(term);
+}
+
 function renderProductsTable() {
   const container = document.getElementById("products-table");
   const newBtn = document.getElementById("new-product-btn");
@@ -4237,6 +4307,11 @@ function renderProductsTable() {
     inactiveBtn.style.display =
       hasPermission("products.edit") || hasPermission("products.view") ? "inline-block" : "none";
   }
+  const searchInput = document.getElementById("products-table-search");
+  if (searchInput && document.activeElement !== searchInput) {
+    searchInput.value = state.productsTableSearch || "";
+  }
+  const searchTerm = getProductsTableSearchTerm();
   const canEdit = hasPermission("products.edit");
   const canStockEntry = hasPermission("stock.entry");
   const showExtraColumns = hasProductExtraFields();
@@ -4244,9 +4319,15 @@ function renderProductsTable() {
   const productById = new Map(state.products.map((product) => [Number(product.id), product]));
 
   if (state.showInactiveProducts) {
-    const inactiveRows = state.inactiveProducts || [];
-    if (!inactiveRows.length) {
+    const inactiveRows = (state.inactiveProducts || []).filter((product) =>
+      productMatchesTableSearch(product, searchTerm)
+    );
+    if (!(state.inactiveProducts || []).length) {
       container.innerHTML = '<div class="empty">No hay productos inactivos.</div>';
+      return;
+    }
+    if (!inactiveRows.length) {
+      container.innerHTML = '<div class="empty">Ningun producto inactivo coincide con la busqueda.</div>';
       return;
     }
     container.innerHTML = `
@@ -4308,8 +4389,25 @@ function renderProductsTable() {
   }
 
   if (state.showLowStockOnly) {
+    const lowStockRows = (state.lowStockReport || []).filter((row) =>
+      productMatchesTableSearch(
+        {
+          sku: row.sku,
+          barcode: row.barcode,
+          name: row.name,
+          description: row.description,
+          department_name: row.department_name,
+          supplier_name: row.supplier_name,
+        },
+        searchTerm
+      )
+    );
     if (!state.lowStockReport.length) {
       container.innerHTML = '<div class="empty">No hay productos con inventario bajo.</div>';
+      return;
+    }
+    if (!lowStockRows.length) {
+      container.innerHTML = '<div class="empty">Ningun producto con inventario bajo coincide con la busqueda.</div>';
       return;
     }
     container.innerHTML = `
@@ -4331,7 +4429,7 @@ function renderProductsTable() {
           </tr>
         </thead>
         <tbody>
-          ${state.lowStockReport
+          ${lowStockRows
             .map(
               (row) => `
             <tr>
@@ -4380,7 +4478,11 @@ function renderProductsTable() {
       : '<div class="empty">Sin productos registrados.</div>';
     return;
   } else {
-    const rows = state.products;
+    const rows = state.products.filter((product) => productMatchesTableSearch(product, searchTerm));
+    if (!rows.length) {
+      container.innerHTML = '<div class="empty">Ningun producto coincide con la busqueda.</div>';
+      return;
+    }
     container.innerHTML = `
       <table>
         <thead>
@@ -6383,7 +6485,7 @@ function renderAuthorizedDevicesSection() {
             ${isServer ? ' <span class="badge">Servidor</span>' : ""}
             <div class="hint">${host} · ${ip}</div>
             <div class="hint">ID: ${fp}</div>
-            <label class="hint" style="display:block;margin-top:0.35rem;">
+            <label class="hint" style="display:block;margin-top:0.35rem;" ${isMultiBranchEnabled() ? "" : "hidden"}>
               Sucursal por defecto
               <select class="device-branch-select" data-id="${device.id}">
                 <option value="">Principal / sin fijar</option>
@@ -6918,14 +7020,26 @@ function renderLabelPrinterSection() {
 
 function renderConfig() {
   const card = document.getElementById("config-card");
-  if (!state.config) return;
+  if (!card) return;
+  if (!isAdminUser()) {
+    card.innerHTML = '<div class="empty">La configuracion solo esta disponible para administradores.</div>';
+    return;
+  }
+  if (!state.config) {
+    card.innerHTML =
+      '<div class="empty">No se pudo cargar la configuracion de la tienda. Cierra sesion, vuelve a entrar o revisa la conexion al servidor.</div>';
+    return;
+  }
+
+  try {
   const profile = getBusinessProfileCopy();
-  const profileLabel = profile.brandTitle.replace("FEL POS", "").trim() || "Abarrotes";
+  const profileLabel = String(profile.brandTitle || "FEL POS").replace("FEL POS", "").trim() || "Abarrotes";
   const cfg = state.config;
+  const felMode = String(cfg.fel_mode || "demo");
   const felModeBadgeClass =
-    cfg.fel_mode === "production" ? "badge success" : cfg.fel_mode === "disabled" ? "badge muted" : "badge";
-  const felModeLabel = cfg.fel_mode_label || cfg.fel_mode.toUpperCase();
-  const showFelCertifierFields = cfg.fel_mode !== "disabled";
+    felMode === "production" ? "badge success" : felMode === "disabled" ? "badge muted" : "badge";
+  const felModeLabel = cfg.fel_mode_label || felMode.toUpperCase();
+  const showFelCertifierFields = felMode !== "disabled";
   const llaveHint = cfg.certificador_llave_configured
     ? "Llave guardada. Deja vacio para conservarla."
     : "Ingresa la llave o token que te dio tu certificador.";
@@ -7178,6 +7292,7 @@ function renderConfig() {
         : ""
     }
     <h3 class="config-subhead">Bitacora de auditoria</h3>
+    <p class="hint">Solo se muestran los movimientos de hoy.</p>
     <div id="audit-logs-table" class="table-wrap"></div>
     <h3 class="config-subhead">Sucursales</h3>
     <div id="branches-table" class="table-wrap"></div>
@@ -7357,6 +7472,7 @@ function renderConfig() {
         const profileInfo = await api("/api/config/profile");
         state.profileCapabilities = profileInfo?.capabilities || {};
         state.businessProfile = String(profileInfo?.business_profile || state.businessProfile).toLowerCase();
+        state.multiBranchEnabled = Boolean(profileInfo?.multi_branch_enabled);
       } catch (_err) {
         state.profileCapabilities = {};
       }
@@ -7802,6 +7918,12 @@ function renderConfig() {
   });
 
   renderBackupsTable();
+  } catch (error) {
+    console.error("renderConfig failed", error);
+    card.innerHTML = `<div class="empty">Error al mostrar configuracion: ${escapeHtml(
+      error?.message || String(error)
+    )}</div>`;
+  }
 }
 
 async function autofillCustomerByNit() {
@@ -7885,7 +8007,10 @@ async function loadData() {
   const isAdmin = isAdminUser();
   const can = (key) => isAdmin || hasPermission(key);
   const profilePromise = api("/api/config/profile");
-  const configPromise = api("/api/config").catch(() => null);
+  const configPromise = api("/api/config").catch((error) => {
+    console.error("No se pudo cargar /api/config", error);
+    return null;
+  });
   const usersPromise = isAdmin ? api("/api/auth/users") : Promise.resolve([]);
   const permissionCatalogPromise = isAdmin
     ? api("/api/auth/permission-catalog").catch(() => null)
@@ -8008,6 +8133,7 @@ async function loadData() {
   state.sales = sales;
   state.businessProfile = String(profileInfo?.business_profile || state.businessProfile || "abarrotes").toLowerCase();
   state.profileCapabilities = profileInfo?.capabilities || {};
+  state.multiBranchEnabled = Boolean(profileInfo?.multi_branch_enabled);
   state.nitLookupConfigured = Boolean(profileInfo?.nit_lookup_configured);
   state.uiThemeConfig = uiThemeConfig || {
     ...DEFAULT_UI_THEME,
@@ -8529,7 +8655,12 @@ function handleShortcutsHelpHotkey(event) {
   const anyDialogOpen = Array.from(document.querySelectorAll("dialog")).some((dialog) => dialog.open);
   if (event.key === "F10") {
     event.preventDefault();
-    openShortcutsHelpDialog();
+    if (anyDialogOpen && !(helpDialog && helpDialog.open)) return;
+    if (helpDialog?.open) helpDialog.close();
+    if (!document.getElementById("tab-pos")?.classList.contains("active")) {
+      document.querySelector('.tab[data-tab="pos"]')?.click();
+    }
+    focusProductSearch();
     return;
   }
   if (event.key === "?" && !event.ctrlKey && !event.altKey && !event.metaKey) {
@@ -10168,7 +10299,7 @@ function renderAuditLogsTable() {
   if (!container) return;
   const rows = state.auditLogs || [];
   if (!rows.length) {
-    container.innerHTML = '<div class="empty">Sin registros de auditoria.</div>';
+    container.innerHTML = '<div class="empty">Sin registros de auditoria para hoy.</div>';
     return;
   }
   container.innerHTML = `
@@ -10194,6 +10325,14 @@ function renderAuditLogsTable() {
 function populateBranchSelect() {
   const select = document.getElementById("pos-branch-filter");
   if (!select) return;
+  const multi = isMultiBranchEnabled();
+  select.hidden = !multi;
+  select.style.display = multi ? "" : "none";
+  if (!multi) {
+    state.selectedBranchId = null;
+    localStorage.removeItem("felpos_branch_id");
+    return;
+  }
   const branches = (state.branches || []).filter((b) => Number(b.active) === 1);
   const current = state.selectedBranchId ? String(state.selectedBranchId) : "";
   select.innerHTML =
@@ -10277,7 +10416,22 @@ function renderBranchesTable() {
   const container = document.getElementById("branches-table");
   if (!container) return;
   const rows = state.branches || [];
+  const multi = isMultiBranchEnabled();
   container.innerHTML = `
+    <label class="toggle-row">
+      <input type="checkbox" id="multi-branch-enabled-toggle" ${multi ? "checked" : ""}>
+      <span>Activar multi-sucursal (varias tiendas / locales)</span>
+    </label>
+    <p class="hint">
+      ${
+        multi
+          ? "Multi-sucursal activo: el stock se maneja por sucursal (Ingreso, Conteo o Transferencia)."
+          : "Desactivado: una sola tienda. Puedes editar el stock directo en Productos. Activa solo si tendras mas sucursales."
+      }
+    </p>
+    ${
+      multi
+        ? `
     <form id="branch-create-form" class="compact-form-row">
       <input name="code" placeholder="Codigo" required>
       <input name="name" placeholder="Nombre sucursal" required>
@@ -10326,8 +10480,26 @@ function renderBranchesTable() {
       </tbody>
     </table>`
         : '<div class="empty">Sin sucursales configuradas.</div>'
+    }`
+        : `<div class="empty">Multi-sucursal desactivado. Activa la opcion de arriba solo si manejas mas de un local.</div>`
     }
   `;
+  document.getElementById("multi-branch-enabled-toggle")?.addEventListener("change", async (event) => {
+    const enabled = Boolean(event.target.checked);
+    try {
+      const profileInfo = await api("/api/config/multi-branch", {
+        method: "PUT",
+        body: JSON.stringify({ enabled }),
+      });
+      state.multiBranchEnabled = Boolean(profileInfo?.multi_branch_enabled);
+      populateBranchSelect();
+      await loadData();
+      alert(enabled ? "Multi-sucursal activado." : "Multi-sucursal desactivado.");
+    } catch (error) {
+      event.target.checked = !enabled;
+      alert(error.message);
+    }
+  });
   document.getElementById("branch-create-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.target;
@@ -10727,11 +10899,34 @@ function setupTabs() {
       document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
       document.querySelectorAll(".panel").forEach((item) => item.classList.remove("active"));
       tab.classList.add("active");
-      document.getElementById(`tab-${tab.dataset.tab}`).classList.add("active");
+      const panel = document.getElementById(`tab-${tab.dataset.tab}`);
+      if (panel) {
+        panel.style.display = "";
+        panel.classList.add("active");
+      }
       if (tab.dataset.tab === "sales") renderSalesTable();
       if (tab.dataset.tab === "cash") renderCashCard();
       if (tab.dataset.tab === "pos") focusProductSearch();
       if (tab.dataset.tab === "dining") loadDiningPanel().catch((error) => alert(error.message));
+      if (tab.dataset.tab === "config") {
+        if (!state.config) {
+          api("/api/config")
+            .then((config) => {
+              state.config = config;
+              renderConfig();
+            })
+            .catch((error) => {
+              const card = document.getElementById("config-card");
+              if (card) {
+                card.innerHTML = `<div class="empty">No se pudo cargar configuracion: ${escapeHtml(
+                  error?.message || String(error)
+                )}</div>`;
+              }
+            });
+        } else {
+          renderConfig();
+        }
+      }
     });
   });
 }
@@ -10990,6 +11185,10 @@ function setupEvents() {
   document.getElementById("cash-final-print-btn").addEventListener("click", () => finalizeCashCheckout(true));
   document.getElementById("cash-final-no-print-btn").addEventListener("click", () => finalizeCashCheckout(false));
   document.getElementById("new-product-btn").addEventListener("click", () => openProductEditor(null));
+  document.getElementById("products-table-search")?.addEventListener("input", (event) => {
+    state.productsTableSearch = String(event.target.value || "").trim().toLowerCase();
+    renderProductsTable();
+  });
   document.getElementById("import-eleventa-btn")?.addEventListener("click", openEleventaImportDialog);
   document.getElementById("close-eleventa-import-dialog")?.addEventListener("click", () => {
     document.getElementById("eleventa-import-dialog")?.close();
@@ -11138,6 +11337,9 @@ function setupEvents() {
     try {
       let saved;
       if (state.editingProductId) {
+        if (payload.tracks_inventory && !isMultiBranchEnabled()) {
+          payload.stock = Number(form.stock.value || 0);
+        }
         saved = await api(`/api/products/${state.editingProductId}`, {
           method: "PUT",
           body: JSON.stringify(payload),

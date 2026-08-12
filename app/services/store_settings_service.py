@@ -45,7 +45,7 @@ def _default_certificador_url(certificador: str) -> str:
     return CERTIFICADOR_DEFAULT_URLS.get(key, "")
 
 
-def _settings_defaults() -> dict[str, str]:
+def _settings_defaults() -> dict:
     return {
         "emisor_nit": settings.emisor_nit,
         "emisor_nombre": settings.emisor_nombre,
@@ -59,6 +59,7 @@ def _settings_defaults() -> dict[str, str]:
         "emisor_establecimiento": settings.emisor_establecimiento,
         "fel_mode": settings.fel_mode,
         "business_profile": settings.business_profile,
+        "multi_branch_enabled": 0,
         "certificador": settings.certificador,
         "certificador_usuario": settings.certificador_usuario,
         "certificador_llave": settings.certificador_llave,
@@ -135,7 +136,22 @@ def store_settings_to_schema(row: StoreSettings) -> CompanyConfig:
         certificador_llave_configured=bool((row.certificador_llave or "").strip()),
         certificador_url=row.certificador_url or _default_certificador_url(row.certificador),
         business_profile=profile,
+        multi_branch_enabled=bool(int(getattr(row, "multi_branch_enabled", 0) or 0)),
     )
+
+
+def is_multi_branch_enabled(db: Session) -> bool:
+    row = get_or_create_store_settings(db)
+    return bool(int(getattr(row, "multi_branch_enabled", 0) or 0))
+
+
+def set_multi_branch_enabled(db: Session, enabled: bool) -> StoreSettings:
+    row = get_or_create_store_settings(db)
+    row.multi_branch_enabled = 1 if enabled else 0
+    row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 def update_store_settings(db: Session, payload: CompanyConfigUpdateIn) -> StoreSettings:
@@ -177,6 +193,8 @@ def update_store_settings(db: Session, payload: CompanyConfigUpdateIn) -> StoreS
     row.certificador_usuario = certificador_usuario
     row.certificador_llave = certificador_llave
     row.certificador_url = certificador_url
+    if payload.multi_branch_enabled is not None:
+        row.multi_branch_enabled = 1 if payload.multi_branch_enabled else 0
     row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     db.commit()

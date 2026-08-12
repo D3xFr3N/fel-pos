@@ -38,6 +38,7 @@
     postLoginFundAdded: false,
     showLowStockOnly: false,
     showInactiveProducts: false,
+    productsTableSearch: "",
     inactiveProducts: [],
     lowStockReport: [],
     deviceBranchLocked: false,
@@ -75,6 +76,7 @@
     editingCustomerId: null,
     businessProfile: "abarrotes",
     profileCapabilities: {},
+    multiBranchEnabled: false,
     nitLookupConfigured: false,
     nitLookupTimerId: null,
     user: null,
@@ -151,10 +153,10 @@
     { keys: "F2", when: "Dialogo de cobro", action: "Cobrar sin imprimir" },
     { keys: "F3", when: "Ticket", action: "Limpiar ticket actual" },
     { keys: "F4", when: "Ticket", action: "Retener ticket actual" },
+    { keys: "F10", when: "Vender", action: "Ir a buscar producto / enfocar busqueda" },
     { keys: "Esc", when: "General", action: "Cerrar dialogo abierto o enfocar busqueda" },
     { keys: "+ / -", when: "Ticket", action: "Subir o bajar cantidad de la linea seleccionada" },
     { keys: "Enter", when: "Busqueda de productos", action: "Agregar producto por SKU o codigo" },
     { keys: "?", when: "General", action: "Mostrar esta ayuda de atajos" },
-    { keys: "F10", when: "General", action: "Mostrar esta ayuda de atajos" },
   ];
 })(window.FelPos = window.FelPos || {});
