@@ -376,10 +376,14 @@ def main() -> None:
 
     # Carpeta temporal writable SIN espacios.
     # LOCALAPPDATA falla si el usuario Windows tiene espacios (PyInstaller LoadLibrary).
-    program_data = Path(os.environ.get("PROGRAMDATA") or r"C:\ProgramData")
-    if " " in str(program_data):
-        program_data = Path(r"C:\ProgramData")
-    runtime_tmp = program_data / "FELPOS" / "runtime-tmp"
+    public_root = Path(r"C:\Users\Public")
+    if public_root.exists():
+        runtime_tmp = public_root / "FELPOS" / "runtime-tmp"
+    else:
+        program_data = Path(os.environ.get("PROGRAMDATA") or r"C:\ProgramData")
+        if " " in str(program_data):
+            program_data = Path(r"C:\ProgramData")
+        runtime_tmp = program_data / "FELPOS" / "runtime-tmp"
     local_app = Path(os.environ.get("LOCALAPPDATA") or "")
     try:
         runtime_tmp.mkdir(parents=True, exist_ok=True)
@@ -401,6 +405,7 @@ def main() -> None:
     for base in (
         runtime_tmp,
         local_app / "FELPOS" / "runtime-tmp",
+        Path(os.environ.get("PROGRAMDATA") or r"C:\ProgramData") / "FELPOS" / "runtime-tmp",
         local_app / "Temp",
         local_app / "FEL POS" / "tmp",
         Path(os.environ.get("TEMP") or ""),

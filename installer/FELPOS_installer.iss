@@ -13,7 +13,7 @@ AppId={{A7F3C2E1-9B4D-4F6A-8C1E-2D5F9A3B7E41}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={commonpf32}\FEL POS
+DefaultDirName=C:\FELPOS
 DefaultGroupName=FEL POS
 DisableProgramGroupPage=yes
 OutputDir=..\dist
@@ -45,6 +45,8 @@ Source: "staging\Iniciar_FELPOS_Caja.bat"; DestDir: "{app}"; Flags: ignoreversio
 Source: "staging\Iniciar_FELPOS_Caja.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\Iniciar_FELPOS_Servidor.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\Iniciar_FELPOS_Servidor.vbs"; DestDir: "{app}"; Flags: ignoreversion
+Source: "staging\Boot_FELPOS.cmd"; DestDir: "{app}"; Flags: ignoreversion
+Source: "staging\_resolve_runtime_tmp.cmd"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\pre_update_backup.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\update_system_safe.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\Aplicar_actualizacion_pendiente.bat"; DestDir: "{app}"; Flags: ignoreversion

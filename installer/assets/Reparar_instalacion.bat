@@ -22,18 +22,14 @@ echo ========================================
 echo Carpeta: %CD%
 echo.
 
-set "FELPOS_RUNTIME_TMP=%ProgramData%\FELPOS\runtime-tmp"
-if not exist "%ProgramData%\FELPOS" mkdir "%ProgramData%\FELPOS" >nul 2>&1
-if not exist "!FELPOS_RUNTIME_TMP!" mkdir "!FELPOS_RUNTIME_TMP!" >nul 2>&1
-if exist "!FELPOS_RUNTIME_TMP!" set "TEMP=!FELPOS_RUNTIME_TMP!"
-if exist "!FELPOS_RUNTIME_TMP!" set "TMP=!FELPOS_RUNTIME_TMP!"
+call "%~dp0_resolve_runtime_tmp.cmd"
 
 echo Limpiando carpetas temporales de arranque...
 for /d %%D in ("%~dp0_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
 for /d %%D in ("%LOCALAPPDATA%\Temp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
-for /d %%D in ("!FELPOS_RUNTIME_TMP!\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
 for /d %%D in ("%LOCALAPPDATA%\FELPOS\runtime-tmp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
 for /d %%D in ("%LOCALAPPDATA%\FEL POS\tmp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
+for /d %%D in ("%ProgramData%\FELPOS\runtime-tmp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
 
 if not exist "FELPOS.exe.pending" goto after_pending_size
 set "PENDING_SIZE=0"
@@ -108,9 +104,14 @@ exit /b 1
 :launch
 echo.
 echo Iniciando FEL POS con carpeta temporal segura...
+if exist "Boot_FELPOS.cmd" goto launch_boot
 if exist "Iniciar_FELPOS.vbs" goto launch_vbs
 if exist "Iniciar_FELPOS.bat" goto launch_bat
-start "" "FELPOS.exe"
+start "" cmd /c "set \"TEMP=!FELPOS_RUNTIME_TMP!\"&& set \"TMP=!FELPOS_RUNTIME_TMP!\"&& start \"\" \"FELPOS.exe\""
+goto done
+
+:launch_boot
+call "Boot_FELPOS.cmd"
 goto done
 
 :launch_vbs

@@ -8,16 +8,7 @@ echo ========================================
 echo.
 
 set "APP_DIR=%CD%"
-set "FELPOS_RUNTIME_TMP=%ProgramData%\FELPOS\runtime-tmp"
-if not exist "%ProgramData%\FELPOS" mkdir "%ProgramData%\FELPOS" >nul 2>&1
-if not exist "!FELPOS_RUNTIME_TMP!" mkdir "!FELPOS_RUNTIME_TMP!" >nul 2>&1
-if exist "!FELPOS_RUNTIME_TMP!" set "TEMP=!FELPOS_RUNTIME_TMP!"
-if exist "!FELPOS_RUNTIME_TMP!" set "TMP=!FELPOS_RUNTIME_TMP!"
-
-for /d %%D in ("!FELPOS_RUNTIME_TMP!\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
-for /d %%D in ("%LOCALAPPDATA%\FELPOS\runtime-tmp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
-for /d %%D in ("%LOCALAPPDATA%\Temp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
-for /d %%D in ("%LOCALAPPDATA%\FEL POS\tmp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
+call "%~dp0_resolve_runtime_tmp.cmd"
 
 if exist "FELPOS.exe.pending" goto has_pending
 echo No hay actualizacion pendiente en esta carpeta.
@@ -93,19 +84,14 @@ exit /b 1
 echo Listo. La copia anterior queda en FELPOS.exe.old hasta el primer arranque OK.
 echo Reiniciando FELPOS...
 timeout /t 3 >nul
-for /d %%D in ("!FELPOS_RUNTIME_TMP!\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
-for /d %%D in ("%LOCALAPPDATA%\Temp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
-if exist "Iniciar_FELPOS.vbs" goto start_vbs
-if exist "Iniciar_FELPOS.bat" goto start_bat
+REM No usar VBS viejo: puede seguir apuntando a TEMP con espacios.
+if exist "Boot_FELPOS.cmd" goto start_boot
 start "" cmd /c "set \"TEMP=!FELPOS_RUNTIME_TMP!\"&& set \"TMP=!FELPOS_RUNTIME_TMP!\"&& start \"\" \"!APP_DIR!\FELPOS.exe\""
 goto end_ok
 
-:start_vbs
-start "" wscript //nologo "!APP_DIR!\Iniciar_FELPOS.vbs"
+:start_boot
+start "" "!APP_DIR!\Boot_FELPOS.cmd"
 goto end_ok
-
-:start_bat
-start "" "!APP_DIR!\Iniciar_FELPOS.bat"
 
 :end_ok
 echo.

@@ -1,5 +1,4 @@
-' FEL POS - modo servidor (sin ventana de escritorio)
-' TEMP sin espacios (usuarios Windows con espacios rompen PyInstaller).
+' FEL POS - modo servidor
 Option Explicit
 
 Dim shell, fso, appDir, tmpRoot, tmpDir, exePath
@@ -9,11 +8,15 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 
 appDir = fso.GetParentFolderName(WScript.ScriptFullName)
 exePath = appDir & "\FELPOS.exe"
-tmpRoot = ResolveRuntimeRoot()
+tmpRoot = ResolveSpaceFreeRuntimeRoot()
 tmpDir = tmpRoot & "\runtime-tmp"
 
 EnsureFolder tmpRoot
 EnsureFolder tmpDir
+If Not fso.FolderExists(tmpDir) Then
+  MsgBox "No se pudo crear carpeta temporal:" & vbCrLf & tmpDir, vbCritical, "FEL POS Servidor"
+  WScript.Quit 1
+End If
 
 On Error Resume Next
 Call CleanMeiFolders(tmpDir)
@@ -40,20 +43,39 @@ End If
 shell.Run """" & exePath & """", 1, False
 WScript.Quit 0
 
-Function ResolveRuntimeRoot()
-  Dim programData
-  programData = Trim(shell.ExpandEnvironmentStrings("%ProgramData%"))
-  If programData <> "" And InStr(programData, " ") = 0 Then
-    ResolveRuntimeRoot = programData & "\FELPOS"
+Function ResolveSpaceFreeRuntimeRoot()
+  Dim publicDir, programData, shortLocal
+  publicDir = "C:\Users\Public"
+  If fso.FolderExists(publicDir) Then
+    ResolveSpaceFreeRuntimeRoot = publicDir & "\FELPOS"
     Exit Function
   End If
-  ResolveRuntimeRoot = "C:\FELPOS"
+  programData = Trim(shell.ExpandEnvironmentStrings("%ProgramData%"))
+  If programData <> "" And InStr(programData, " ") = 0 Then
+    ResolveSpaceFreeRuntimeRoot = programData & "\FELPOS"
+    Exit Function
+  End If
+  On Error Resume Next
+  shortLocal = fso.GetFolder(shell.ExpandEnvironmentStrings("%LOCALAPPDATA%")).ShortPath
+  If Err.Number = 0 And InStr(shortLocal, " ") = 0 And Trim(shortLocal) <> "" Then
+    ResolveSpaceFreeRuntimeRoot = shortLocal & "\FELPOS"
+    On Error GoTo 0
+    Exit Function
+  End If
+  Err.Clear
+  On Error GoTo 0
+  ResolveSpaceFreeRuntimeRoot = "C:\FELPOS"
 End Function
 
 Sub EnsureFolder(path)
+  Dim parent
   If Trim(path) = "" Then Exit Sub
   If fso.FolderExists(path) Then Exit Sub
   On Error Resume Next
+  parent = fso.GetParentFolderName(path)
+  If Trim(parent) <> "" And Not fso.FolderExists(parent) Then
+    fso.CreateFolder parent
+  End If
   fso.CreateFolder path
   On Error GoTo 0
 End Sub
