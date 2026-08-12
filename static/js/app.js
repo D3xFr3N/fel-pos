@@ -1667,58 +1667,15 @@ function populateDepartmentSelect(selectElement, selectedDepartmentId = null) {
 }
 
 function populatePosDepartmentFilter() {
-  const select = document.getElementById("pos-department-filter");
-  if (!select) return;
-  const currentValue = select.value || "";
-  select.innerHTML = `
-    <option value="">Todos los departamentos</option>
-    ${state.departments
-      .map((department) => `<option value="${department.id}">${department.name}</option>`)
-      .join("")}
-  `;
-  if (currentValue && state.departments.some((department) => String(department.id) === currentValue)) {
-    select.value = currentValue;
-  }
+  // Departamentos ocultos en Vender: solo busqueda / escaneo.
 }
 
 function getSelectedPosDepartmentId() {
-  const departmentFilter = document.getElementById("pos-department-filter");
-  return Number(departmentFilter?.value || 0);
+  return 0;
 }
 
 function renderPosDepartmentChips() {
-  const chipsContainer = document.getElementById("pos-department-chips");
-  const departmentFilter = document.getElementById("pos-department-filter");
-  if (!chipsContainer || !departmentFilter) return;
-
-  const selectedDepartmentId = getSelectedPosDepartmentId();
-  chipsContainer.innerHTML = `
-    <button type="button" class="department-chip ${selectedDepartmentId ? "" : "active"}" data-department-id="">
-      Todos
-    </button>
-    ${state.departments
-      .map(
-        (department) => `
-      <button
-        type="button"
-        class="department-chip ${selectedDepartmentId === Number(department.id) ? "active" : ""}"
-        data-department-id="${department.id}"
-      >
-        ${department.name}
-      </button>
-    `
-      )
-      .join("")}
-  `;
-
-  chipsContainer.querySelectorAll(".department-chip").forEach((button) => {
-    button.addEventListener("click", () => {
-      departmentFilter.value = button.dataset.departmentId || "";
-      resetCatalogPage();
-      renderPosDepartmentChips();
-      renderProducts();
-    });
-  });
+  // Departamentos ocultos en Vender.
 }
 
 function isPosCatalogProductVisible(product, { allowOutOfStockSearch = false, term = "" } = {}) {
@@ -2637,8 +2594,8 @@ async function addProductFromSearchEnter() {
     return;
   }
   if (matches.length > 1) {
-    alert(`Hay ${matches.length} coincidencias. Escribe el codigo exacto o elige el producto en la lista.`);
-    renderProducts();
+    alert(`Hay ${matches.length} coincidencias. Escribe el codigo exacto (SKU o codigo de barras).`);
+    searchInput.select();
     return;
   }
 
@@ -10329,10 +10286,12 @@ function renderAuditLogsTable() {
 
 function populateBranchSelect() {
   const select = document.getElementById("pos-branch-filter");
+  const wrap = document.getElementById("pos-branch-filter-wrap");
   if (!select) return;
   const multi = isMultiBranchEnabled();
   select.hidden = !multi;
   select.style.display = multi ? "" : "none";
+  if (wrap) wrap.hidden = !multi;
   if (!multi) {
     state.selectedBranchId = null;
     localStorage.removeItem("felpos_branch_id");
@@ -10980,7 +10939,7 @@ function setupEvents() {
       renderProducts();
     }
   });
-  document.getElementById("pos-department-filter").addEventListener("change", () => {
+  document.getElementById("pos-department-filter")?.addEventListener("change", () => {
     resetCatalogPage();
     renderPosDepartmentChips();
     renderProducts();

@@ -52,22 +52,16 @@
 
     <main>
       <section id="tab-pos" class="panel active">
-        <div class="pos-layout">
-          <div class="catalog">
+        <div class="pos-layout pos-layout-ticket-only">
+          <div class="catalog catalog-search-only">
             <div class="search-bar">
-              <input id="product-search" type="search" placeholder="SKU / codigo + Enter para agregar...">
-              <div class="search-bar-filters">
-                <select id="pos-department-filter">
-                  <option value="">Todos los departamentos</option>
-                </select>
+              <input id="product-search" type="search" placeholder="SKU / codigo + Enter para agregar..." autocomplete="off">
+              <div class="search-bar-filters" id="pos-branch-filter-wrap" hidden>
                 <select id="pos-branch-filter" title="Sucursal de venta">
                   <option value="">Sucursal principal</option>
                 </select>
               </div>
-              <div id="pos-department-chips" class="department-chips"></div>
             </div>
-            <div id="product-grid" class="product-grid"></div>
-            <div id="product-catalog-pager" class="catalog-pager" hidden></div>
           </div>
 
           <aside class="ticket">
