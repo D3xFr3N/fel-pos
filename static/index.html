@@ -52,123 +52,166 @@
 
     <main>
       <section id="tab-pos" class="panel active">
-        <div class="pos-layout pos-layout-ticket-only">
-          <div class="catalog catalog-search-only">
-            <div class="search-bar">
-              <input id="product-search" type="search" placeholder="SKU / codigo + Enter para agregar..." autocomplete="off">
-              <div class="search-bar-filters" id="pos-branch-filter-wrap" hidden>
-                <select id="pos-branch-filter" title="Sucursal de venta">
-                  <option value="">Sucursal principal</option>
-                </select>
-              </div>
+        <div class="pos-sale-screen">
+          <div class="pos-ticket-tabs-row">
+            <div id="open-tickets-bar" class="open-tickets-bar pos-ticket-tabs"></div>
+            <div class="pos-ticket-tab-actions">
+              <button id="new-ticket-btn" class="btn ghost" type="button" title="Nuevo ticket">+ Ticket</button>
+              <button id="close-current-sale-btn" class="btn ghost" type="button" title="Descarta el ticket actual sin cobrar">Descartar</button>
+              <button id="clear-cart" class="btn ghost" type="button" title="Vaciar lineas del ticket">Limpiar</button>
             </div>
           </div>
 
-          <aside class="ticket">
-            <div class="ticket-header">
-              <div>
-                <h2 id="active-ticket-title">Ticket actual</h2>
-                <small id="active-ticket-subtitle" class="ticket-subtitle">Listo para agregar productos</small>
-              </div>
-              <div class="ticket-actions">
-                <button id="hold-ticket-btn" class="btn ghost" type="button" title="Deja este ticket abierto y empieza otro">Retener</button>
-                <button id="new-ticket-btn" class="btn ghost" type="button" title="Nuevo ticket (retiene el actual si tiene productos)">Nuevo</button>
-                <button id="close-current-sale-btn" class="btn ghost" title="Descarta el ticket actual sin cobrar">Descartar ticket</button>
-                <button id="clear-cart" class="btn ghost">Limpiar</button>
-              </div>
+          <div class="pos-scan-row">
+            <input id="product-search" type="search" placeholder="Teclee o escanee el codigo del producto..." autocomplete="off">
+            <div class="search-bar-filters" id="pos-branch-filter-wrap" hidden>
+              <select id="pos-branch-filter" title="Sucursal de venta">
+                <option value="">Sucursal principal</option>
+              </select>
             </div>
-            <div id="open-tickets-bar" class="open-tickets-bar" hidden></div>
             <p id="cash-owner-indicator" class="cash-owner-indicator">Sin caja activa.</p>
+            <div id="school-packages-pos" class="school-packages-pos" hidden>
+              <select id="school-package-select" title="Paquete escolar">
+                <option value="">Paquete escolar...</option>
+              </select>
+              <button id="add-school-package-btn" class="btn ghost" type="button">Agregar</button>
+            </div>
+          </div>
 
-            <div class="customer-fields">
-              <label>
-                NIT cliente
-                <input id="customer-nit" type="text" value="CF" placeholder="CF o NIT" autocomplete="off">
-                <small id="customer-nit-status" class="nit-status">CF · Consumidor final</small>
-              </label>
-              <label>
-                Nombre
-                <input id="customer-name" type="text" value="CONSUMIDOR FINAL">
-              </label>
-              <label>
-                Cliente guardado
-                <select id="customer-select">
+          <div class="pos-lines-wrap">
+            <table class="pos-lines-table">
+              <thead>
+                <tr>
+                  <th>Codigo de Barras</th>
+                  <th>Descripcion del Producto</th>
+                  <th>Precio Venta</th>
+                  <th>Cant.</th>
+                  <th>Importe</th>
+                  <th>Existencia</th>
+                </tr>
+              </thead>
+              <tbody id="cart-items"></tbody>
+            </table>
+            <div class="pos-lines-meta">
+              <span id="pos-lines-count">0 Productos en la venta actual.</span>
+              <span id="active-ticket-title" class="pos-active-ticket-label">Ticket 1</span>
+              <small id="active-ticket-subtitle" class="ticket-subtitle" hidden>Listo</small>
+            </div>
+          </div>
+
+          <div class="pos-footer">
+            <div class="pos-footer-actions">
+              <button id="pos-change-qty-btn" class="btn ghost pos-action-btn" type="button" title="Cambiar cantidad (F5)">F5 · Cambiar</button>
+              <button id="hold-ticket-btn" class="btn ghost pos-action-btn" type="button" title="Dejar ticket pendiente (F6)">F6 · Pendiente</button>
+              <button id="pos-remove-line-btn" class="btn ghost pos-action-btn" type="button" title="Eliminar linea seleccionada">Eliminar</button>
+              <button id="pos-assign-customer-btn" class="btn ghost pos-action-btn" type="button" title="Asignar cliente CF o NIT">Asignar cliente</button>
+            </div>
+
+            <div class="pos-footer-summary">
+              <div class="pos-summary-row"><span>Total</span><strong id="grand-total">Q 0.00</strong></div>
+              <div class="pos-summary-row">
+                <span>Pago Con</span>
+                <label class="pos-paid-wrap">
+                  <span class="visually-hidden">Pago con</span>
+                  <input id="pos-paid-with" type="text" inputmode="decimal" autocomplete="off" value="0.00" aria-label="Pago con">
+                </label>
+              </div>
+              <div class="pos-summary-row"><span>Cambio</span><strong id="pos-change-display">Q 0.00</strong></div>
+              <div class="pos-summary-row is-muted"><span>Subtotal</span><strong id="subtotal">Q 0.00</strong></div>
+              <div class="pos-summary-row is-muted totals-discount" id="totals-discount-row">
+                <span>Descuento</span><strong id="cart-discount-display">Q 0.00</strong>
+              </div>
+              <div class="pos-summary-row is-muted"><span>IVA (inc.)</span><strong id="tax-total">Q 0.00</strong></div>
+              <button id="pos-clear-paid-btn" class="btn ghost pos-clear-paid" type="button" title="Limpiar pago con">Limpiar pago</button>
+            </div>
+
+            <div class="pos-footer-checkout">
+              <button id="open-cash-capture-btn" class="btn primary pos-charge-btn" type="button">F12 · Cobrar</button>
+              <div class="pos-big-total" id="pos-big-total">Q 0.00</div>
+              <button id="pos-reprint-last-btn" class="btn ghost" type="button">Reimprimir ultimo ticket</button>
+              <button id="pos-go-sales-btn" class="btn ghost" type="button">Ventas del dia y devoluciones</button>
+              <details class="pos-more-options">
+                <summary>Pago / descuento</summary>
+                <div class="pos-more-options-body">
+                  <label>
+                    Metodo de pago
+                    <select id="payment-method">
+                      <option value="efectivo">Efectivo</option>
+                      <option value="tarjeta">Tarjeta</option>
+                      <option value="transferencia">Transferencia</option>
+                      <option value="mixto">Pago mixto</option>
+                      <option value="credito">Credito cliente</option>
+                    </select>
+                  </label>
+                  <div id="checkout-credit-options" class="checkout-credit-options" hidden>
+                    <label class="inline-option">
+                      <input id="checkout-use-fcam" type="checkbox">
+                      FCAM (factura cambiaria)
+                    </label>
+                    <label id="checkout-loyalty-wrap" hidden>
+                      Canjear puntos lealtad
+                      <input id="checkout-loyalty-redeem" type="number" step="0.01" min="0" value="0" placeholder="0">
+                    </label>
+                  </div>
+                  <div class="discount-panel" id="discount-panel">
+                    <div class="discount-panel-header">
+                      <strong>Descuento del ticket</strong>
+                      <span class="discount-badge" id="discount-badge">Sin descuento</span>
+                    </div>
+                    <label class="discount-input-wrap">
+                      <span class="discount-currency">Q</span>
+                      <input id="cart-discount-input" type="number" step="0.01" min="0" value="0" placeholder="0.00" aria-label="Descuento del ticket en quetzales">
+                    </label>
+                    <div class="discount-quick" id="discount-quick">
+                      <button type="button" class="discount-chip" data-discount="5">Q 5</button>
+                      <button type="button" class="discount-chip" data-discount="10">Q 10</button>
+                      <button type="button" class="discount-chip" data-discount="20">Q 20</button>
+                      <button type="button" class="discount-chip" data-discount="50">Q 50</button>
+                      <button type="button" class="discount-chip discount-chip-clear" data-discount="0">Quitar</button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+
+          <div class="pos-status-bar">
+            <span id="pos-status-message">Punto de Venta .. Teclee o escanee el Codigo del Producto.</span>
+            <span id="pos-status-clock"></span>
+          </div>
+
+          <div class="pos-hidden-customer-fields" hidden>
+            <input id="customer-nit" type="text" value="CF" autocomplete="off">
+            <input id="customer-name" type="text" value="CONSUMIDOR FINAL">
+            <select id="customer-select"><option value="">Nuevo / por NIT</option></select>
+            <small id="customer-nit-status" class="nit-status">CF · Consumidor final</small>
+          </div>
+        </div>
+
+        <dialog id="pos-assign-customer-dialog" class="app-modal-dialog">
+          <form method="dialog" id="pos-assign-customer-form">
+            <h3>Asignar cliente</h3>
+            <p class="hint">Elige CF o captura NIT/nombre para este ticket.</p>
+            <div class="dialog-actions" style="justify-content:stretch;gap:0.6rem;flex-wrap:wrap;">
+              <button type="button" class="btn primary" id="pos-assign-cf-btn" style="flex:1;">CF (Consumidor final)</button>
+              <button type="button" class="btn ghost" id="pos-assign-nit-btn" style="flex:1;">Con NIT</button>
+            </div>
+            <div id="pos-assign-nit-fields" hidden>
+              <label>NIT<input id="pos-assign-nit-input" type="text" autocomplete="off" placeholder="Ej. 1234567K"></label>
+              <label>Nombre<input id="pos-assign-name-input" type="text" autocomplete="off" placeholder="Nombre en factura"></label>
+              <label>Cliente guardado
+                <select id="pos-assign-customer-select">
                   <option value="">Nuevo / por NIT</option>
                 </select>
               </label>
-            </div>
-
-            <div id="school-packages-pos" class="school-packages-pos" hidden>
-              <label class="school-package-label">
-                Paquete escolar
-                <select id="school-package-select">
-                  <option value="">Seleccionar paquete...</option>
-                </select>
-              </label>
-              <button id="add-school-package-btn" class="btn ghost" type="button">Agregar</button>
-            </div>
-
-            <div id="cart-items" class="cart-items"></div>
-
-            <div class="totals">
-              <div><span>Subtotal</span><strong id="subtotal">Q 0.00</strong></div>
-              <div class="totals-discount" id="totals-discount-row">
-                <span>Descuento</span>
-                <strong id="cart-discount-display">Q 0.00</strong>
-              </div>
-              <div><span>IVA (incluido)</span><strong id="tax-total">Q 0.00</strong></div>
-              <div class="grand"><span>Total</span><strong id="grand-total">Q 0.00</strong></div>
-            </div>
-
-            <div class="discount-panel" id="discount-panel">
-              <div class="discount-panel-header">
-                <div>
-                  <strong>Descuento del ticket</strong>
-                  <small>Aplica un monto fijo sobre la venta actual</small>
-                </div>
-                <span class="discount-badge" id="discount-badge">Sin descuento</span>
-              </div>
-              <label class="discount-input-wrap">
-                <span class="discount-currency">Q</span>
-                <input id="cart-discount-input" type="number" step="0.01" min="0" value="0" placeholder="0.00" aria-label="Descuento del ticket en quetzales">
-              </label>
-              <div class="discount-quick" id="discount-quick">
-                <button type="button" class="discount-chip" data-discount="5">Q 5</button>
-                <button type="button" class="discount-chip" data-discount="10">Q 10</button>
-                <button type="button" class="discount-chip" data-discount="20">Q 20</button>
-                <button type="button" class="discount-chip" data-discount="50">Q 50</button>
-                <button type="button" class="discount-chip discount-chip-clear" data-discount="0">Quitar</button>
+              <small id="pos-assign-nit-status" class="nit-status"></small>
+              <div class="dialog-actions">
+                <button type="button" class="btn ghost" id="pos-assign-cancel-btn">Cancelar</button>
+                <button type="button" class="btn primary" id="pos-assign-save-btn">Aplicar</button>
               </div>
             </div>
-
-            <div class="payment-row">
-              <label>
-                Pago
-                <select id="payment-method">
-                  <option value="efectivo">Efectivo</option>
-                  <option value="tarjeta">Tarjeta</option>
-                  <option value="transferencia">Transferencia</option>
-                  <option value="mixto">Pago mixto</option>
-                  <option value="credito">Credito cliente</option>
-                </select>
-              </label>
-              <div class="payment-actions">
-                <button id="open-cash-capture-btn" class="btn primary">Capturar efectivo (F12)</button>
-              </div>
-              <div id="checkout-credit-options" class="checkout-credit-options" hidden>
-                <label class="inline-option">
-                  <input id="checkout-use-fcam" type="checkbox">
-                  FCAM (factura cambiaria)
-                </label>
-                <label id="checkout-loyalty-wrap" hidden>
-                  Canjear puntos lealtad
-                  <input id="checkout-loyalty-redeem" type="number" step="0.01" min="0" value="0" placeholder="0">
-                </label>
-              </div>
-              <p class="hint">Flujo efectivo: F12 captura, luego F1 imprime o F2 no imprime para confirmar la venta.</p>
-            </div>
-          </aside>
-        </div>
+          </form>
+        </dialog>
       </section>
 
       <section id="tab-products" class="panel">

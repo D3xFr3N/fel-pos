@@ -124,6 +124,64 @@
     });
   };
 
+  function buildChoiceDialog() {
+    const dialog = document.createElement("dialog");
+    dialog.id = "app-choice-dialog";
+    dialog.className = "app-modal-dialog";
+    dialog.innerHTML = `
+      <form method="dialog" id="app-choice-form">
+        <h3 id="app-choice-title">Elegir</h3>
+        <p id="app-choice-message" class="app-modal-message"></p>
+        <div class="dialog-actions app-choice-actions">
+          <button type="button" class="btn ghost" id="app-choice-secondary"></button>
+          <button type="button" class="btn primary" id="app-choice-primary"></button>
+        </div>
+      </form>
+    `;
+    return dialog;
+  }
+
+  FP.showAppChoice = function showAppChoice(
+    message,
+    {
+      title = "Elegir",
+      primaryLabel = "Aceptar",
+      secondaryLabel = "Cancelar",
+      primaryValue = "primary",
+      secondaryValue = "secondary",
+      allowDismiss = true,
+    } = {}
+  ) {
+    return new Promise((resolve) => {
+      const dialog = ensureDialog("app-choice-dialog", buildChoiceDialog);
+      const titleEl = document.getElementById("app-choice-title");
+      const msgEl = document.getElementById("app-choice-message");
+      const primaryBtn = document.getElementById("app-choice-primary");
+      const secondaryBtn = document.getElementById("app-choice-secondary");
+      if (titleEl) titleEl.textContent = title;
+      if (msgEl) msgEl.textContent = message || "";
+      if (primaryBtn) primaryBtn.textContent = primaryLabel;
+      if (secondaryBtn) secondaryBtn.textContent = secondaryLabel;
+
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        dialog.close();
+        resolve(value);
+      };
+
+      primaryBtn.onclick = () => finish(primaryValue);
+      secondaryBtn.onclick = () => finish(secondaryValue);
+      dialog.oncancel = (event) => {
+        event.preventDefault();
+        if (allowDismiss) finish(null);
+      };
+      if (!dialog.open) dialog.showModal();
+      setTimeout(() => primaryBtn?.focus(), 0);
+    });
+  };
+
   FP.showAppPrompt = function showAppPrompt(message, { title = "Ingresar", label = "Valor", defaultValue = "", inputMode = "text", placeholder = "" } = {}) {
     return new Promise((resolve) => {
       const dialog = ensureDialog("app-prompt-dialog", buildPromptDialog);

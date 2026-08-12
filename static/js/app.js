@@ -17,6 +17,7 @@ const api = FP.api;
 const showAppAlert = FP.showAppAlert;
 const showAppConfirm = FP.showAppConfirm;
 const showAppPrompt = FP.showAppPrompt;
+const showAppChoice = FP.showAppChoice;
 const buildWhatsAppSaleMessage = FP.buildWhatsAppSaleMessage;
 const openWhatsAppShare = FP.openWhatsAppShare;
 const normalizeWhatsAppPhone = FP.normalizeWhatsAppPhone;
@@ -1081,8 +1082,11 @@ function snapshotActiveTicket() {
 function clearActiveTicketWorkspace({ keepPaymentMethod = false } = {}) {
   state.cart = [];
   state.selectedCartProductId = null;
+  state.ticketCustomerTypeAsked = false;
   resetCartDiscount();
   resetSaleCustomerDefaults();
+  const paid = document.getElementById("pos-paid-with");
+  if (paid) paid.value = "0.00";
   if (!keepPaymentMethod) {
     const payment = document.getElementById("payment-method");
     if (payment) payment.value = "efectivo";
@@ -1103,6 +1107,7 @@ function restoreTicket(ticket) {
   if (!ticket) return;
   state.activeTicketId = ticket.id;
   state.cart = cloneCartLines(ticket.cart);
+  state.ticketCustomerTypeAsked = true;
   const nitInput = document.getElementById("customer-nit");
   const nameInput = document.getElementById("customer-name");
   const select = document.getElementById("customer-select");
@@ -1193,15 +1198,22 @@ function getRetainedTicketNumber(ticketId) {
   return index >= 0 ? index + 1 : null;
 }
 
+function getTicketNumber(ticketId) {
+  const ordered = [...(state.openTickets || [])].sort(compareTicketsByHoldOrder);
+  const index = ordered.findIndex((ticket) => ticket.id === ticketId);
+  return index >= 0 ? index + 1 : Math.max(1, ordered.length || 1);
+}
+
 function getTicketLabel(ticket) {
-  if (!ticket) return "Ticket actual";
-  const name = (ticket.customerName || "").trim();
-  const isDefault = !name || name === "CONSUMIDOR FINAL";
-  const isActive = ticket.id === state.activeTicketId;
-  const base = isActive
-    ? "Ticket actual"
-    : `Retenido ${getRetainedTicketNumber(ticket.id) || ""}`.trim();
-  return isDefault ? base : `${base} · ${name}`;
+  if (!ticket) return "Ticket 1";
+  return `Ticket ${getTicketNumber(ticket.id)}`;
+}
+
+function getTicketTabLabel(ticket) {
+  const base = getTicketLabel(ticket);
+  const name = (ticket?.customerName || "").trim();
+  if (name && name !== "CONSUMIDOR FINAL") return `${base} · ${name}`;
+  return base;
 }
 
 function getTicketTotal(ticket) {
@@ -1251,8 +1263,8 @@ function renderOpenTicketsBar() {
     const heldCount = state.openTickets.filter((ticket) => ticket.id !== state.activeTicketId).length;
     subtitle.textContent =
       heldCount > 0
-        ? `${heldCount} ticket${heldCount === 1 ? "" : "s"} en espera · puedes cobrar este y volver al otro`
-        : "Usa Retener para dejarlo abierto y cobrar otro";
+        ? `${heldCount} ticket${heldCount === 1 ? "" : "s"} en espera`
+        : "Listo para cobrar";
   }
 
   if (!bar) return;
@@ -1261,6 +1273,9 @@ function renderOpenTicketsBar() {
     if (b.id === state.activeTicketId) return 1;
     return compareTicketsByHoldOrder(a, b);
   });
+  if (!tickets.length && active) {
+    tickets.push(active);
+  }
   if (!tickets.length) {
     bar.hidden = true;
     bar.innerHTML = "";
@@ -1274,9 +1289,9 @@ function renderOpenTicketsBar() {
       const total = getTicketTotal(ticket);
       const items = (ticket.cart || []).length;
       return `
-        <div class="open-ticket-chip ${isActive ? "is-active" : ""}" data-ticket-id="${ticket.id}" title="${escapeHtml(getTicketLabel(ticket))}">
+        <div class="open-ticket-chip ${isActive ? "is-active" : ""}" data-ticket-id="${ticket.id}" title="${escapeHtml(getTicketTabLabel(ticket))}">
           <button type="button" class="ticket-chip-select" data-ticket-id="${ticket.id}">
-            ${escapeHtml(getTicketLabel(ticket))}
+            ${escapeHtml(getTicketTabLabel(ticket))}
             <span class="ticket-chip-total">${items} ud · ${money(total)}</span>
           </button>
           <button type="button" class="ticket-chip-close" data-discard-ticket="${ticket.id}" title="Cerrar ticket" aria-label="Cerrar ticket">×</button>
@@ -1806,6 +1821,7 @@ function renderProducts() {
 
 function renderCart() {
   const container = document.getElementById("cart-items");
+  if (!container) return;
   state.cart = state.cart
     .map((line) => {
       const product = state.products.find((item) => item.id === line.id);
@@ -1828,8 +1844,15 @@ function renderCart() {
     state.selectedCartProductId = state.cart.length ? state.cart[state.cart.length - 1].id : null;
   }
 
+  const countEl = document.getElementById("pos-lines-count");
+  if (countEl) {
+    const n = state.cart.length;
+    countEl.textContent = `${n} Producto${n === 1 ? "" : "s"} en la venta actual.`;
+  }
+
   if (!state.cart.length) {
-    container.innerHTML = '<div class="empty">Agrega productos al ticket.</div>';
+    container.innerHTML =
+      '<tr class="is-empty"><td colspan="6">Teclee o escanee el codigo del producto para agregarlo al ticket.</td></tr>';
   } else {
     const productById = new Map(state.products.map((product) => [product.id, product]));
     container.innerHTML = state.cart
@@ -1837,60 +1860,37 @@ function renderCart() {
         const product = productById.get(line.id);
         const tracksInventory = productTracksInventory(product ?? line);
         const availableStock = getPosAvailableStock(product ?? line);
-        const maxReached = tracksInventory && line.quantity >= availableStock;
+        const unit = getEffectiveUnitPrice(line);
+        const importe = Math.round(unit * Number(line.quantity || 0) * 100) / 100;
+        const code = getProductBarcodeValue(product || line) || product?.sku || line.sku || "—";
         const isSelected = line.id === state.selectedCartProductId;
         return `
-      <div class="cart-line ${isSelected ? "is-selected" : ""}" data-cart-line-id="${line.id}">
-        <div class="cart-line-info">
-          <strong class="cart-line-name">${escapeHtml(line.name || "")}</strong>
-          <small class="cart-line-stock">${
-            tracksInventory
-              ? `Disponible: ${formatQuantity(availableStock)}${
-                  productSellsByWeight(product ?? line) ? ` ${getProfileCapabilities().qty_unit_label || ""}` : ""
-                }`
-              : "Sin control de inventario"
-          }${line.tax_rate > 0 ? ` · IVA ${(line.tax_rate * 100).toFixed(0)}% incluido` : ""}</small>
-          ${
-            line.wholesale_enabled && line.wholesale_min_qty > 0 && line.wholesale_discount_pct > 0
-              ? `<small class="cart-line-wholesale">Mayoreo: ${line.wholesale_min_qty}+ uds (-${line.wholesale_discount_pct}%)</small>`
-              : ""
-          }
-          ${
-            Number(product?.requires_prescription || line.requires_prescription || 0) === 1
-              ? '<small class="cart-line-rx">Requiere receta</small>'
-              : ""
-          }
-          ${isSelected ? '<small class="cart-line-selected">Seleccionado (+/-)</small>' : ""}
-        </div>
-        <div class="cart-line-side">
-          <strong class="cart-line-price">${money(getEffectiveUnitPrice(line))} c/u</strong>
-          <div class="qty-controls">
-            <button data-action="dec" data-id="${line.id}">-</button>
-            <span>${line.quantity}</span>
-            <button data-action="inc" data-id="${line.id}" ${maxReached ? "disabled" : ""}>+</button>
-          </div>
-        </div>
-      </div>
-    `
+      <tr class="${isSelected ? "is-selected" : ""}" data-cart-line-id="${line.id}">
+        <td title="${escapeHtml(code)}">${escapeHtml(code)}</td>
+        <td title="${escapeHtml(line.name || "")}">${escapeHtml(line.name || "")}</td>
+        <td>${money(unit)}</td>
+        <td>${formatQuantity(line.quantity)}</td>
+        <td>${money(importe)}</td>
+        <td>${tracksInventory ? formatQuantity(availableStock) : "—"}</td>
+      </tr>
+    `;
       })
       .join("");
 
-    container.querySelectorAll("button").forEach((button) => {
-      button.addEventListener("click", () => {
-        const id = Number(button.dataset.id);
-        adjustCartLineQuantity(id, button.dataset.action === "inc" ? 1 : -1);
-      });
-    });
-    container.querySelectorAll(".cart-line[data-cart-line-id]").forEach((lineEl) => {
-      lineEl.addEventListener("click", (event) => {
-        if (event.target.closest("button")) return;
+    container.querySelectorAll("tr[data-cart-line-id]").forEach((lineEl) => {
+      lineEl.addEventListener("click", () => {
         state.selectedCartProductId = Number(lineEl.dataset.cartLineId);
         renderCart();
+      });
+      lineEl.addEventListener("dblclick", () => {
+        state.selectedCartProductId = Number(lineEl.dataset.cartLineId);
+        void changeSelectedCartLineQuantity();
       });
     });
   }
   renderTotals();
   renderOpenTicketsBar();
+  updatePosCustomerStatusMessage();
 }
 
 function adjustCartLineQuantity(productId, delta) {
@@ -1952,11 +1952,16 @@ function renderTotals() {
   const totals = calcTotals(state.cart);
   const discountAmount = Number(totals.cartDiscount || 0);
   // Subtotal del ticket = importe de productos (IVA incluido) antes del descuento.
-  document.getElementById("subtotal").textContent = money(totals.rawSubtotal);
+  const subtotalEl = document.getElementById("subtotal");
+  if (subtotalEl) subtotalEl.textContent = money(totals.rawSubtotal);
   const discountEl = document.getElementById("cart-discount-display");
   if (discountEl) discountEl.textContent = discountAmount > 0 ? `-${money(discountAmount)}` : money(0);
-  document.getElementById("tax-total").textContent = money(totals.taxTotal);
-  document.getElementById("grand-total").textContent = money(totals.total);
+  const taxEl = document.getElementById("tax-total");
+  if (taxEl) taxEl.textContent = money(totals.taxTotal);
+  const grandEl = document.getElementById("grand-total");
+  if (grandEl) grandEl.textContent = money(totals.total);
+  const bigTotal = document.getElementById("pos-big-total");
+  if (bigTotal) bigTotal.textContent = money(totals.total);
 
   const discountRow = document.getElementById("totals-discount-row");
   const discountPanel = document.getElementById("discount-panel");
@@ -1975,6 +1980,179 @@ function renderTotals() {
     const chipValue = Math.round(Number(chip.dataset.discount || 0) * 100) / 100;
     chip.classList.toggle("is-selected", hasDiscount && chipValue === currentValue && chipValue > 0);
   });
+
+  updatePosPaidChangeDisplay(totals.total);
+}
+
+function updatePosPaidChangeDisplay(totalOverride = null) {
+  const totals = totalOverride == null ? calcTotals(state.cart).total : Number(totalOverride || 0);
+  const paidInput = document.getElementById("pos-paid-with");
+  const changeEl = document.getElementById("pos-change-display");
+  if (!changeEl) return;
+  const paid = Number(String(paidInput?.value || "0").replace(",", "."));
+  const change = Math.round(((Number.isFinite(paid) ? paid : 0) - totals) * 100) / 100;
+  changeEl.textContent = money(change > 0 ? change : 0);
+}
+
+function updatePosCustomerStatusMessage() {
+  const status = document.getElementById("pos-status-message");
+  if (!status) return;
+  const nit = normalizeNit(document.getElementById("customer-nit")?.value || "CF");
+  const name = (document.getElementById("customer-name")?.value || "").trim() || "CONSUMIDOR FINAL";
+  if (nit && nit !== "CF") {
+    status.textContent = `Cliente: ${name} · NIT ${nit} · Escanee o teclee codigo de producto.`;
+  } else {
+    status.textContent = "Punto de Venta .. Teclee o escanee el Codigo del Producto.";
+  }
+}
+
+function startPosStatusClock() {
+  const clock = document.getElementById("pos-status-clock");
+  if (!clock || clock.dataset.wired === "1") return;
+  clock.dataset.wired = "1";
+  const tick = () => {
+    const now = new Date();
+    clock.textContent = now.toLocaleString("es-GT", {
+      day: "numeric",
+      month: "short",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+  tick();
+  setInterval(tick, 30000);
+}
+
+async function changeSelectedCartLineQuantity() {
+  if (!state.cart.length) {
+    await showAppAlert("No hay productos en el ticket.");
+    return false;
+  }
+  const selectedId = state.selectedCartProductId || state.cart[state.cart.length - 1].id;
+  const line = state.cart.find((item) => item.id === selectedId);
+  if (!line) return false;
+  state.selectedCartProductId = selectedId;
+  const product = state.products.find((item) => item.id === selectedId);
+  const tracksInventory = productTracksInventory(product ?? line);
+  const availableStock = getPosAvailableStock(product ?? line);
+  const raw = await showAppPrompt(`Nueva cantidad para ${line.name}`, {
+    title: "Cambiar cantidad",
+    label: "Cantidad",
+    defaultValue: String(line.quantity),
+    inputMode: "decimal",
+    placeholder: "Ej. 1",
+  });
+  if (raw === null) return false;
+  const qty = Number(String(raw).replace(",", "."));
+  if (!Number.isFinite(qty) || qty <= 0) {
+    await showAppAlert("Cantidad invalida.");
+    return false;
+  }
+  if (tracksInventory && qty > availableStock) {
+    await showAppAlert(`No puedes vender mas de ${formatQuantity(availableStock)} unidades.`);
+    return false;
+  }
+  line.quantity = qty;
+  renderCart();
+  focusProductSearch();
+  return true;
+}
+
+function removeSelectedCartLine() {
+  if (!state.cart.length) {
+    alert("No hay productos para eliminar.");
+    return false;
+  }
+  const selectedId = state.selectedCartProductId || state.cart[state.cart.length - 1].id;
+  state.cart = state.cart.filter((item) => item.id !== selectedId);
+  state.selectedCartProductId = state.cart.length ? state.cart[state.cart.length - 1].id : null;
+  renderCart();
+  focusProductSearch();
+  return true;
+}
+
+async function openAssignCustomerDialog() {
+  const dialog = document.getElementById("pos-assign-customer-dialog");
+  if (!dialog) {
+    state.ticketCustomerTypeAsked = false;
+    return ensureTicketCustomerTypePrompt();
+  }
+  const nitFields = document.getElementById("pos-assign-nit-fields");
+  const nitInput = document.getElementById("pos-assign-nit-input");
+  const nameInput = document.getElementById("pos-assign-name-input");
+  const select = document.getElementById("pos-assign-customer-select");
+  const status = document.getElementById("pos-assign-nit-status");
+  if (nitFields) nitFields.hidden = true;
+  if (nitInput) nitInput.value = normalizeNit(document.getElementById("customer-nit")?.value || "");
+  if (nameInput) nameInput.value = document.getElementById("customer-name")?.value || "";
+  if (status) status.textContent = "";
+  if (select) {
+    select.innerHTML = document.getElementById("customer-select")?.innerHTML || '<option value="">Nuevo / por NIT</option>';
+    select.value = document.getElementById("customer-select")?.value || "";
+  }
+  if (!dialog.open) dialog.showModal();
+  return true;
+}
+
+async function applyAssignCustomerCfFromDialog() {
+  await applyTicketCustomerCf();
+  document.getElementById("pos-assign-customer-dialog")?.close();
+  updatePosCustomerStatusMessage();
+  focusProductSearch();
+}
+
+async function showAssignNitFields() {
+  const nitFields = document.getElementById("pos-assign-nit-fields");
+  if (nitFields) nitFields.hidden = false;
+  setTimeout(() => document.getElementById("pos-assign-nit-input")?.focus(), 0);
+}
+
+async function saveAssignCustomerFromDialog() {
+  const nitRaw = document.getElementById("pos-assign-nit-input")?.value || "";
+  const nameRaw = document.getElementById("pos-assign-name-input")?.value || "";
+  const selectVal = document.getElementById("pos-assign-customer-select")?.value || "";
+  const normalized = normalizeNit(nitRaw);
+  if (!normalized || normalized === "CF") {
+    await showAppAlert("Ingresa un NIT valido, o elige CF.");
+    return;
+  }
+  if (!isValidNit(normalized)) {
+    await showAppAlert("NIT invalido.");
+    return;
+  }
+  const nitInput = document.getElementById("customer-nit");
+  const nameInput = document.getElementById("customer-name");
+  const select = document.getElementById("customer-select");
+  if (nitInput) nitInput.value = normalized;
+  if (nameInput) nameInput.value = (nameRaw || "").trim() || "CLIENTE";
+  if (select) select.value = selectVal;
+  await refreshNitFeedback({ lookup: true });
+  if (nameRaw.trim()) {
+    nameInput.value = nameRaw.trim();
+  }
+  state.ticketCustomerTypeAsked = true;
+  document.getElementById("pos-assign-customer-dialog")?.close();
+  updatePosCustomerStatusMessage();
+  renderOpenTicketsBar();
+  focusProductSearch();
+}
+
+async function reprintLastTicket() {
+  const saleId = state.lastCheckoutSaleId || state.selectedSaleId;
+  if (!saleId) {
+    await showAppAlert("No hay un ticket reciente para reimprimir.");
+    return;
+  }
+  try {
+    await printSaleReceipt(saleId, true, true);
+  } catch (error) {
+    await showAppAlert(error.message || "No se pudo reimprimir.");
+  }
+}
+
+function goToSalesTab() {
+  document.querySelector('.tab[data-tab="sales"]')?.click();
 }
 
 function resetCartDiscount() {
@@ -2324,8 +2502,13 @@ function openCashCheckoutDialog() {
   if (printModeEl) {
     printModeEl.textContent = "Captura efectivo (F12). Cobro final: F1 imprime, F2 no imprime.";
   }
-  // Si paga exacto puede cobrar de inmediato. Al escribir, la selección reemplaza el total.
-  receivedInput.value = totals.total.toFixed(2);
+  // Si Pagó Con tiene monto, usarlo; si no, exacto.
+  const paidPreview = Number(String(document.getElementById("pos-paid-with")?.value || "").replace(",", "."));
+  if (Number.isFinite(paidPreview) && paidPreview > 0) {
+    receivedInput.value = paidPreview.toFixed(2);
+  } else {
+    receivedInput.value = totals.total.toFixed(2);
+  }
   receivedInput.dataset.replaceOnType = "1";
   updateCashCheckoutChange();
   wireCashCheckoutKeypad();
@@ -2482,9 +2665,89 @@ async function refreshPosStockViews() {
   renderCart();
 }
 
+async function applyTicketCustomerCf() {
+  resetSaleCustomerDefaults();
+  setNitStatus("CF · Consumidor final", "ok");
+  state.ticketCustomerTypeAsked = true;
+  updatePosCustomerStatusMessage();
+  return true;
+}
+
+async function applyTicketCustomerNit() {
+  while (true) {
+    const raw = await showAppPrompt("Escribe el NIT del cliente para la factura.", {
+      title: "NIT del cliente",
+      label: "NIT",
+      defaultValue: "",
+      placeholder: "Ej. 1234567K",
+    });
+    if (raw === null) return false;
+    const normalized = normalizeNit(raw);
+    if (!normalized || normalized === "CF") {
+      await showAppAlert("Ingresa un NIT valido. Si prefieres consumidor final, elige CF.");
+      continue;
+    }
+    if (!isValidNit(normalized)) {
+      await showAppAlert("NIT invalido. Revisa el numero e intenta de nuevo.");
+      continue;
+    }
+
+    const nitInput = document.getElementById("customer-nit");
+    if (nitInput) nitInput.value = normalized;
+    await refreshNitFeedback({ lookup: true });
+
+    const nameInput = document.getElementById("customer-name");
+    const currentName = (nameInput?.value || "").trim().toUpperCase();
+    if (!currentName || currentName === "CLIENTE" || currentName === "CONSUMIDOR FINAL") {
+      const nameRaw = await showAppPrompt("Nombre del cliente como debe salir en la factura.", {
+        title: "Nombre del cliente",
+        label: "Nombre",
+        defaultValue: currentName === "CLIENTE" ? "" : nameInput?.value || "",
+        placeholder: "Nombre completo",
+      });
+      if (nameRaw === null) return false;
+      if (nameInput) nameInput.value = (nameRaw || "").trim() || "CLIENTE";
+    }
+
+    state.ticketCustomerTypeAsked = true;
+    return true;
+  }
+}
+
+async function ensureTicketCustomerTypePrompt() {
+  if (state.ticketCustomerTypeAsked) return true;
+
+  const currentNit = normalizeNit(document.getElementById("customer-nit")?.value || "CF");
+  if (currentNit && currentNit !== "CF") {
+    state.ticketCustomerTypeAsked = true;
+    return true;
+  }
+  if (state.cart.length > 0) {
+    state.ticketCustomerTypeAsked = true;
+    return true;
+  }
+
+  const choice = await showAppChoice(
+    "Al empezar el ticket, elige como facturar al cliente.",
+    {
+      title: "Cliente del ticket",
+      primaryLabel: "CF (Consumidor final)",
+      secondaryLabel: "Con NIT",
+      primaryValue: "cf",
+      secondaryValue: "nit",
+      allowDismiss: true,
+    }
+  );
+  if (choice === null) return false;
+  if (choice === "cf") return applyTicketCustomerCf();
+  return applyTicketCustomerNit();
+}
+
 async function addToCart(productId) {
   const product = state.products.find((item) => item.id === productId);
   if (!product) return;
+  if (!(await ensureTicketCustomerTypePrompt())) return;
+
   const tracksInventory = productTracksInventory(product);
   const availableStock = getPosAvailableStock(product);
   if (tracksInventory && availableStock <= 0) {
@@ -8568,6 +8831,18 @@ async function finalizeCashCheckout(printTicket = true) {
   return success;
 }
 
+async function requestPosCharge() {
+  const paymentMethod = document.getElementById("payment-method")?.value || "efectivo";
+  if (paymentMethod === "efectivo" || paymentMethod === "mixto") {
+    return requestCashCapture();
+  }
+  if (!state.cart.length) {
+    await showAppAlert("Agrega productos antes de cobrar.");
+    return false;
+  }
+  return checkout(true);
+}
+
 async function requestCashCapture() {
   const paymentMethod = document.getElementById("payment-method")?.value || "efectivo";
   if (paymentMethod !== "efectivo" && paymentMethod !== "mixto") {
@@ -8664,16 +8939,31 @@ function handleCheckoutShortcuts(event) {
     return;
   }
 
-  if (event.key === "F4") {
+  if (event.key === "F4" || event.key === "F6") {
     if (isTypingTarget(event.target) || anyDialogOpen) return;
     event.preventDefault();
     holdCurrentTicket();
     return;
   }
 
+  if (event.key === "F5") {
+    if (isTypingTarget(event.target) || anyDialogOpen) return;
+    event.preventDefault();
+    void changeSelectedCartLineQuantity();
+    return;
+  }
+
+  if (event.key === "Delete") {
+    if (isTypingTarget(event.target) || anyDialogOpen) return;
+    if (!document.getElementById("tab-pos")?.classList.contains("active")) return;
+    event.preventDefault();
+    removeSelectedCartLine();
+    return;
+  }
+
   if (event.key === "F12") {
     event.preventDefault();
-    requestCashCapture();
+    requestPosCharge();
     return;
   }
   if (event.key === "F1") {
@@ -9373,6 +9663,7 @@ function onCustomerSelectChange() {
   const customerId = Number(select?.value || 0);
   if (!customerId) {
     syncCheckoutCreditOptions();
+    updatePosCustomerStatusMessage();
     return;
   }
   const customer = (state.customers || []).find((item) => item.id === customerId);
@@ -9381,6 +9672,7 @@ function onCustomerSelectChange() {
   document.getElementById("customer-name").value = customer.name;
   setNitStatus(`Cliente: ${customer.name} · cliente guardado`, "ok");
   syncCheckoutCreditOptions(customer);
+  updatePosCustomerStatusMessage();
 }
 
 function syncCheckoutCreditOptions(customer = null) {
@@ -9425,6 +9717,7 @@ async function addSchoolPackageToCart() {
     alert("Selecciona un paquete escolar.");
     return;
   }
+  if (!(await ensureTicketCustomerTypePrompt())) return;
   const pkg = (state.schoolPackages || []).find((item) => item.id === packageId);
   if (!pkg) return;
   for (const line of pkg.items || []) {
@@ -10998,15 +11291,58 @@ function setupEvents() {
   document.getElementById("clear-cart").addEventListener("click", () => {
     state.cart = [];
     resetCartDiscount();
+    const paid = document.getElementById("pos-paid-with");
+    if (paid) paid.value = "0.00";
     renderCart();
   });
   document.getElementById("hold-ticket-btn")?.addEventListener("click", () => {
     holdCurrentTicket();
   });
+  document.getElementById("pos-change-qty-btn")?.addEventListener("click", () => {
+    void changeSelectedCartLineQuantity();
+  });
+  document.getElementById("pos-remove-line-btn")?.addEventListener("click", () => {
+    removeSelectedCartLine();
+  });
+  document.getElementById("pos-assign-customer-btn")?.addEventListener("click", () => {
+    void openAssignCustomerDialog();
+  });
+  document.getElementById("pos-assign-cf-btn")?.addEventListener("click", () => {
+    void applyAssignCustomerCfFromDialog();
+  });
+  document.getElementById("pos-assign-nit-btn")?.addEventListener("click", () => {
+    void showAssignNitFields();
+  });
+  document.getElementById("pos-assign-save-btn")?.addEventListener("click", () => {
+    void saveAssignCustomerFromDialog();
+  });
+  document.getElementById("pos-assign-cancel-btn")?.addEventListener("click", () => {
+    document.getElementById("pos-assign-customer-dialog")?.close();
+  });
+  document.getElementById("pos-assign-customer-select")?.addEventListener("change", (event) => {
+    const customerId = Number(event.target.value || 0);
+    const customer = (state.customers || []).find((item) => item.id === customerId);
+    if (!customer) return;
+    const nitInput = document.getElementById("pos-assign-nit-input");
+    const nameInput = document.getElementById("pos-assign-name-input");
+    if (nitInput) nitInput.value = customer.nit || "";
+    if (nameInput) nameInput.value = customer.name || "";
+  });
+  document.getElementById("pos-reprint-last-btn")?.addEventListener("click", () => {
+    void reprintLastTicket();
+  });
+  document.getElementById("pos-go-sales-btn")?.addEventListener("click", goToSalesTab);
+  document.getElementById("pos-paid-with")?.addEventListener("input", () => updatePosPaidChangeDisplay());
+  document.getElementById("pos-clear-paid-btn")?.addEventListener("click", () => {
+    const paid = document.getElementById("pos-paid-with");
+    if (paid) paid.value = "0.00";
+    updatePosPaidChangeDisplay();
+  });
   document.getElementById("new-ticket-btn")?.addEventListener("click", () => {
     createNewTicket();
   });
-  document.getElementById("open-cash-capture-btn").addEventListener("click", requestCashCapture);
+  document.getElementById("open-cash-capture-btn").addEventListener("click", requestPosCharge);
+  startPosStatusClock();
   document.getElementById("cash-close-counted").addEventListener("input", updateCashCloseDifferencePreview);
   document.getElementById("close-cash-close-summary-dialog").addEventListener("click", () => {
     document.getElementById("cash-close-summary-dialog")?.close();
