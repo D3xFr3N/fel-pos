@@ -35,6 +35,7 @@ UPDATE_SUPPORT_FILES = (
     "Iniciar_FELPOS_Servidor.vbs",
     "Boot_FELPOS.cmd",
     "Boot_FELPOS.vbs",
+    "_relaunch_here.ps1",
     "_resolve_runtime_tmp.cmd",
     "Limpiar_actualizacion_pendiente.bat",
     "Diagnostico_instalacion.bat",
@@ -253,6 +254,63 @@ def _user_updates_dir() -> Path:
     return target.resolve()
 
 
+def _safe_public_felpos_dir() -> Path:
+    """Ruta sin espacios ni parentesis; segura para invocar desde CMD."""
+    target = Path(r"C:\Users\Public\FELPOS")
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _write_safe_relaunch_vbs(install_dir: Path) -> Path:
+    """
+    Escribe un VBS fuera de Program Files para relanzar FELPOS.exe.
+    Evita que CMD rompa rutas con '(x86)' al hacer start/wscript.
+    """
+    public = _safe_public_felpos_dir()
+    runtime_tmp = public / "runtime-tmp"
+    runtime_tmp.mkdir(parents=True, exist_ok=True)
+    exe_path = (Path(install_dir) / "FELPOS.exe").resolve()
+    work_dir = Path(install_dir).resolve()
+
+    def _vbs_escape(value: str) -> str:
+        return value.replace('"', '""')
+
+    exe_s = _vbs_escape(str(exe_path))
+    work_s = _vbs_escape(str(work_dir))
+    tmp_s = _vbs_escape(str(runtime_tmp))
+    content = "\r\n".join(
+        [
+            "' Auto-generado por FEL POS - no editar",
+            "Option Explicit",
+            "Dim shell, fso, exePath, workDir, tmpDir",
+            'Set shell = CreateObject("WScript.Shell")',
+            'Set fso = CreateObject("Scripting.FileSystemObject")',
+            f'exePath = "{exe_s}"',
+            f'workDir = "{work_s}"',
+            f'tmpDir = "{tmp_s}"',
+            "If Not fso.FolderExists(tmpDir) Then",
+            "  On Error Resume Next",
+            "  fso.CreateFolder tmpDir",
+            "  On Error GoTo 0",
+            "End If",
+            "If Not fso.FileExists(exePath) Then",
+            '  MsgBox "No se encontro FELPOS.exe:" & vbCrLf & exePath, vbCritical, "FEL POS"',
+            "  WScript.Quit 1",
+            "End If",
+            "shell.CurrentDirectory = workDir",
+            'shell.Environment("PROCESS")("TEMP") = tmpDir',
+            'shell.Environment("PROCESS")("TMP") = tmpDir',
+            'shell.Environment("PROCESS")("FELPOS_RUNTIME_TMP") = tmpDir',
+            'shell.Run """" & exePath & """", 1, False',
+            "WScript.Quit 0",
+            "",
+        ]
+    )
+    target = public / "relaunch.vbs"
+    target.write_text(content, encoding="utf-8")
+    return target
+
+
 def _dir_is_writable(path: Path) -> bool:
     path.mkdir(parents=True, exist_ok=True)
     probe = path / f".felpos_write_test_{os.getpid()}"
@@ -426,6 +484,9 @@ def _write_restart_script(
     updates_dir = _user_updates_dir()
     updates_dir.mkdir(parents=True, exist_ok=True)
     script_path = updates_dir / PENDING_UPDATE_SCRIPT
+    relaunch_vbs = _write_safe_relaunch_vbs(install_dir)
+    # Ruta fija sin espacios/parentesis: CMD puede invocarla sin romper.
+    relaunch_vbs_cmd = r"C:\Users\Public\FELPOS\relaunch.vbs"
 
     log_name = PENDING_UPDATE_LOG
     install_quoted = str(install_dir)
@@ -437,6 +498,7 @@ def _write_restart_script(
         "setlocal EnableExtensions EnableDelayedExpansion",
         f'set "INSTALL_DIR={install_quoted}"',
         f'set "STAGE_DIR={stage_quoted}"',
+        f'set "RELAUNCH_VBS={relaunch_vbs_cmd}"',
         # TEMP sin espacios y escribible (usuarios Windows con espacios rompen PyInstaller).
         'set "FELPOS_RUNTIME_TMP=C:\\Users\\Public\\FELPOS\\runtime-tmp"',
         'if not exist "C:\\Users\\Public\\FELPOS" mkdir "C:\\Users\\Public\\FELPOS" >nul 2>&1',
@@ -462,6 +524,7 @@ def _write_restart_script(
         'pushd "!INSTALL_DIR!"',
         f'echo [%date% %time%] Iniciando actualizacion >> "{log_name}"',
         f'echo [%date% %time%] TEMP=!FELPOS_RUNTIME_TMP! >> "{log_name}"',
+        f'echo [%date% %time%] Relaunch={relaunch_vbs} >> "{log_name}"',
         "set /a tries=0",
         ":wait",
         "set /a tries+=1",
@@ -566,17 +629,10 @@ def _write_restart_script(
             'for /d %%D in ("%LOCALAPPDATA%\\Temp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
             'for /d %%D in ("%ProgramData%\\FELPOS\\runtime-tmp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
             'for /d %%D in ("%LOCALAPPDATA%\\FEL POS\\tmp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
-            # Reinicio silencioso: VBS (no CMD). Maneja bien Program Files (x86).
-            'if exist "Boot_FELPOS.vbs" goto start_boot_vbs',
-            'if exist "Iniciar_FELPOS.vbs" goto start_iniciar_vbs',
-            f'echo [%date% %time%] AVISO: sin lanzador VBS; PowerShell Start-Process >> "{log_name}"',
-            'powershell -NoProfile -WindowStyle Hidden -Command "Start-Process -LiteralPath \'!INSTALL_DIR!\\FELPOS.exe\' -WorkingDirectory \'!INSTALL_DIR!\'"',
-            "goto start_done",
-            ":start_boot_vbs",
-            'start "" wscript //nologo "!INSTALL_DIR!\\Boot_FELPOS.vbs"',
-            "goto start_done",
-            ":start_iniciar_vbs",
-            'start "" wscript //nologo "!INSTALL_DIR!\\Iniciar_FELPOS.vbs"',
+            # NUNCA pasar rutas de Program Files (x86) a start/wscript desde CMD.
+            f'echo [%date% %time%] Relanzando via {relaunch_vbs_cmd} >> "{log_name}"',
+            f'if exist "{relaunch_vbs_cmd}" wscript //nologo "{relaunch_vbs_cmd}"',
+            f'if not exist "{relaunch_vbs_cmd}" echo [%date% %time%] ERROR: falta relaunch.vbs >> "{log_name}"',
             ":start_done",
             "popd",
             'del /F /Q "%~f0" >nul 2>&1',
@@ -586,15 +642,7 @@ def _write_restart_script(
             'if not exist "FELPOS.exe" if exist "FELPOS.exe.old" ren "FELPOS.exe.old" "FELPOS.exe"',
             f'echo [%date% %time%] Actualizacion abortada; se conserva/restaura EXE anterior >> "{log_name}"',
             'if not exist "FELPOS.exe" goto fail_end',
-            'if exist "Boot_FELPOS.vbs" goto fail_start_vbs',
-            'if exist "Iniciar_FELPOS.vbs" goto fail_start_iniciar',
-            'powershell -NoProfile -WindowStyle Hidden -Command "Start-Process -LiteralPath \'!INSTALL_DIR!\\FELPOS.exe\' -WorkingDirectory \'!INSTALL_DIR!\'"',
-            "goto fail_end",
-            ":fail_start_vbs",
-            'start "" wscript //nologo "!INSTALL_DIR!\\Boot_FELPOS.vbs"',
-            "goto fail_end",
-            ":fail_start_iniciar",
-            'start "" wscript //nologo "!INSTALL_DIR!\\Iniciar_FELPOS.vbs"',
+            f'if exist "{relaunch_vbs_cmd}" wscript //nologo "{relaunch_vbs_cmd}"',
             ":fail_end",
             "popd",
             "endlocal",

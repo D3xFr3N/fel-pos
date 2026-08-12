@@ -393,6 +393,14 @@ def main() -> None:
     except OSError:
         pass
 
+    # Mantener relaunch.vbs en Public (ruta segura para post-update / Boot.cmd).
+    try:
+        from app.services.update_service import _write_safe_relaunch_vbs
+
+        _write_safe_relaunch_vbs(runtime_root)
+    except Exception:
+        pass
+
     # Limpia extracciones _MEI viejas. NUNCA borrar sys._MEIPASS (extraccion actual).
     current_mei: Path | None = None
     mei = getattr(sys, "_MEIPASS", None)

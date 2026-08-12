@@ -104,22 +104,23 @@ exit /b 1
 :launch
 echo.
 echo Iniciando FEL POS con arranque seguro...
-if exist "Boot_FELPOS.vbs" goto launch_boot_vbs
-if exist "Iniciar_FELPOS.vbs" goto launch_vbs
-if exist "Iniciar_FELPOS.bat" goto launch_bat
-powershell -NoProfile -WindowStyle Hidden -Command "Start-Process -LiteralPath 'FELPOS.exe' -WorkingDirectory '%CD%'"
-goto done
-
-:launch_boot_vbs
-wscript //nologo "Boot_FELPOS.vbs"
-goto done
-
-:launch_vbs
-wscript //nologo "Iniciar_FELPOS.vbs"
-goto done
-
-:launch_bat
-call "Iniciar_FELPOS.bat"
+if exist "C:\Users\Public\FELPOS\relaunch.vbs" (
+  wscript //nologo "C:\Users\Public\FELPOS\relaunch.vbs"
+  goto done
+)
+if exist "%~dp0_relaunch_here.ps1" (
+  powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0_relaunch_here.ps1"
+  goto done
+)
+if exist "Boot_FELPOS.vbs" (
+  wscript //nologo "%~dp0Boot_FELPOS.vbs"
+  goto done
+)
+if exist "Iniciar_FELPOS.vbs" (
+  wscript //nologo "%~dp0Iniciar_FELPOS.vbs"
+  goto done
+)
+powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0_relaunch_here.ps1"
 goto done
 
 :done

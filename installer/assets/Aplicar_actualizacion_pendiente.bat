@@ -84,17 +84,20 @@ exit /b 1
 echo Listo. La copia anterior queda en FELPOS.exe.old hasta el primer arranque OK.
 echo Reiniciando FELPOS...
 timeout /t 2 >nul
-if exist "Boot_FELPOS.vbs" goto start_boot_vbs
-if exist "Iniciar_FELPOS.vbs" goto start_iniciar_vbs
-powershell -NoProfile -WindowStyle Hidden -Command "Start-Process -LiteralPath '!APP_DIR!\FELPOS.exe' -WorkingDirectory '!APP_DIR!'"
-goto end_ok
-
-:start_boot_vbs
-start "" wscript //nologo "!APP_DIR!\Boot_FELPOS.vbs"
-goto end_ok
-
-:start_iniciar_vbs
-start "" wscript //nologo "!APP_DIR!\Iniciar_FELPOS.vbs"
+REM Evitar start+ruta (x86). Preferir Public relaunch o PowerShell.
+if exist "C:\Users\Public\FELPOS\relaunch.vbs" (
+  wscript //nologo "C:\Users\Public\FELPOS\relaunch.vbs"
+  goto end_ok
+)
+if exist "%~dp0_relaunch_here.ps1" (
+  powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0_relaunch_here.ps1"
+  goto end_ok
+)
+if exist "%~dp0Boot_FELPOS.vbs" (
+  wscript //nologo "%~dp0Boot_FELPOS.vbs"
+  goto end_ok
+)
+powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "Start-Process -LiteralPath (Join-Path '%~dp0' 'FELPOS.exe') -WorkingDirectory '%~dp0'"
 goto end_ok
 
 :end_ok
