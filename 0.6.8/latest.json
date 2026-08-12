@@ -1,0 +1,7 @@
+{
+    "version":  "0.6.8",
+    "build_date":  "2026-08-12 12:32:19",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.8/felpos-update-0.6.8.zip",
+    "sha256":  "0b40c7c7cc86345b56e3a2c9c3c6bae3a7a34f1501de7e12f154056bcba8d708",
+    "release_notes":  "- Corrige de raiz el error python312.dll tras actualizar en PCs con usuario con espacios\r\n- El EXE ahora desempaqueta SIEMPRE en C:\\Users\\Public\\FELPOS\\runtime-tmp (ignora TEMP del sistema)\r\n- Ya no depende del lanzador VBS/BAT para evitar ese fallo"
+}

@@ -1,7 +1,0 @@
-{
-    "version":  "0.6.4",
-    "build_date":  "2026-08-12 11:35:26",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.4/felpos-update-0.6.4.zip",
-    "sha256":  "579b9d1eafbc4f7186a7a1190670cf01c379e10ed1a6fd71013972aed93a59f3",
-    "release_notes":  "- Multi-sucursal opcional: desactivado por defecto; se activa solo si se necesitan varias sucursales\r\n- En tienda unica se puede editar el stock directo desde Productos\r\n- Busqueda en la pestana Productos (nombre, SKU, codigo de barras, etc.)\r\n- Mejoras recientes de UI/productos e instalador"
-}
