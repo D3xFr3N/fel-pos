@@ -1,7 +1,8 @@
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import InventoryMovement, Product, ProductCostHistory, PurchaseOrder, PurchaseOrderItem
+from app.models import Product, ProductCostHistory, PurchaseOrder, PurchaseOrderItem
 from app.services.audit_service import log_action
+from app.services.inventory_branch_service import adjust_branch_stock, resolve_branch_id
 
 
 def receive_purchase_order(
@@ -10,17 +11,21 @@ def receive_purchase_order(
     purchase_order_id: int,
     user_id: int,
     invoice_ref: str | None = None,
+    branch_id: int | None = None,
 ) -> PurchaseOrder:
     order = (
         db.query(PurchaseOrder)
         .options(joinedload(PurchaseOrder.items).joinedload(PurchaseOrderItem.product))
         .filter(PurchaseOrder.id == purchase_order_id)
+        .with_for_update()
         .one_or_none()
     )
     if not order:
         raise ValueError("Orden de compra no encontrada.")
     if order.status == "received":
         raise ValueError("La orden ya fue recibida.")
+
+    target_branch_id = resolve_branch_id(db, branch_id)
 
     for line in order.items:
         product = line.product or db.get(Product, line.product_id)
@@ -44,19 +49,25 @@ def receive_purchase_order(
                 )
             )
         if product.tracks_inventory:
-            before_stock = float(product.stock or 0)
-            product.stock = round(before_stock + qty, 2)
-            db.add(
-                InventoryMovement(
-                    product_id=product.id,
-                    created_by_user_id=user_id,
-                    movement_type="entry",
-                    quantity=qty,
-                    before_stock=before_stock,
-                    after_stock=product.stock,
-                    notes=f"Recepcion OC #{order.id}",
-                )
+            adjust_branch_stock(
+                db,
+                product,
+                qty,
+                branch_id=target_branch_id,
+                user_id=user_id,
+                movement_type="entry",
+                notes=f"Recepcion OC #{order.id}",
             )
+            if int(getattr(product, "track_expiry", 0) or 0) == 1:
+                from app.services.lot_service import adjust_lots_quantity
+
+                adjust_lots_quantity(
+                    db,
+                    product=product,
+                    quantity_delta=qty,
+                    branch_id=target_branch_id,
+                    lot_code=f"OC-{order.id}",
+                )
 
     order.status = "received"
     if invoice_ref:

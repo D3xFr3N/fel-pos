@@ -35,8 +35,8 @@ ENV_KEY_MAP = {
 }
 
 CERTIFICADOR_DEFAULT_URLS = {
-    "infile": "https://certificador.infile.com/api",
-    "digifact": "https://felgtaws.digifact.com.gt/gt.com.apinuc",
+    "infile": "https://certificador.feel.com.gt/fel/procesounificado/transaccion/v2/xml",
+    "digifact": "https://felgtaws.digifact.com.gt/gt.com.apinuc/api/v2/transform/nuc",
 }
 
 
@@ -155,10 +155,12 @@ def update_store_settings(db: Session, payload: CompanyConfigUpdateIn) -> StoreS
         certificador_llave = (row.certificador_llave or "").strip()
 
     if fel_mode == "production":
-        if not certificador_usuario:
-            raise ValueError("En modo produccion debes indicar el usuario del certificador.")
-        if not certificador_llave:
-            raise ValueError("En modo produccion debes indicar la llave o token del certificador.")
+        if not certificador_usuario or not certificador_llave:
+            raise ValueError(
+                "FEL produccion requiere usuario y llave del certificador (Infile o Digifact)."
+            )
+        if certificador not in {"infile", "digifact"}:
+            raise ValueError("Certificador de produccion invalido. Usa infile o digifact.")
 
     row.emisor_nit = payload.nit.strip()
     row.emisor_nombre = payload.nombre.strip()

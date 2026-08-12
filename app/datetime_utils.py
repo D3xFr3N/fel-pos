@@ -11,11 +11,13 @@ GUATEMALA_FALLBACK_TZ = timezone(timedelta(hours=-6))
 
 def get_app_timezone():
     name = (getattr(settings, "app_timezone", None) or DEFAULT_TIMEZONE).strip()
+    # Guatemala no observa DST: offset fijo evita ZoneInfoNotFoundError en EXE
+    # (tzdata a veces no se extrae completo en PyInstaller onefile).
+    if name in {DEFAULT_TIMEZONE, "America/Guatemala", "CST6"}:
+        return GUATEMALA_FALLBACK_TZ
     try:
         return ZoneInfo(name)
     except Exception:
-        if name in {DEFAULT_TIMEZONE, "America/Guatemala"}:
-            return GUATEMALA_FALLBACK_TZ
         return GUATEMALA_FALLBACK_TZ
 
 

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app.dependencies import require_roles
+from app.dependencies import require_permission, require_roles
 from app.models import Product, PurchaseOrder, PurchaseOrderDispatch, PurchaseOrderItem, Supplier, User
 from app.schemas import (
     PurchaseOrderCreate,
@@ -108,7 +108,7 @@ def send_purchase_order_channels(
 @router.get("", response_model=list[PurchaseOrderOut])
 def list_purchase_orders(
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_permission("purchases.manage")),
 ):
     orders = (
         db.query(PurchaseOrder)
@@ -128,7 +128,7 @@ def list_purchase_orders(
 def create_purchase_orders(
     payload: PurchaseOrderCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_permission("purchases.manage")),
 ):
     combined_quantities: dict[int, float] = defaultdict(float)
     for line in payload.items:
@@ -219,7 +219,7 @@ def resend_purchase_order(
     purchase_order_id: int,
     payload: PurchaseOrderSendRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_permission("purchases.manage")),
 ):
     purchase_order = (
         db.query(PurchaseOrder)
@@ -255,7 +255,7 @@ def receive_purchase_order_endpoint(
     purchase_order_id: int,
     payload: PurchaseReceiveRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_permission("purchases.manage")),
 ):
     try:
         order = receive_purchase_order(
@@ -263,6 +263,7 @@ def receive_purchase_order_endpoint(
             purchase_order_id=purchase_order_id,
             user_id=user.id,
             invoice_ref=(payload.invoice_ref or "").strip() or None,
+            branch_id=payload.branch_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

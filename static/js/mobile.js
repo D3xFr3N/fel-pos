@@ -40,9 +40,25 @@ function setSession(token, user) {
     : "Sin sesion";
 }
 
+function ensureMobileDeviceId() {
+  let id = localStorage.getItem("felpos_device_id");
+  if (!id) {
+    id = window.crypto?.randomUUID
+      ? `WEB-${window.crypto.randomUUID().replace(/-/g, "").slice(0, 16).toUpperCase()}`
+      : `WEB-${Date.now().toString(16).toUpperCase()}`;
+    localStorage.setItem("felpos_device_id", id);
+  }
+  if (!localStorage.getItem("felpos_device_hostname")) {
+    localStorage.setItem("felpos_device_hostname", navigator.platform || "movil");
+  }
+  return id;
+}
+
 async function api(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
+  headers["X-FELPOS-Device-Id"] = ensureMobileDeviceId();
+  headers["X-FELPOS-Hostname"] = localStorage.getItem("felpos_device_hostname") || "movil";
   const response = await fetch(path, { ...options, headers });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: "Error de servidor" }));
@@ -183,6 +199,8 @@ async function saveCount(event) {
 
   const skuInput = document.getElementById("count-sku");
   const qtyInput = document.getElementById("count-qty");
+  const feedback = document.getElementById("last-scan-feedback");
+  const replaceMode = Boolean(document.getElementById("count-replace-mode")?.checked);
   const sku = normalizeSku(skuInput.value);
   const countedQty = Number(qtyInput.value || 0);
   if (!sku) {
@@ -200,14 +218,32 @@ async function saveCount(event) {
       body: JSON.stringify({
         sku,
         counted_quantity: countedQty,
-        replace_quantity: false,
+        replace_quantity: replaceMode,
       }),
     });
     renderOrderInfo();
+    if (feedback) {
+      feedback.textContent = `OK · ${sku} · ${qty(countedQty)}${replaceMode ? " (reemplazo)" : ""}`;
+      feedback.classList.add("ok");
+    }
+    try {
+      navigator.vibrate?.(40);
+    } catch (_e) {
+      /* ignore */
+    }
     skuInput.value = "";
     qtyInput.value = "1";
     skuInput.focus();
   } catch (error) {
+    if (feedback) {
+      feedback.textContent = error.message;
+      feedback.classList.remove("ok");
+    }
+    try {
+      navigator.vibrate?.([40, 40, 40]);
+    } catch (_e) {
+      /* ignore */
+    }
     alert(error.message);
   }
 }
@@ -254,8 +290,22 @@ function setup() {
   document.getElementById("refresh-order-btn").addEventListener("click", refreshOrder);
   document.getElementById("price-check-form").addEventListener("submit", lookupPrice);
   document.getElementById("count-form").addEventListener("submit", saveCount);
+  document.getElementById("count-qty-dec")?.addEventListener("click", () => {
+    const input = document.getElementById("count-qty");
+    const next = Math.max(0.01, Number(input.value || 1) - 1);
+    input.value = String(Number(next.toFixed(2)));
+  });
+  document.getElementById("count-qty-inc")?.addEventListener("click", () => {
+    const input = document.getElementById("count-qty");
+    const next = Number(input.value || 0) + 1;
+    input.value = String(Number(next.toFixed(2)));
+  });
   renderOrderInfo();
   loadCurrentUser().catch(() => {});
+  setInterval(() => {
+    if (state.user) refreshOrder().catch(() => {});
+  }, 15000);
+  setTimeout(() => document.getElementById("count-sku")?.focus(), 300);
 }
 
 setup();

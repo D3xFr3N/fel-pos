@@ -41,6 +41,10 @@ Source: "staging\.env.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\LEEME_INSTALACION.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\Iniciar_FELPOS.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\Iniciar_FELPOS.vbs"; DestDir: "{app}"; Flags: ignoreversion
+Source: "staging\Iniciar_FELPOS_Caja.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "staging\Iniciar_FELPOS_Caja.vbs"; DestDir: "{app}"; Flags: ignoreversion
+Source: "staging\Iniciar_FELPOS_Servidor.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "staging\Iniciar_FELPOS_Servidor.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\pre_update_backup.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\update_system_safe.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\Aplicar_actualizacion_pendiente.bat"; DestDir: "{app}"; Flags: ignoreversion
@@ -59,21 +63,31 @@ Name: "{app}\data\backups"; Permissions: users-full
 Name: "{app}\update_backups"; Permissions: users-full
 
 [Icons]
-Name: "{group}\FEL POS"; Filename: "{app}\Iniciar_FELPOS.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"
-Name: "{group}\Respaldo antes de actualizar"; Filename: "{app}\pre_update_backup.bat"; WorkingDir: "{app}"
+Name: "{group}\FEL POS"; Filename: "{app}\Iniciar_FELPOS.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsLocalMode
+Name: "{group}\FEL POS Servidor"; Filename: "{app}\Iniciar_FELPOS_Servidor.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsServerMode
+Name: "{group}\FEL POS Caja (red)"; Filename: "{app}\Iniciar_FELPOS_Caja.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsClientMode
+Name: "{group}\Respaldo antes de actualizar"; Filename: "{app}\pre_update_backup.bat"; WorkingDir: "{app}"; Check: IsLocalOrServerMode
 Name: "{group}\Actualizar sistema (seguro)"; Filename: "{app}\update_system_safe.bat"; WorkingDir: "{app}"
 Name: "{group}\Aplicar actualizacion pendiente"; Filename: "{app}\Aplicar_actualizacion_pendiente.bat"; WorkingDir: "{app}"
 Name: "{group}\Reparar instalacion"; Filename: "{app}\Reparar_instalacion.bat"; WorkingDir: "{app}"
 Name: "{group}\Limpiar actualizacion pendiente"; Filename: "{app}\Limpiar_actualizacion_pendiente.bat"; WorkingDir: "{app}"
 Name: "{group}\Diagnostico instalacion"; Filename: "{app}\Diagnostico_instalacion.bat"; WorkingDir: "{app}"
 Name: "{group}\Reparar permisos (actualizaciones)"; Filename: "{app}\Reparar_permisos_instalacion.bat"; WorkingDir: "{app}"
-Name: "{autodesktop}\FEL POS"; Filename: "{app}\Iniciar_FELPOS.vbs"; Tasks: desktopicon; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\FEL POS"; Filename: "{app}\Iniciar_FELPOS.vbs"; Tasks: desktopicon; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsLocalMode
+Name: "{autodesktop}\FEL POS Servidor"; Filename: "{app}\Iniciar_FELPOS_Servidor.vbs"; Tasks: desktopicon; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsServerMode
+Name: "{autodesktop}\FEL POS Caja (red)"; Filename: "{app}\Iniciar_FELPOS_Caja.vbs"; Tasks: desktopicon; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsClientMode
 
 [Run]
-Filename: "{app}\Iniciar_FELPOS.vbs"; Description: "Abrir FEL POS ahora"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"
+Filename: "{app}\Iniciar_FELPOS.vbs"; Description: "Abrir FEL POS ahora"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"; Check: IsLocalMode
+Filename: "{app}\Iniciar_FELPOS_Servidor.vbs"; Description: "Iniciar servidor FEL POS ahora"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"; Check: IsServerMode
+Filename: "{app}\Iniciar_FELPOS_Caja.vbs"; Description: "Abrir caja FEL POS ahora"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"; Check: IsClientMode
 
 [Code]
 var
+  ModePage: TWizardPage;
+  ModeCombo: TNewComboBox;
+  ModeHintLabel: TNewStaticText;
+  SelectedInstallMode: String;
   LicensePage: TWizardPage;
   LicenseIntroLabel: TNewStaticText;
   FingerprintCaptionLabel: TNewStaticText;
@@ -93,6 +107,70 @@ var
 function HelperExePath(): String;
 begin
   Result := ExpandConstant('{tmp}\install_license_helper.exe');
+end;
+
+function GetSelectedInstallMode(): String;
+begin
+  case ModeCombo.ItemIndex of
+    1: Result := 'server';
+    2: Result := 'client';
+  else
+    Result := 'local';
+  end;
+end;
+
+procedure SyncSelectedInstallMode();
+begin
+  if Assigned(ModeCombo) then
+    SelectedInstallMode := GetSelectedInstallMode()
+  else if SelectedInstallMode = '' then
+    SelectedInstallMode := 'local';
+end;
+
+function IsLocalMode(): Boolean;
+begin
+  SyncSelectedInstallMode();
+  Result := (SelectedInstallMode = 'local');
+end;
+
+function IsServerMode(): Boolean;
+begin
+  SyncSelectedInstallMode();
+  Result := (SelectedInstallMode = 'server');
+end;
+
+function IsClientMode(): Boolean;
+begin
+  SyncSelectedInstallMode();
+  Result := (SelectedInstallMode = 'client');
+end;
+
+function IsLocalOrServerMode(): Boolean;
+begin
+  Result := IsLocalMode() or IsServerMode();
+end;
+
+function ModeHintText(): String;
+begin
+  case ModeCombo.ItemIndex of
+    1: Result :=
+      'Servidor de red: este PC guarda el inventario y atiende otras cajas. ' +
+      'No abre ventana de venta; las demas PCs usan "Caja (red)".';
+    2: Result :=
+      'Caja en red: ventana de escritorio que busca sola el servidor en la WiFi/LAN. ' +
+      'No guarda inventario local; usa la licencia y datos del servidor. ' +
+      'La PC principal debe estar encendida.';
+  else
+    Result :=
+      'Local / PC principal: escritorio + inventario en este equipo. ' +
+      'Ideal para una sola caja, o como servidor principal si otras PCs se conectan en red.';
+  end;
+end;
+
+procedure RefreshModeHint(Sender: TObject);
+begin
+  ModeHintLabel.Caption := ModeHintText();
+  SelectedInstallMode := GetSelectedInstallMode();
 end;
 
 function WriteTextToFile(const FilePath, Content: String): Boolean;
@@ -392,11 +470,39 @@ procedure InitializeWizard();
 begin
   ExtractTemporaryFile('install_license_helper.exe');
   SavedLicenseKey := '';
+  SelectedInstallMode := 'local';
+
+  ModePage := CreateCustomPage(
+    wpWelcome,
+    'Tipo de instalacion',
+    'Elige como usara esta computadora FEL POS en tu tienda.'
+  );
+
+  ModeCombo := TNewComboBox.Create(ModePage);
+  ModeCombo.Parent := ModePage.Surface;
+  ModeCombo.Left := 0;
+  ModeCombo.Top := 8;
+  ModeCombo.Width := ModePage.SurfaceWidth;
+  ModeCombo.Style := csDropDownList;
+  ModeCombo.Items.Add('Local / PC principal - escritorio e inventario en este equipo');
+  ModeCombo.Items.Add('Servidor de red - solo servidor (sin ventana), otras cajas se conectan');
+  ModeCombo.Items.Add('Caja en red - escritorio conectado al servidor (sin inventario local)');
+  ModeCombo.ItemIndex := 0;
+  ModeCombo.OnChange := @RefreshModeHint;
+
+  ModeHintLabel := TNewStaticText.Create(ModePage);
+  ModeHintLabel.Parent := ModePage.Surface;
+  ModeHintLabel.Left := 0;
+  ModeHintLabel.Top := 44;
+  ModeHintLabel.Width := ModePage.SurfaceWidth;
+  ModeHintLabel.AutoSize := False;
+  ModeHintLabel.WordWrap := True;
+  ModeHintLabel.Caption := ModeHintText();
 
   LicensePage := CreateCustomPage(
-    wpWelcome,
+    ModePage.ID,
     'Licencia de tienda',
-    'Ingresa la clave de licencia entregada por el proveedor. Sin una licencia valida no se puede instalar FEL POS en esta computadora.'
+    'Ingresa la clave de licencia entregada por el proveedor.'
   );
 
   LicenseIntroLabel := TNewStaticText.Create(LicensePage);
@@ -407,8 +513,8 @@ begin
   LicenseIntroLabel.AutoSize := False;
   LicenseIntroLabel.WordWrap := True;
   LicenseIntroLabel.Caption :=
-    'Cada tienda necesita su propia licencia firmada (FELPOS-v1...). ' +
-    'Si aun no tienes clave, envia el ID de equipo al proveedor para activarla.';
+    'PC principal o servidor: cada tienda necesita su licencia firmada (FELPOS-v1...). ' +
+    'Caja en red: la licencia vive en el servidor; puedes dejarla vacia aqui.';
 
   FingerprintCaptionLabel := TNewStaticText.Create(LicensePage);
   FingerprintCaptionLabel.Parent := LicensePage.Surface;
@@ -456,7 +562,7 @@ begin
   LicenseHintLabel.Width := LicensePage.SurfaceWidth;
   LicenseHintLabel.AutoSize := False;
   LicenseHintLabel.WordWrap := True;
-  LicenseHintLabel.Caption := 'Pega la clave completa tal como te la enviaron. No podras continuar sin licencia valida.';
+  LicenseHintLabel.Caption := 'Pega la clave completa (FELPOS-v1...). En caja de red es opcional.';
 
   ProfilePage := CreateCustomPage(
     wpSelectDir,
@@ -591,11 +697,25 @@ begin
   end;
 end;
 
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if IsClientMode() then
+  begin
+    if (PageID = ProfilePage.ID) or (PageID = FelPage.ID) then
+      Result := True;
+  end;
+end;
+
 function ShouldWipeDatabase(const FreshEnv: Boolean): Boolean;
 begin
-  { Solo borra datos si el usuario lo pide explicitamente.
-    Equipo nuevo: no hay base de datos, arranca vacio solo.
-    Equipo con productos: se conservan a menos que marque instalacion limpia. }
+  { Caja en red no usa base local de negocio. }
+  if IsClientMode() then
+  begin
+    Result := False;
+    Exit;
+  end;
+  { Solo borra datos si el usuario lo pide explicitamente. }
   Result := WizardIsTaskSelected('cleaninstall');
 end;
 
@@ -606,9 +726,32 @@ var
 begin
   Result := True;
 
+  if CurPageID = ModePage.ID then
+    SelectedInstallMode := GetSelectedInstallMode();
+
   if CurPageID = LicensePage.ID then
   begin
+    SelectedInstallMode := GetSelectedInstallMode();
     KeyText := Trim(LicenseEdit.Text);
+    if IsClientMode() then
+    begin
+      if KeyText <> '' then
+      begin
+        if not ValidateLicenseKey(KeyText) then
+        begin
+          MsgBox(
+            'Licencia invalida.' + #13#10 +
+            'En caja de red puedes dejarla vacia (la licencia esta en el servidor).',
+            mbError, MB_OK);
+          Result := False;
+          Exit;
+        end;
+        SavedLicenseKey := KeyText;
+      end
+      else
+        SavedLicenseKey := '';
+      Exit;
+    end;
     if KeyText = '' then
     begin
       MsgBox(
@@ -647,6 +790,8 @@ end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
+  if CurPageID = ModePage.ID then
+    RefreshModeHint(nil);
   if CurPageID = LicensePage.ID then
     RefreshFingerprintDisplay();
 end;
@@ -662,6 +807,8 @@ begin
     EnvPath := AppDir + '\.env';
     ExamplePath := AppDir + '\.env.example';
     FreshEnv := not FileExists(EnvPath);
+    if SelectedInstallMode = '' then
+      SelectedInstallMode := GetSelectedInstallMode();
 
     CleanupPendingUpdateArtifacts(AppDir);
 
@@ -673,7 +820,13 @@ begin
 
     if FileExists(EnvPath) then
     begin
-      if FreshEnv then
+      ApplyEnvValue(EnvPath, 'FELPOS_MODE', SelectedInstallMode);
+      if SelectedInstallMode = 'client' then
+        ApplyEnvValue(EnvPath, 'FELPOS_BIND_HOST', '127.0.0.1')
+      else
+        ApplyEnvValue(EnvPath, 'FELPOS_BIND_HOST', '0.0.0.0');
+      ApplyEnvValue(EnvPath, 'FELPOS_PORT', '8000');
+      if FreshEnv and (not IsClientMode()) then
       begin
         ApplyBusinessProfileToEnv(EnvPath);
         ApplyFelModeToEnv(EnvPath);

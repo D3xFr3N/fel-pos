@@ -34,7 +34,7 @@ UPDATE_SUPPORT_FILES = (
     "Reparar_permisos_instalacion.bat",
 )
 HTTP_TIMEOUT_SECONDS = 180
-MIN_EXE_BYTES = 5 * 1024 * 1024
+MIN_EXE_BYTES = 15 * 1024 * 1024
 
 
 @dataclass
@@ -430,10 +430,14 @@ def _write_restart_script(
         "setlocal EnableExtensions EnableDelayedExpansion",
         f'set "INSTALL_DIR={install_quoted}"',
         f'set "STAGE_DIR={stage_quoted}"',
-        'set "FELPOS_RUNTIME_TMP=%LOCALAPPDATA%\\FEL POS\\tmp"',
+        'set "FELPOS_RUNTIME_TMP=%LOCALAPPDATA%\\FELPOS\\runtime-tmp"',
+        'if not exist "%LOCALAPPDATA%\\FELPOS" mkdir "%LOCALAPPDATA%\\FELPOS" >nul 2>&1',
         'if not exist "!FELPOS_RUNTIME_TMP!" mkdir "!FELPOS_RUNTIME_TMP!" >nul 2>&1',
         'if exist "!FELPOS_RUNTIME_TMP!" set "TEMP=!FELPOS_RUNTIME_TMP!"',
         'if exist "!FELPOS_RUNTIME_TMP!" set "TMP=!FELPOS_RUNTIME_TMP!"',
+        'for /d %%D in ("!FELPOS_RUNTIME_TMP!\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
+        'for /d %%D in ("%LOCALAPPDATA%\\Temp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
+        'for /d %%D in ("%LOCALAPPDATA%\\FEL POS\\tmp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
         'pushd "!INSTALL_DIR!"',
         f'echo [%date% %time%] Iniciando actualizacion >> "{log_name}"',
         "set /a tries=0",
@@ -534,10 +538,13 @@ def _write_restart_script(
             f'echo [%date% %time%] ERROR: FELPOS.exe no existe despues de actualizar >> "{log_name}"',
             "goto fail_restore",
             ":exe_ready",
-            "timeout /t 1 >nul",
+            "timeout /t 3 >nul",
+            'for /d %%D in ("!FELPOS_RUNTIME_TMP!\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
+            'for /d %%D in ("%LOCALAPPDATA%\\Temp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
+            'for /d %%D in ("%LOCALAPPDATA%\\FEL POS\\tmp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
             'if exist "Iniciar_FELPOS.vbs" goto start_vbs',
             'if exist "Iniciar_FELPOS.bat" goto start_bat',
-            'start "" "!INSTALL_DIR!\\FELPOS.exe"',
+            'start "" cmd /c "set \\"TEMP=!FELPOS_RUNTIME_TMP!\\"&& set \\"TMP=!FELPOS_RUNTIME_TMP!\\"&& start \\"\\" \\"!INSTALL_DIR!\\FELPOS.exe\\""',
             "goto start_done",
             ":start_vbs",
             'start "" wscript //nologo "!INSTALL_DIR!\\Iniciar_FELPOS.vbs"',
@@ -555,7 +562,7 @@ def _write_restart_script(
             'if not exist "FELPOS.exe" goto fail_end',
             'if exist "Iniciar_FELPOS.vbs" goto fail_start_vbs',
             'if exist "Iniciar_FELPOS.bat" goto fail_start_bat',
-            'start "" "!INSTALL_DIR!\\FELPOS.exe"',
+            'start "" cmd /c "set \\"TEMP=!FELPOS_RUNTIME_TMP!\\"&& set \\"TMP=!FELPOS_RUNTIME_TMP!\\"&& start \\"\\" \\"!INSTALL_DIR!\\FELPOS.exe\\""',
             "goto fail_end",
             ":fail_start_vbs",
             'start "" wscript //nologo "!INSTALL_DIR!\\Iniciar_FELPOS.vbs"',

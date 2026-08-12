@@ -17,7 +17,21 @@ from app.schemas import (
     UserUpdate,
 )
 from app.services.auth_service import create_access_token, hash_password, verify_password
+from app.services.device_auth_service import (
+    assert_device_allowed,
+    client_ip,
+    is_loopback_ip,
+    normalize_fingerprint,
+    read_device_fingerprint,
+)
+from app.business_profiles import normalize_business_profile, profile_default_cashier_permissions
+from app.services.permission_service import (
+    CASHIER_PERMISSION_CATALOG,
+    DEFAULT_CASHIER_PERMISSIONS,
+    serialize_permissions,
+)
 from app.services.rate_limit_service import check_rate_limit, reset_rate_limit
+from app.services.store_settings_service import get_or_create_store_settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -26,12 +40,7 @@ LOGIN_RATE_LIMIT_WINDOW_SECONDS = 300
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return "unknown"
+    return client_ip(request) or "unknown"
 
 
 def _enforce_login_rate_limit(request: Request, scope: str) -> None:
@@ -49,6 +58,17 @@ def _enforce_login_rate_limit(request: Request, scope: str) -> None:
         )
 
 
+def _issue_login_token(request: Request, db: Session, user: User) -> LoginResponse:
+    device = assert_device_allowed(db, request, register_if_missing=True)
+    device_fp = None
+    if device is not None:
+        device_fp = normalize_fingerprint(device.fingerprint)
+    elif is_loopback_ip(client_ip(request)):
+        device_fp = read_device_fingerprint(request) or None
+    token = create_access_token(user.id, user.role, device_fingerprint=device_fp)
+    return LoginResponse(access_token=token, user=UserOut.model_validate(user))
+
+
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
     _enforce_login_rate_limit(request, "login")
@@ -60,8 +80,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=401, detail="Credenciales invalidas.")
 
     reset_rate_limit(f"login:{_client_ip(request)}")
-    token = create_access_token(user.id, user.role)
-    return LoginResponse(access_token=token, user=UserOut.model_validate(user))
+    return _issue_login_token(request, db, user)
 
 
 @router.post("/login-cashier", response_model=LoginResponse)
@@ -101,14 +120,23 @@ def login_cashier(payload: CashierPasswordLoginRequest, request: Request, db: Se
         )
 
     reset_rate_limit(f"login-cashier:{_client_ip(request)}")
-    user = matched[0]
-    token = create_access_token(user.id, user.role)
-    return LoginResponse(access_token=token, user=UserOut.model_validate(user))
+    return _issue_login_token(request, db, matched[0])
 
 
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
     return UserOut.model_validate(user)
+
+
+@router.get("/permission-catalog")
+def permission_catalog(db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    profile = normalize_business_profile(get_or_create_store_settings(db).business_profile)
+    defaults = profile_default_cashier_permissions(profile) or DEFAULT_CASHIER_PERMISSIONS
+    return {
+        "permissions": CASHIER_PERMISSION_CATALOG,
+        "defaults": defaults,
+        "business_profile": profile,
+    }
 
 
 @router.post("/change-password", response_model=ChangePasswordResponse)
@@ -168,6 +196,17 @@ def create_user(
         password_hash=hash_password(payload.password),
         active=payload.active,
         must_change_password=0,
+        permissions=(
+            "[]"
+            if payload.role == "admin"
+            else serialize_permissions(
+                payload.permissions
+                if payload.permissions is not None
+                else profile_default_cashier_permissions(
+                    get_or_create_store_settings(db).business_profile
+                )
+            )
+        ),
     )
     db.add(user)
     db.commit()
@@ -215,6 +254,19 @@ def update_user(
     if "password" in updates and updates["password"]:
         user.password_hash = hash_password(updates["password"])
         user.must_change_password = 0
+    if "permissions" in updates and updates["permissions"] is not None:
+        if (updates.get("role", user.role) if "role" in updates else user.role) == "admin":
+            user.permissions = "[]"
+        else:
+            user.permissions = serialize_permissions(updates["permissions"])
+    elif "role" in updates and updates["role"] == "admin":
+        user.permissions = "[]"
+    elif "role" in updates and updates["role"] == "user" and user.role == "admin":
+        # Al bajar de admin a cajero, deja permisos por defecto si no vinieron en el payload.
+        if "permissions" not in updates:
+            user.permissions = serialize_permissions(
+                profile_default_cashier_permissions(get_or_create_store_settings(db).business_profile)
+            )
 
     db.commit()
     db.refresh(user)

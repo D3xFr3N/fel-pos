@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.business_profiles import business_profile_label, normalize_business_profile
+from app.business_profiles import business_profile_label, normalize_business_profile, profile_capabilities
 from app.config import settings
 from app.services.printer_config_service import (
     get_label_printer_config,
@@ -21,8 +21,11 @@ from app.services.store_settings_service import (
 )
 
 from app.database import get_db
-from app.dependencies import require_roles
+from app.dependencies import require_permission, require_roles
 from app.models import CreditPayment, Customer, Department, InventoryMovement, Product, Supplier, User
+from app.services.audit_service import log_action
+from app.services.cash_service import add_cash_movement, get_open_cash_session
+from app.services.permission_service import user_has_permission
 from app.schemas import (
     BarcodeLabelPrintRequest,
     BarcodeLabelPrintResponse,
@@ -67,7 +70,6 @@ from app.schemas import (
     SupplierUpdate,
     StockEntryCreate,
 )
-from app.services.audit_service import log_action
 from app.services.customer_lookup_service import lookup_customer_by_nit
 from app.services.eleventa_import_service import (
     DEFAULT_SUPPLIER_NAME,
@@ -139,7 +141,7 @@ def list_products(
         .order_by(Product.name)
         .all()
     )
-    include_cost = user.role == "admin"
+    include_cost = user_has_permission(user, "products.view_cost")
     return [_product_to_out(product, include_cost=include_cost) for product in products]
 
 
@@ -147,7 +149,7 @@ def list_products(
 def product_kardex(
     product_id: int,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_permission("inventory.view")),
 ):
     product = db.get(Product, product_id)
     if not product:
@@ -161,12 +163,28 @@ def product_kardex(
     )
 
 
+@router.get("/inactive", response_model=list[ProductOut])
+def list_inactive_products(
+    db: Session = Depends(get_db),
+    user=Depends(require_permission("products.view", "products.edit")),
+):
+    products = (
+        db.query(Product)
+        .options(joinedload(Product.supplier), joinedload(Product.department))
+        .filter(Product.active == 0)
+        .order_by(Product.name)
+        .all()
+    )
+    return [_product_to_out(product, include_cost=user_has_permission(user, "products.view_cost")) for product in products]
+
+
 @router.get("/low-stock", response_model=list[ProductOut])
 def list_low_stock_products(
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_permission("inventory.view", "stock.entry")),
 ):
-    return (
+    include_cost = user_has_permission(user, "products.view_cost")
+    products = (
         db.query(Product)
         .options(joinedload(Product.supplier), joinedload(Product.department))
         .filter(
@@ -177,12 +195,13 @@ def list_low_stock_products(
         .order_by(Product.stock.asc(), Product.name.asc())
         .all()
     )
+    return [_product_to_out(product, include_cost=include_cost) for product in products]
 
 
 @router.get("/low-stock/report", response_model=list[LowStockReportOut])
 def low_stock_report(
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_permission("inventory.view", "stock.entry")),
 ):
     low_products = (
         db.query(Product)
@@ -269,14 +288,14 @@ def get_product_by_sku(
     )
     if not product:
         raise HTTPException(status_code=404, detail=f"No se encontro producto con codigo {normalized_code}.")
-    return product
+    return _product_to_out(product, include_cost=user_has_permission(user, "products.view_cost"))
 
 
 @router.post("", response_model=ProductOut, status_code=201)
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_permission("products.edit")),
 ):
     if not payload.supplier_id:
         raise HTTPException(status_code=400, detail="Debes asignar proveedor al producto.")
@@ -301,10 +320,53 @@ def create_product(
         if existing_barcode:
             raise HTTPException(status_code=400, detail="Codigo de barras ya existe.")
     product = Product(**payload_data)
+    if int(product.tracks_inventory or 0) != 1:
+        product.track_expiry = 0
+        product.requires_prescription = 0
+    else:
+        from app.services.store_settings_service import get_or_create_store_settings
+
+        caps = profile_capabilities(get_or_create_store_settings(db).business_profile)
+        if caps.get("force_track_expiry") and caps.get("lots"):
+            product.track_expiry = 1
+        if not caps.get("pharmacy"):
+            product.requires_prescription = 0
     db.add(product)
+    db.flush()
+    from app.services.inventory_branch_service import adjust_branch_stock, get_or_create_main_branch
+
+    initial_stock = float(product.stock or 0)
+    product.stock = 0
+    if initial_stock > 0 and int(product.tracks_inventory or 0) == 1:
+        main = get_or_create_main_branch(db)
+        adjust_branch_stock(
+            db,
+            product,
+            initial_stock,
+            branch_id=main.id,
+            user_id=user.id,
+            movement_type="entry",
+            notes="Stock inicial al crear producto",
+        )
+        if int(product.track_expiry or 0) == 1:
+            from app.services.lot_service import adjust_lots_quantity
+
+            # Solo crea lote paralelo; no vuelve a sumar BranchStock.
+            adjust_lots_quantity(
+                db,
+                product=product,
+                quantity_delta=initial_stock,
+                branch_id=main.id,
+                lot_code="INICIAL",
+            )
+    else:
+        main = get_or_create_main_branch(db)
+        from app.services.inventory_branch_service import get_branch_stock_row
+
+        get_branch_stock_row(db, product.id, main.id)
     db.commit()
     db.refresh(product)
-    return product
+    return _product_to_out(product, include_cost=user_has_permission(user, "products.view_cost"))
 
 
 @router.post("/{product_id}/stock-entry", response_model=InventoryMovementOut, status_code=201)
@@ -312,17 +374,43 @@ def register_stock_entry(
     product_id: int,
     payload: StockEntryCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_permission("stock.entry")),
 ):
+    from app.services.inventory_branch_service import adjust_branch_stock
+
     product = db.get(Product, product_id)
     if not product or not product.active:
         raise HTTPException(status_code=404, detail="Producto no encontrado.")
     if not product.tracks_inventory:
         raise HTTPException(status_code=400, detail="Este producto no maneja inventario.")
+    if int(product.track_expiry or 0) == 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Este producto controla lotes (FEFO). Usa ingreso por lote en lugar de entrada simple.",
+        )
 
     before_stock = float(product.stock)
-    product.stock = round(before_stock + payload.quantity, 2)
-    movement = InventoryMovement(
+    adjust_branch_stock(
+        db,
+        product,
+        float(payload.quantity),
+        branch_id=payload.branch_id,
+        user_id=user.id,
+        movement_type="entry",
+        notes=(payload.notes or "").strip() or None,
+    )
+    db.commit()
+    db.refresh(product)
+    # Movimiento ya creado por adjust_branch_stock; devolver ultimo.
+    movement = (
+        db.query(InventoryMovement)
+        .filter(InventoryMovement.product_id == product.id)
+        .order_by(InventoryMovement.id.desc())
+        .first()
+    )
+    if movement:
+        return movement
+    return InventoryMovement(
         product_id=product.id,
         created_by_user_id=user.id,
         movement_type="entry",
@@ -331,10 +419,6 @@ def register_stock_entry(
         after_stock=product.stock,
         notes=(payload.notes or "").strip() or None,
     )
-    db.add(movement)
-    db.commit()
-    db.refresh(movement)
-    return movement
 
 
 @router.put("/{product_id}", response_model=ProductOut)
@@ -342,7 +426,7 @@ def update_product(
     product_id: int,
     payload: ProductUpdate,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_permission("products.edit")),
 ):
     product = db.get(Product, product_id)
     if not product:
@@ -371,8 +455,31 @@ def update_product(
         )
         if existing_barcode:
             raise HTTPException(status_code=400, detail="Codigo de barras ya existe.")
+    stock_override = payload_data.pop("stock", None)
+    previous_track_expiry = int(product.track_expiry or 0)
     for key, value in payload_data.items():
         setattr(product, key, value)
+    from app.services.store_settings_service import get_or_create_store_settings
+
+    caps = profile_capabilities(get_or_create_store_settings(db).business_profile)
+    if int(product.tracks_inventory or 0) != 1:
+        product.track_expiry = 0
+        product.requires_prescription = 0
+    else:
+        if caps.get("force_track_expiry") and caps.get("lots"):
+            product.track_expiry = 1
+        if not caps.get("pharmacy"):
+            product.requires_prescription = 0
+    # No editar Product.stock como suma global: eso corrompe multi-sucursal.
+    # El stock se ajusta por sucursal (ingresos, conteo, transferencias) o al crear producto.
+    if stock_override is not None and int(product.tracks_inventory or 0) == 1:
+        from app.services.inventory_branch_service import sync_product_stock_from_branches
+
+        sync_product_stock_from_branches(db, product)
+    if previous_track_expiry == 0 and int(product.track_expiry or 0) == 1:
+        from app.services.lot_service import ensure_lots_cover_branch_stock
+
+        ensure_lots_cover_branch_stock(db, product)
     if "price" in payload_data and float(product.price or 0) != previous_price:
         log_action(
             db,
@@ -393,7 +500,98 @@ def update_product(
         )
     db.commit()
     db.refresh(product)
-    return product
+    return _product_to_out(product, include_cost=user_has_permission(user, "products.view_cost"))
+
+
+@router.delete("/{product_id}")
+def delete_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission("products.edit")),
+):
+    from app.models import (
+        InventoryMovement as _InventoryMovement,
+        Promotion,
+        ProductCostHistory,
+        ProductLot,
+        PurchaseOrderItem,
+        SaleItem,
+        SchoolPackageItem,
+        StockCountItem,
+        StockCountScanLog,
+    )
+
+    product = db.get(Product, product_id)
+    if not product or not product.active:
+        raise HTTPException(status_code=404, detail="Producto no encontrado.")
+
+    # Si el producto tiene historial (ventas, compras, inventario, etc.)
+    # solo se desactiva para no romper reportes ni tickets antiguos.
+    history_checks = [
+        db.query(SaleItem.id).filter(SaleItem.product_id == product_id).first(),
+        db.query(_InventoryMovement.id).filter(_InventoryMovement.product_id == product_id).first(),
+        db.query(PurchaseOrderItem.id).filter(PurchaseOrderItem.product_id == product_id).first(),
+        db.query(StockCountItem.id).filter(StockCountItem.product_id == product_id).first(),
+        db.query(StockCountScanLog.id).filter(StockCountScanLog.product_id == product_id).first(),
+        db.query(ProductCostHistory.id).filter(ProductCostHistory.product_id == product_id).first(),
+        db.query(ProductLot.id).filter(ProductLot.product_id == product_id).first(),
+        db.query(SchoolPackageItem.id).filter(SchoolPackageItem.product_id == product_id).first(),
+    ]
+    has_history = any(row is not None for row in history_checks)
+
+    # Las promociones apuntando al producto se desligan en ambos casos.
+    db.query(Promotion).filter(Promotion.product_id == product_id).update({Promotion.product_id: None})
+
+    if has_history:
+        product.active = 0
+        log_action(
+            db,
+            user_id=user.id,
+            action="product_deactivate",
+            entity_type="product",
+            entity_id=product.id,
+            details=f"Desactivado (tiene historial): {product.sku} - {product.name}",
+        )
+        db.commit()
+        return {"deleted": False, "deactivated": True, "detail": "Producto con historial: se desactivo y ya no aparecera en catalogo."}
+
+    log_action(
+        db,
+        user_id=user.id,
+        action="product_delete",
+        entity_type="product",
+        entity_id=product.id,
+        details=f"Eliminado definitivo: {product.sku} - {product.name}",
+    )
+    db.delete(product)
+    db.commit()
+    return {"deleted": True, "deactivated": False, "detail": "Producto eliminado definitivamente."}
+
+
+@router.post("/{product_id}/reactivate", response_model=ProductOut)
+def reactivate_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission("products.edit")),
+):
+    product = db.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Producto no encontrado.")
+    if product.active:
+        return _product_to_out(product, include_cost=user_has_permission(user, "products.view_cost"))
+
+    product.active = 1
+    log_action(
+        db,
+        user_id=user.id,
+        action="product_reactivate",
+        entity_type="product",
+        entity_id=product.id,
+        details=f"Reactivado: {product.sku} - {product.name}",
+    )
+    db.commit()
+    db.refresh(product)
+    return _product_to_out(product, include_cost=user_has_permission(user, "products.view_cost"))
 
 
 @router.post("/import/eleventa", response_model=EleventaImportOut)
@@ -445,7 +643,7 @@ async def import_products_from_eleventa(
 @router.post("/generate-missing-barcodes", response_model=GenerateMissingBarcodesResponse)
 def generate_missing_barcodes(
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_permission("products.edit")),
 ):
     products = (
         db.query(Product)
@@ -469,7 +667,7 @@ def generate_missing_barcodes(
 def generate_product_barcode(
     product_id: int,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin", "user")),
+    user=Depends(require_permission("products.edit")),
 ):
     product = db.get(Product, product_id)
     if not product:
@@ -479,7 +677,7 @@ def generate_product_barcode(
     _assign_generated_barcode(db, product)
     db.commit()
     db.refresh(product)
-    return product
+    return _product_to_out(product, include_cost=user_has_permission(user, "products.view_cost"))
 
 
 @router.post("/{product_id}/print-labels", response_model=BarcodeLabelPrintResponse)
@@ -487,7 +685,7 @@ def print_product_barcode_labels(
     product_id: int,
     payload: BarcodeLabelPrintRequest,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin", "user")),
+    user=Depends(require_permission("products.edit")),
 ):
     product = db.get(Product, product_id)
     if not product:
@@ -558,7 +756,7 @@ suppliers_router = APIRouter(prefix="/api/suppliers", tags=["suppliers"])
 @suppliers_router.get("", response_model=list[SupplierOut])
 def list_suppliers(
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_permission("suppliers.manage", "products.edit")),
 ):
     return db.query(Supplier).filter(Supplier.active == 1).order_by(Supplier.name).all()
 
@@ -567,7 +765,7 @@ def list_suppliers(
 def create_supplier(
     payload: SupplierCreate,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_permission("suppliers.manage")),
 ):
     existing = db.query(Supplier).filter(Supplier.name == payload.name.strip()).first()
     if existing:
@@ -584,7 +782,7 @@ def update_supplier(
     supplier_id: int,
     payload: SupplierUpdate,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_permission("suppliers.manage")),
 ):
     supplier = db.get(Supplier, supplier_id)
     if not supplier:
@@ -611,7 +809,7 @@ def list_departments(
 def create_department(
     payload: DepartmentCreate,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_permission("departments.manage")),
 ):
     name = payload.name.strip()
     if not name:
@@ -631,7 +829,7 @@ def update_department(
     department_id: int,
     payload: DepartmentUpdate,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_permission("departments.manage")),
 ):
     department = db.get(Department, department_id)
     if not department:
@@ -674,9 +872,18 @@ def lookup_customer(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "user")),
 ):
+    from app.config import settings
+
     cleaned_nit = normalize_nit(nit)
+    lookup_available = bool((settings.nit_lookup_url or "").strip())
     if not cleaned_nit or cleaned_nit == "CF":
-        return CustomerLookupOut(nit="CF", name="CONSUMIDOR FINAL", found=False)
+        return CustomerLookupOut(
+            nit="CF",
+            name="CONSUMIDOR FINAL",
+            found=False,
+            source="none",
+            lookup_available=lookup_available,
+        )
     if not is_valid_nit(cleaned_nit):
         raise HTTPException(status_code=400, detail="NIT invalido.")
 
@@ -688,6 +895,8 @@ def lookup_customer(
             email=existing.email,
             address=existing.address,
             found=True,
+            source="local",
+            lookup_available=lookup_available,
         )
 
     try:
@@ -702,16 +911,24 @@ def lookup_customer(
             email=lookup_result.email,
             address=lookup_result.address,
             found=True,
+            source="remote",
+            lookup_available=lookup_available,
         )
 
-    return CustomerLookupOut(nit=cleaned_nit, name="CLIENTE", found=False)
+    return CustomerLookupOut(
+        nit=cleaned_nit,
+        name="CLIENTE",
+        found=False,
+        source="none",
+        lookup_available=lookup_available,
+    )
 
 
 @customers_router.post("", response_model=CustomerOut, status_code=201)
 def create_customer(
     payload: CustomerCreate,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin", "user")),
+    user=Depends(require_permission("customers.manage")),
 ):
     existing = db.query(Customer).filter(Customer.nit == payload.nit).first()
     if existing:
@@ -729,7 +946,7 @@ def update_customer(
     customer_id: int,
     payload: CustomerUpdate,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_permission("customers.manage")),
 ):
     customer = db.get(Customer, customer_id)
     if not customer:
@@ -747,25 +964,60 @@ def register_credit_payment(
     customer_id: int,
     payload: CreditPaymentCreate,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin", "user")),
+    user=Depends(require_permission("customers.manage")),
 ):
-    customer = db.get(Customer, customer_id)
+    from app.services.credit_service import allocate_credit_payment_targets
+
+    customer = (
+        db.query(Customer)
+        .filter(Customer.id == customer_id)
+        .with_for_update()
+        .one_or_none()
+    )
     if not customer:
         raise HTTPException(status_code=404, detail="Cliente no encontrado.")
     amount = round(float(payload.amount), 2)
     balance = round(float(customer.credit_balance or 0), 2)
     if amount > balance:
         raise HTTPException(status_code=400, detail=f"El abono excede el saldo pendiente (Q{balance:.2f}).")
-    payment = CreditPayment(
-        customer_id=customer.id,
-        sale_id=payload.sale_id,
-        created_by_user_id=user.id,
-        amount=amount,
-        payment_method=payload.payment_method,
-        notes=(payload.notes or "").strip() or None,
-    )
+    method = str(payload.payment_method or "efectivo").strip().lower()
+    if method not in {"efectivo", "tarjeta", "transferencia"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Metodo de abono invalido. Usa efectivo, tarjeta o transferencia.",
+        )
+    try:
+        targets = allocate_credit_payment_targets(
+            db,
+            customer=customer,
+            amount=amount,
+            sale_id=payload.sale_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if method == "efectivo":
+        if not get_open_cash_session(db, user_id=user.id):
+            raise HTTPException(
+                status_code=400,
+                detail="Debes abrir tu fondo antes de registrar abonos en efectivo.",
+            )
+
+    first_payment = None
+    for target_sale_id, part_amount in targets:
+        payment = CreditPayment(
+            customer_id=customer.id,
+            sale_id=target_sale_id,
+            created_by_user_id=user.id,
+            amount=part_amount,
+            payment_method=method,
+            notes=(payload.notes or "").strip() or None,
+        )
+        db.add(payment)
+        if first_payment is None:
+            first_payment = payment
+
     customer.credit_balance = round(balance - amount, 2)
-    db.add(payment)
     log_action(
         db,
         user_id=user.id,
@@ -774,9 +1026,22 @@ def register_credit_payment(
         entity_id=customer.id,
         details=f"Abono Q{amount:.2f}",
     )
+    if method == "efectivo":
+        try:
+            add_cash_movement(
+                db,
+                user_id=user.id,
+                movement_type="income",
+                amount=amount,
+                description=f"Abono credito cliente #{customer.id}",
+                sale_id=payload.sale_id or (targets[0][0] if targets else None),
+                commit=False,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
-    db.refresh(payment)
-    return payment
+    db.refresh(first_payment)
+    return first_payment
 
 
 config_router = APIRouter(prefix="/api/config", tags=["config"])
@@ -794,6 +1059,7 @@ def get_business_profile(db: Session = Depends(get_db), user=Depends(require_rol
     return BusinessProfileConfigOut(
         business_profile=profile,
         business_profile_label=business_profile_label(profile),
+        capabilities=profile_capabilities(profile),
         cash_shared_session=runtime["cash_shared_session"],
         nit_lookup_configured=runtime["nit_lookup_configured"],
         primary_color=theme["primary_color"],
@@ -823,7 +1089,10 @@ def save_ui_theme_config_route(
 
     bootstrap_store_settings(db)
     try:
-        result = update_ui_theme_config(primary_color=payload.primary_color)
+        result = update_ui_theme_config(
+            primary_color=payload.primary_color,
+            background_theme=payload.background_theme,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OSError as exc:
@@ -835,16 +1104,25 @@ def save_ui_theme_config_route(
         action="ui_theme_updated",
         entity_type="ui_theme",
         entity_id=1,
-        details=f"primary_color={result.get('primary_color')}",
+        details=(
+            f"primary_color={result.get('primary_color')}, "
+            f"background_theme={result.get('background_theme')}"
+        ),
     )
     db.commit()
     return UiThemeConfigOut(**result)
 
 
 @config_router.get("", response_model=CompanyConfig)
-def get_config(db: Session = Depends(get_db), user=Depends(require_roles("admin"))):
+def get_config(db: Session = Depends(get_db), user=Depends(require_roles("admin", "user"))):
     row = bootstrap_store_settings(db)
-    return store_settings_to_schema(row)
+    schema = store_settings_to_schema(row)
+    if getattr(user, "role", None) != "admin":
+        # Cajeros reciben datos de tienda/FEL para tickets, sin credenciales.
+        schema.certificador_usuario = ""
+        schema.certificador_llave_configured = False
+        schema.certificador_url = ""
+    return schema
 
 
 @config_router.put("", response_model=CompanyConfig)

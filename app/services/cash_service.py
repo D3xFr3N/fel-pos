@@ -5,10 +5,17 @@ from sqlalchemy.orm import Session, joinedload
 from app.models import CashMovement, CashSession, User
 
 
-def get_open_cash_session(db: Session, user_id: int | None = None) -> CashSession | None:
+def get_open_cash_session(
+    db: Session,
+    user_id: int | None = None,
+    *,
+    for_update: bool = False,
+) -> CashSession | None:
     query = db.query(CashSession).filter(CashSession.status == "open")
     if user_id is not None:
         query = query.filter(CashSession.opened_by_user_id == user_id)
+    if for_update:
+        query = query.with_for_update()
     return query.order_by(CashSession.opened_at.desc()).first()
 
 
@@ -31,7 +38,12 @@ def can_use_cash_session(user: User, session: CashSession | None) -> bool:
 
 
 def open_cash_session(db: Session, user_id: int, opening_amount: float, notes: str | None) -> CashSession:
-    existing = get_open_cash_session(db, user_id=user_id)
+    existing = (
+        db.query(CashSession)
+        .filter(CashSession.status == "open", CashSession.opened_by_user_id == user_id)
+        .with_for_update()
+        .first()
+    )
     if existing:
         raise ValueError("Ya tienes un fondo abierto.")
 
@@ -63,12 +75,26 @@ def add_cash_movement(
     amount: float,
     description: str | None = None,
     sale_id: int | None = None,
+    commit: bool = True,
 ) -> CashMovement:
-    session = get_open_cash_session(db, user_id=user_id)
+    session = get_open_cash_session(db, user_id=user_id, for_update=True)
     if not session:
         raise ValueError("Debes abrir tu fondo antes de registrar movimientos.")
     if amount <= 0:
         raise ValueError("El monto debe ser mayor a 0.")
+
+    # Reintento idempotente de venta: no duplicar movimiento de caja.
+    if sale_id is not None and movement_type == "sale":
+        existing = (
+            db.query(CashMovement)
+            .filter(
+                CashMovement.sale_id == sale_id,
+                CashMovement.movement_type == "sale",
+            )
+            .first()
+        )
+        if existing:
+            return existing
 
     movement = CashMovement(
         cash_session_id=session.id,
@@ -80,8 +106,11 @@ def add_cash_movement(
     )
     session.expected_amount = round(session.expected_amount + _movement_delta(movement_type, amount), 2)
     db.add(movement)
-    db.commit()
-    db.refresh(movement)
+    if commit:
+        db.commit()
+        db.refresh(movement)
+    else:
+        db.flush()
     return movement
 
 
@@ -93,7 +122,12 @@ def close_cash_session(
     counted_amount: float,
     notes: str | None,
 ) -> CashSession:
-    session = db.get(CashSession, session_id)
+    session = (
+        db.query(CashSession)
+        .filter(CashSession.id == session_id)
+        .with_for_update()
+        .one_or_none()
+    )
     if not session:
         raise ValueError("Caja no encontrada.")
     if session.status != "open":
@@ -121,7 +155,12 @@ def transfer_cash_session(
     session_id: int,
     target_user_id: int,
 ) -> CashSession:
-    session = db.get(CashSession, session_id)
+    session = (
+        db.query(CashSession)
+        .filter(CashSession.id == session_id)
+        .with_for_update()
+        .one_or_none()
+    )
     if not session:
         raise ValueError("Caja no encontrada.")
     if session.status != "open":
@@ -133,7 +172,7 @@ def transfer_cash_session(
     if not target.active:
         raise ValueError("El usuario destino esta inactivo.")
 
-    existing_target = get_open_cash_session(db, user_id=target_user_id)
+    existing_target = get_open_cash_session(db, user_id=target_user_id, for_update=True)
     if existing_target and existing_target.id != session.id:
         raise ValueError(
             f"El cajero {target.username} ya tiene un fondo abierto (# {existing_target.id}). "

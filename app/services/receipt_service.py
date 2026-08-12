@@ -228,6 +228,18 @@ def _send_raw_to_printer(printer_name: str, payload: bytes, job_name: str) -> No
         win32print.ClosePrinter(handle)
 
 
+def print_raw_text(text: str, *, job_name: str = "FELPOS-KITCHEN") -> str:
+    """Imprime texto plano ESC/POS (comanda cocina, etc.)."""
+    if not __import__("sys").platform.startswith("win"):
+        raise RuntimeError("Impresion RAW solo disponible en Windows.")
+    printer_name = _resolved_receipt_printer_name()
+    encoding = (settings.receipt_encoding or "cp437").strip() or "cp437"
+    body = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    payload = b"\x1b@" + body.encode(encoding, errors="replace") + b"\n\n\x1dV\x00"
+    _send_raw_to_printer(printer_name, payload, job_name)
+    return printer_name
+
+
 def open_cash_drawer() -> str:
     """Abre el cajon de dinero sin imprimir ticket."""
     if not __import__("sys").platform.startswith("win"):
@@ -238,16 +250,88 @@ def open_cash_drawer() -> str:
     return printer_name
 
 
-def print_receipt(sale: SaleOut, open_drawer: bool) -> None:
-    printer_name = _resolved_receipt_printer_name()
-    text = build_receipt_text(sale)
-    encoding = settings.receipt_encoding or "cp850"
-    payload = b"\x1b@" + text.encode(encoding, errors="replace")
-    payload = append_receipt_cut(payload, open_drawer=open_drawer)
-    _send_raw_to_printer(printer_name, payload, f"FELPOS-{sale.id}")
-    # Refuerzo: algunos drivers ignoran el pulso dentro del ticket.
-    if open_drawer:
+def open_cash_drawer_with_retry(*, attempts: int = 2) -> dict:
+    last_error: Exception | None = None
+    printer_name = ""
+    for attempt in range(1, max(1, attempts) + 1):
         try:
-            open_cash_drawer()
-        except Exception:
-            pass
+            printer_name = open_cash_drawer()
+            return {
+                "ok": True,
+                "drawer_opened": True,
+                "printer_name": printer_name,
+                "drawer_error": None,
+                "attempts": attempt,
+            }
+        except Exception as exc:
+            last_error = exc
+    return {
+        "ok": False,
+        "drawer_opened": False,
+        "printer_name": printer_name or None,
+        "drawer_error": str(last_error) if last_error else "No se pudo abrir el cajon.",
+        "attempts": max(1, attempts),
+    }
+
+
+def print_receipt(sale: SaleOut, open_drawer: bool) -> None:
+    """Compatibilidad: imprime ticket y opcionalmente abre cajon (best-effort)."""
+    result = print_receipt_detailed(sale, open_drawer=open_drawer)
+    if not result.get("printed"):
+        raise RuntimeError(result.get("print_error") or "No se pudo imprimir el ticket.")
+
+
+def print_receipt_detailed(sale: SaleOut, open_drawer: bool, *, attempts: int = 2) -> dict:
+    """Imprime ticket y cajon por separado; no falla la venta si el cajon falla."""
+    printer_name = ""
+    print_error: str | None = None
+    printed = False
+    used_attempts = 0
+    for attempt in range(1, max(1, attempts) + 1):
+        used_attempts = attempt
+        try:
+            printer_name = _resolved_receipt_printer_name()
+            text = build_receipt_text(sale)
+            encoding = settings.receipt_encoding or "cp850"
+            payload = b"\x1b@" + text.encode(encoding, errors="replace")
+            # Cajon se maneja aparte para reportar estados independientes.
+            payload = append_receipt_cut(payload, open_drawer=False)
+            _send_raw_to_printer(printer_name, payload, f"FELPOS-{sale.id}")
+            printed = True
+            print_error = None
+            break
+        except Exception as exc:
+            print_error = str(exc)
+            printed = False
+
+    drawer_opened = False
+    drawer_error: str | None = None
+    if open_drawer:
+        drawer_result = open_cash_drawer_with_retry(attempts=attempts)
+        drawer_opened = bool(drawer_result.get("drawer_opened"))
+        drawer_error = drawer_result.get("drawer_error")
+        if drawer_result.get("printer_name"):
+            printer_name = drawer_result["printer_name"]
+
+    ok = printed and (drawer_opened or not open_drawer)
+    parts = []
+    if printed:
+        parts.append("Ticket impreso")
+    elif print_error:
+        parts.append(f"Ticket no impreso: {print_error}")
+    if open_drawer:
+        if drawer_opened:
+            parts.append("cajon abierto")
+        elif drawer_error:
+            parts.append(f"cajon no abierto: {drawer_error}")
+    message = ". ".join(parts) + "." if parts else "Sin acciones de impresion."
+    return {
+        "ok": ok,
+        "printed": printed,
+        "drawer_opened": drawer_opened,
+        "printer_name": printer_name or None,
+        "print_error": print_error,
+        "drawer_error": drawer_error,
+        "attempts": used_attempts,
+        "message": message,
+    }

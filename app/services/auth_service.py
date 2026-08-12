@@ -1,9 +1,10 @@
+from dataclasses import dataclass
+
 import base64
 import hashlib
 import hmac
 import os
 import time
-from dataclasses import dataclass
 
 from app.config import settings
 
@@ -13,6 +14,7 @@ class AccessTokenPayload:
     user_id: int
     role: str
     expires_at: int
+    device_fingerprint: str | None = None
 
 
 def hash_password(password: str) -> str:
@@ -33,9 +35,14 @@ def verify_password(password: str, password_hash: str) -> bool:
     return hmac.compare_digest(current, expected)
 
 
-def create_access_token(user_id: int, role: str) -> str:
+def create_access_token(
+    user_id: int,
+    role: str,
+    device_fingerprint: str | None = None,
+) -> str:
     expires_at = int(time.time()) + (settings.access_token_minutes * 60)
-    payload = f"{user_id}:{role}:{expires_at}"
+    device = (device_fingerprint or "").strip().upper() or "-"
+    payload = f"{user_id}:{role}:{expires_at}:{device}"
     signature = hmac.new(
         settings.security_secret.encode("utf-8"),
         payload.encode("utf-8"),
@@ -49,8 +56,17 @@ def decode_access_token(token: str) -> AccessTokenPayload | None:
     try:
         padded_token = token + ("=" * (-len(token) % 4))
         token_raw = base64.urlsafe_b64decode(padded_token.encode("utf-8")).decode("utf-8")
-        user_id_str, role, expires_at_str, signature = token_raw.split(":", maxsplit=3)
-        payload = f"{user_id_str}:{role}:{expires_at_str}"
+        parts = token_raw.split(":")
+        if len(parts) == 4:
+            user_id_str, role, expires_at_str, signature = parts
+            device = None
+            payload = f"{user_id_str}:{role}:{expires_at_str}"
+        elif len(parts) == 5:
+            user_id_str, role, expires_at_str, device_raw, signature = parts
+            device = None if device_raw in {"", "-"} else device_raw
+            payload = f"{user_id_str}:{role}:{expires_at_str}:{device_raw}"
+        else:
+            return None
     except Exception:
         return None
 
@@ -66,4 +82,9 @@ def decode_access_token(token: str) -> AccessTokenPayload | None:
     if expires_at < int(time.time()):
         return None
 
-    return AccessTokenPayload(user_id=int(user_id_str), role=role, expires_at=expires_at)
+    return AccessTokenPayload(
+        user_id=int(user_id_str),
+        role=role,
+        expires_at=expires_at,
+        device_fingerprint=device,
+    )

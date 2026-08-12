@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app.dependencies import require_roles
+from app.dependencies import require_permission, require_roles
 from app.models import CashMovement, CashSession, User
 from app.schemas import (
     CashMovementCreate,
@@ -37,7 +37,7 @@ def get_current_cash_session(
 @router.get("/sessions/open", response_model=list[CashSessionOut])
 def list_open_sessions(
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_permission("cash.view_others")),
 ):
     return list_open_cash_sessions(db)
 
@@ -45,7 +45,7 @@ def list_open_sessions(
 @router.get("/sessions/open/monitor", response_model=list[CashSessionMonitorOut])
 def list_open_sessions_monitor(
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_permission("cash.view_others")),
 ):
     sessions = list_open_cash_sessions(db)
     if not sessions:
@@ -74,7 +74,13 @@ def list_cash_sessions(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles("admin", "user")),
 ):
-    sessions = db.query(CashSession).order_by(CashSession.opened_at.desc()).limit(50).all()
+    query = db.query(CashSession).order_by(CashSession.opened_at.desc())
+    if user.role != "admin":
+        from app.services.permission_service import user_has_permission
+
+        if not user_has_permission(user, "cash.view_others"):
+            query = query.filter(CashSession.opened_by_user_id == user.id)
+    sessions = query.limit(50).all()
     return sessions
 
 

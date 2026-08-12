@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import sys
 import threading
@@ -8,6 +9,26 @@ import time
 import traceback
 from importlib import import_module
 from pathlib import Path
+
+# Fuerza inclusion del extension module en el analisis de PyInstaller.
+try:  # pragma: no cover
+    import pydantic_core  # noqa: F401
+    import pydantic_core._pydantic_core  # noqa: F401
+    import pydantic_settings  # noqa: F401
+    import sqlite3  # noqa: F401
+    import _sqlite3  # noqa: F401
+    import unicodedata  # noqa: F401
+    import httpx  # noqa: F401
+    import tzdata  # noqa: F401
+    import cryptography  # noqa: F401
+    import cryptography.hazmat.bindings._rust  # noqa: F401
+    import openpyxl  # noqa: F401
+    import serial  # noqa: F401
+    import jinja2  # noqa: F401
+    import greenlet  # noqa: F401
+    import _cffi_backend  # noqa: F401
+except Exception:
+    pass
 
 import uvicorn
 
@@ -26,6 +47,17 @@ class DesktopApi:
 
         launch_pending_update_restart()
         return True
+
+    def get_device_info(self) -> dict:
+        """Identidad estable de este PC para autorizacion en el servidor."""
+        import platform
+
+        from app.services.license_service import get_install_fingerprint
+
+        return {
+            "fingerprint": get_install_fingerprint(),
+            "hostname": (platform.node() or "").strip() or "PC",
+        }
 
 
 def _is_port_in_use(host: str, port: int) -> bool:
@@ -64,7 +96,7 @@ def _load_webview():
 
 def _resolve_mode() -> str:
     mode = os.getenv("FELPOS_MODE", "local").strip().lower()
-    if mode not in {"local", "server"}:
+    if mode not in {"local", "server", "client"}:
         return "local"
     return mode
 
@@ -73,9 +105,32 @@ def _resolve_bind_host(mode: str) -> str:
     explicit = (os.getenv("FELPOS_BIND_HOST") or "").strip()
     if explicit:
         return explicit
-    # Por defecto escucha en toda la red local para que la APK/celular puedan conectar.
+    if mode == "client":
+        return "127.0.0.1"
+    # Por defecto escucha en toda la red local para que otras cajas/celular puedan conectar.
     # Usa FELPOS_BIND_HOST=127.0.0.1 si quieres solo este equipo.
     return "0.0.0.0"
+
+
+def _show_user_error(message: str) -> None:
+    print(message)
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(0, message, "FEL POS", 0x10)
+        except Exception:
+            pass
+
+
+def _start_lan_announcer_safe(*, http_port: int, bind_host: str) -> None:
+    try:
+        from app.lan_discovery import start_lan_announcer
+
+        start_lan_announcer(http_port=http_port, bind_host=bind_host)
+        print(f"[INFO] Anuncio LAN activo (otras PCs pueden encontrar este servidor).")
+    except Exception as exc:
+        print(f"[WARN] No se pudo iniciar anuncio LAN: {exc}")
 
 
 def _run_server_mode(*, fastapi_app, bind_host: str, port: int) -> None:
@@ -84,6 +139,7 @@ def _run_server_mode(*, fastapi_app, bind_host: str, port: int) -> None:
     if bind_host == "0.0.0.0":
         print(f"[INFO] URL LAN: http://<IP-DE-TU-PC>:{port}")
     print("[INFO] Presiona Ctrl+C para detener el servidor.")
+    _start_lan_announcer_safe(http_port=port, bind_host=bind_host)
 
     config = uvicorn.Config(
         fastapi_app,
@@ -94,6 +150,83 @@ def _run_server_mode(*, fastapi_app, bind_host: str, port: int) -> None:
     )
     server = uvicorn.Server(config)
     server.run()
+
+
+def _prompt_server_url() -> str | None:
+    """Pide URL del servidor cuando el discovery LAN falla."""
+    try:
+        import tkinter as tk
+        from tkinter import simpledialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        url = simpledialog.askstring(
+            "Servidor FEL POS",
+            "No se encontro el servidor automaticamente.\n"
+            "Escribe la URL (ej. http://192.168.1.10:8000):",
+        )
+        root.destroy()
+        cleaned = (url or "").strip()
+        if cleaned and not cleaned.startswith("http://") and not cleaned.startswith("https://"):
+            cleaned = f"http://{cleaned}"
+        return cleaned or None
+    except Exception:
+        return None
+
+
+def _run_client_mode(*, port: int) -> None:
+    """Escritorio sin base local: busca el servidor FEL POS en la misma red WiFi/LAN."""
+    from app.lan_discovery import discover_server
+
+    print("[INFO] Modo caja (cliente): buscando servidor FEL POS en la red...")
+    server = discover_server(preferred_port=port, timeout=3.0)
+    runtime_root = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path.cwd()
+    cache_path = runtime_root / "data" / "last_server_url.txt"
+    url = None
+    if server:
+        url = server.base_url
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(url.strip() + "\n", encoding="utf-8")
+        except OSError:
+            pass
+    elif cache_path.exists():
+        try:
+            cached = cache_path.read_text(encoding="utf-8").strip()
+            if cached.startswith("http://") or cached.startswith("https://"):
+                print(f"[INFO] Discovery fallo; reintentando ultimo servidor: {cached}")
+                url = cached
+        except OSError:
+            url = None
+    if not url:
+        url = _prompt_server_url()
+        if url:
+            try:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                cache_path.write_text(url.strip() + "\n", encoding="utf-8")
+            except OSError:
+                pass
+    if not url:
+        _show_user_error(
+            "No se encontro un servidor FEL POS en la red.\n\n"
+            "En la PC principal abre FEL POS (modo normal/servidor) y deja esa PC encendida.\n"
+            "Las cajas deben estar en la misma WiFi/red.\n"
+            "Tambien puedes escribir la URL manualmente (ej. http://192.168.1.10:8000).\n"
+            "Luego inicia de nuevo esta caja."
+        )
+        raise RuntimeError("No se encontro servidor FEL POS en la red local.")
+
+    print(f"[INFO] Servidor encontrado: {url}")
+    webview = _load_webview()
+    if not webview:
+        raise RuntimeError(
+            "No se encontro pywebview para modo escritorio cliente. "
+            "Instala dependencias o abre el navegador en: " + url
+        )
+    window = _create_desktop_window(webview, url=url, js_api=DesktopApi())
+    webview.start(gui="edgechromium")
+    _ = window
 
 
 def _apply_pending_update_if_needed(runtime_root: Path) -> None:
@@ -241,19 +374,66 @@ def main() -> None:
     os.chdir(runtime_root)
     _load_env_file(runtime_root)
 
-    # Carpeta temporal writable (Program Files no sirve para unpack de PyInstaller).
-    runtime_tmp = Path(os.environ.get("LOCALAPPDATA") or "") / "FEL POS" / "tmp"
+    # Carpeta temporal writable SIN espacios (PyInstaller LoadLibrary falla con "FEL POS").
+    local_app = Path(os.environ.get("LOCALAPPDATA") or "")
+    runtime_tmp = local_app / "FELPOS" / "runtime-tmp"
     try:
         runtime_tmp.mkdir(parents=True, exist_ok=True)
         os.environ["TEMP"] = str(runtime_tmp)
         os.environ["TMP"] = str(runtime_tmp)
+        os.environ["FELPOS_RUNTIME_TMP"] = str(runtime_tmp)
     except OSError:
         pass
+
+    # Limpia extracciones _MEI viejas. NUNCA borrar sys._MEIPASS (extraccion actual).
+    current_mei: Path | None = None
+    mei = getattr(sys, "_MEIPASS", None)
+    if mei:
+        try:
+            current_mei = Path(mei).resolve()
+        except OSError:
+            current_mei = Path(mei)
+
+    for base in (
+        runtime_tmp,
+        local_app / "Temp",
+        local_app / "FEL POS" / "tmp",
+        Path(os.environ.get("TEMP") or ""),
+    ):
+        if not base or not base.exists():
+            continue
+        try:
+            for child in base.iterdir():
+                if not (child.is_dir() and child.name.upper().startswith("_MEI")):
+                    continue
+                try:
+                    child_resolved = child.resolve()
+                except OSError:
+                    child_resolved = child
+                if current_mei and child_resolved == current_mei:
+                    continue
+                shutil.rmtree(child, ignore_errors=True)
+        except OSError:
+            pass
 
     _apply_pending_update_if_needed(runtime_root)
     mode = _resolve_mode()
     bind_host = _resolve_bind_host(mode)
     port = DEFAULT_PORT
+
+    if mode == "client":
+        try:
+            _run_client_mode(port=port)
+        except Exception as exc:
+            log_path = _write_runtime_error(exc, runtime_root)
+            print(f"ERROR al iniciar FEL POS (cliente). Revisa: {log_path}")
+            if getattr(sys, "frozen", False):
+                try:
+                    os.startfile(str(log_path))  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+            raise
+        return
 
     server: uvicorn.Server | None = None
     desktop_api = DesktopApi()
@@ -299,6 +479,8 @@ def main() -> None:
                 "Hay una actualizacion pendiente y otra copia de FEL POS sigue activa. "
                 "Cierra todas las ventanas de FEL POS e intenta de nuevo."
             )
+        # Otro proceso ya sirve la app; igual anunciamos si este bind es LAN.
+        _start_lan_announcer_safe(http_port=port, bind_host=bind_host)
         window = _create_desktop_window(
             webview,
             url=f"http://{WINDOW_HOST}:{port}",
@@ -320,6 +502,8 @@ def main() -> None:
 
     if not _wait_for_port(WINDOW_HOST, port):
         raise RuntimeError("No se pudo iniciar el servidor local en FEL POS.")
+
+    _start_lan_announcer_safe(http_port=port, bind_host=bind_host)
 
     window = _create_desktop_window(
         webview,

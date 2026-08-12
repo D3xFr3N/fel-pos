@@ -5,14 +5,19 @@ pushd "%~dp0"
 set "APP_DIR=%CD%"
 
 REM PyInstaller desempaqueta a %%TEMP%%\_MEI* ANTES de ejecutar Python.
-REM Debe ser una carpeta del usuario, no Program Files ni Temp del sistema.
-set "FELPOS_RUNTIME_TMP=%LOCALAPPDATA%\FEL POS\tmp"
-if not exist "%LOCALAPPDATA%\FEL POS" mkdir "%LOCALAPPDATA%\FEL POS" >nul 2>&1
+REM Usar ruta SIN espacios: rutas con "FEL POS" rompen LoadLibrary en algunos PCs.
+set "FELPOS_RUNTIME_TMP=%LOCALAPPDATA%\FELPOS\runtime-tmp"
+if not exist "%LOCALAPPDATA%\FELPOS" mkdir "%LOCALAPPDATA%\FELPOS" >nul 2>&1
 if not exist "!FELPOS_RUNTIME_TMP!" mkdir "!FELPOS_RUNTIME_TMP!" >nul 2>&1
 if exist "!FELPOS_RUNTIME_TMP!" set "TEMP=!FELPOS_RUNTIME_TMP!"
 if exist "!FELPOS_RUNTIME_TMP!" set "TMP=!FELPOS_RUNTIME_TMP!"
+set "FELPOS_RUNTIME_TMP=!FELPOS_RUNTIME_TMP!"
 
+REM Limpia extracciones rotas (nuevo + Temp del sistema + ruta antigua con espacios).
 for /d %%D in ("!FELPOS_RUNTIME_TMP!\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
+for /d %%D in ("%LOCALAPPDATA%\Temp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
+for /d %%D in ("%TEMP%\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
+for /d %%D in ("%LOCALAPPDATA%\FEL POS\tmp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
 
 if exist "FELPOS.exe" goto launch
 if exist "FELPOS.exe.pending" goto apply_pending
@@ -36,7 +41,7 @@ exit /b 1
 :launch
 set "EXE_SIZE=0"
 for %%I in ("FELPOS.exe") do set "EXE_SIZE=%%~zI"
-if !EXE_SIZE! LSS 5000000 goto exe_bad
+if !EXE_SIZE! LSS 15000000 goto exe_bad
 goto exe_ok
 
 :exe_bad

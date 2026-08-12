@@ -1,18 +1,27 @@
+import threading
+
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import FelInvoice, PendingFelSale, Sale, SaleItem
+from app.models import FelInvoice, PendingFelSale, Sale, SaleItem, User
 from app.schemas import FelPendingBulkRetryOut, PendingFelSaleOut
 from app.services.fel_service import certify_sale
 
+_retry_lock = threading.Lock()
+_retrying_sale_ids: set[int] = set()
 
-def list_pending_fel_sales(db: Session) -> list[PendingFelSaleOut]:
-    rows = (
+
+def list_pending_fel_sales(db: Session, *, user: User | None = None) -> list[PendingFelSaleOut]:
+    query = (
         db.query(PendingFelSale)
         .options(joinedload(PendingFelSale.sale))
         .filter(PendingFelSale.status == "pending")
         .order_by(PendingFelSale.created_at.asc())
-        .all()
     )
+    if user is not None and getattr(user, "role", None) != "admin":
+        query = query.join(Sale, Sale.id == PendingFelSale.sale_id).filter(
+            Sale.created_by_user_id == user.id
+        )
+    rows = query.all()
     return [_pending_to_schema(row) for row in rows]
 
 
@@ -33,42 +42,51 @@ def retry_pending_fel_sale(db: Session, *, pending_id: int, user_id: int) -> Pen
     if not sale:
         raise ValueError("Venta asociada no encontrada.")
 
+    with _retry_lock:
+        if sale.id in _retrying_sale_ids:
+            raise ValueError("Ya hay un reintento en curso para esta venta.")
+        _retrying_sale_ids.add(sale.id)
+
     try:
-        fel_result = certify_sale(sale, sale.customer)
-    except Exception as exc:
-        pending.retry_count = int(pending.retry_count or 0) + 1
-        pending.last_error = str(exc)
+        try:
+            fel_result = certify_sale(sale, sale.customer)
+        except Exception as exc:
+            pending.retry_count = int(pending.retry_count or 0) + 1
+            pending.last_error = str(exc)
+            db.commit()
+            db.refresh(pending)
+            raise ValueError(f"No se pudo certificar: {exc}") from exc
+
+        if sale.fel_invoice:
+            invoice = sale.fel_invoice
+            invoice.uuid = fel_result.uuid
+            invoice.serie = fel_result.serie
+            invoice.numero = fel_result.numero
+            invoice.document_type = fel_result.document_type
+            invoice.status = fel_result.status
+            invoice.xml_content = fel_result.xml_content
+            invoice.certifier_response = fel_result.certifier_response
+        else:
+            invoice = FelInvoice(
+                sale_id=sale.id,
+                uuid=fel_result.uuid,
+                serie=fel_result.serie,
+                numero=fel_result.numero,
+                document_type=fel_result.document_type,
+                status=fel_result.status,
+                xml_content=fel_result.xml_content,
+                certifier_response=fel_result.certifier_response,
+            )
+            db.add(invoice)
+
+        pending.status = "certified"
+        pending.last_error = None
         db.commit()
         db.refresh(pending)
-        raise ValueError(f"No se pudo certificar: {exc}") from exc
-
-    if sale.fel_invoice:
-        invoice = sale.fel_invoice
-        invoice.uuid = fel_result.uuid
-        invoice.serie = fel_result.serie
-        invoice.numero = fel_result.numero
-        invoice.document_type = fel_result.document_type
-        invoice.status = fel_result.status
-        invoice.xml_content = fel_result.xml_content
-        invoice.certifier_response = fel_result.certifier_response
-    else:
-        invoice = FelInvoice(
-            sale_id=sale.id,
-            uuid=fel_result.uuid,
-            serie=fel_result.serie,
-            numero=fel_result.numero,
-            document_type=fel_result.document_type,
-            status=fel_result.status,
-            xml_content=fel_result.xml_content,
-            certifier_response=fel_result.certifier_response,
-        )
-        db.add(invoice)
-
-    pending.status = "certified"
-    pending.last_error = None
-    db.commit()
-    db.refresh(pending)
-    return _pending_to_schema(pending)
+        return _pending_to_schema(pending)
+    finally:
+        with _retry_lock:
+            _retrying_sale_ids.discard(sale.id)
 
 
 def dismiss_pending_fel_sale(db: Session, *, pending_id: int) -> PendingFelSaleOut:
@@ -82,6 +100,12 @@ def dismiss_pending_fel_sale(db: Session, *, pending_id: int) -> PendingFelSaleO
         raise ValueError("Venta FEL pendiente no encontrada.")
     pending.status = "dismissed"
     pending.last_error = None
+    from app.models import FelInvoice
+
+    fel = db.query(FelInvoice).filter(FelInvoice.sale_id == pending.sale_id).first()
+    if fel and str(fel.status or "").lower() == "pending":
+        fel.status = "dismissed"
+        fel.certifier_response = (fel.certifier_response or "") + "\n[dismissed by admin]"
     db.commit()
     db.refresh(pending)
     return _pending_to_schema(pending)
@@ -111,6 +135,11 @@ def retry_all_pending_fel_sales(db: Session, *, user_id: int) -> FelPendingBulkR
         failed=failed,
         items=results,
     )
+
+
+def auto_retry_pending_fel_sales(db: Session, *, user_id: int | None = None) -> FelPendingBulkRetryOut:
+    """Reintento controlado sin requerir usuario interactivo (startup / online)."""
+    return retry_all_pending_fel_sales(db, user_id=user_id or 0)
 
 
 def _pending_to_schema(row: PendingFelSale) -> PendingFelSaleOut:

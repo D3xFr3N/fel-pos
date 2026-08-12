@@ -8,10 +8,15 @@ echo ========================================
 echo.
 
 set "APP_DIR=%CD%"
-set "FELPOS_RUNTIME_TMP=%LOCALAPPDATA%\FEL POS\tmp"
+set "FELPOS_RUNTIME_TMP=%LOCALAPPDATA%\FELPOS\runtime-tmp"
+if not exist "%LOCALAPPDATA%\FELPOS" mkdir "%LOCALAPPDATA%\FELPOS" >nul 2>&1
 if not exist "!FELPOS_RUNTIME_TMP!" mkdir "!FELPOS_RUNTIME_TMP!" >nul 2>&1
 if exist "!FELPOS_RUNTIME_TMP!" set "TEMP=!FELPOS_RUNTIME_TMP!"
 if exist "!FELPOS_RUNTIME_TMP!" set "TMP=!FELPOS_RUNTIME_TMP!"
+
+for /d %%D in ("!FELPOS_RUNTIME_TMP!\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
+for /d %%D in ("%LOCALAPPDATA%\Temp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
+for /d %%D in ("%LOCALAPPDATA%\FEL POS\tmp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
 
 if exist "FELPOS.exe.pending" goto has_pending
 echo No hay actualizacion pendiente en esta carpeta.
@@ -28,7 +33,7 @@ exit /b 1
 :has_pending
 set "PENDING_SIZE=0"
 for %%I in ("FELPOS.exe.pending") do set "PENDING_SIZE=%%~zI"
-if !PENDING_SIZE! LSS 5000000 goto pending_bad
+if !PENDING_SIZE! LSS 15000000 goto pending_bad
 goto pending_ok
 
 :pending_bad
@@ -86,10 +91,12 @@ exit /b 1
 :exe_ok
 echo Listo. La copia anterior queda en FELPOS.exe.old hasta el primer arranque OK.
 echo Reiniciando FELPOS...
-timeout /t 1 >nul
+timeout /t 3 >nul
+for /d %%D in ("!FELPOS_RUNTIME_TMP!\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
+for /d %%D in ("%LOCALAPPDATA%\Temp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
 if exist "Iniciar_FELPOS.vbs" goto start_vbs
 if exist "Iniciar_FELPOS.bat" goto start_bat
-start "" "!APP_DIR!\FELPOS.exe"
+start "" cmd /c "set \"TEMP=!FELPOS_RUNTIME_TMP!\"&& set \"TMP=!FELPOS_RUNTIME_TMP!\"&& start \"\" \"!APP_DIR!\FELPOS.exe\""
 goto end_ok
 
 :start_vbs

@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>FEL POS Movil</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="stylesheet" href="/static/css/mobile.css">
@@ -11,8 +11,7 @@
   <main class="mobile-app">
     <header class="mobile-header">
       <h1>FEL POS Movil</h1>
-      <p>Conteo y verificacion de precios sincronizados con el sistema principal.</p>
-      <p class="hint">Usa tu usuario personal creado por admin en el sistema principal.</p>
+      <p>Conteo y precios sincronizados con el servidor.</p>
     </header>
 
     <section class="card">
@@ -23,11 +22,11 @@
       <form id="login-form" class="stack">
         <label>
           Usuario
-          <input name="username" required placeholder="admin o cajero">
+          <input name="username" required placeholder="admin o cajero" autocomplete="username">
         </label>
         <label>
           Clave
-          <input name="password" type="password" required placeholder="********">
+          <input name="password" type="password" required placeholder="********" autocomplete="current-password">
         </label>
         <button class="btn primary" type="submit">Iniciar sesion</button>
       </form>
@@ -48,7 +47,7 @@
       <form id="price-check-form" class="stack">
         <label>
           SKU / codigo de barras
-          <input id="price-sku" name="sku" required placeholder="Escanea codigo de barras">
+          <input id="price-sku" name="sku" required placeholder="Escanea codigo" autocomplete="off" enterkeyhint="search">
         </label>
         <button class="btn primary" type="submit">Consultar precio</button>
       </form>
@@ -61,15 +60,23 @@
       <form id="count-form" class="stack">
         <label>
           SKU / codigo de barras
-          <input id="count-sku" name="sku" required placeholder="Escanea SKU para conteo">
+          <input id="count-sku" name="sku" required placeholder="Escanea SKU" autocomplete="off" enterkeyhint="done">
         </label>
         <label>
           Cantidad
-          <input id="count-qty" name="qty" type="number" min="0.01" step="0.01" value="1" required>
+          <div class="qty-stepper">
+            <button type="button" class="btn ghost" id="count-qty-dec">-</button>
+            <input id="count-qty" name="qty" type="number" min="0.01" step="0.01" value="1" required>
+            <button type="button" class="btn ghost" id="count-qty-inc">+</button>
+          </div>
+        </label>
+        <label class="inline-option">
+          <input id="count-replace-mode" type="checkbox">
+          Reemplazar cantidad (no sumar)
         </label>
         <button id="count-submit-btn" class="btn primary" type="submit">Guardar escaneo</button>
       </form>
-      <p class="hint">Cada escaneo se guarda de inmediato en la orden activa.</p>
+      <p id="last-scan-feedback" class="hint">Listo para escanear.</p>
       <div id="count-summary" class="stack"></div>
       <div id="count-lines" class="stack"></div>
     </section>

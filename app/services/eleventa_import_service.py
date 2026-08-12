@@ -8,7 +8,12 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
-from app.models import Department, InventoryMovement, Product, Supplier
+from app.models import Department, Product, Supplier
+from app.services.inventory_branch_service import (
+    adjust_branch_stock,
+    get_available_stock,
+    get_or_create_main_branch,
+)
 
 DEFAULT_SUPPLIER_NAME = "Importado inventario"
 
@@ -256,19 +261,19 @@ def import_eleventa_rows(
                 if not conflict:
                     product.barcode = barcode
             if update_stock:
-                before_stock = float(product.stock)
-                product.stock = max(stock, 0)
-                if product.stock != before_stock:
-                    db.add(
-                        InventoryMovement(
-                            product_id=product.id,
-                            created_by_user_id=user_id,
-                            movement_type="adjustment",
-                            quantity=round(product.stock - before_stock, 2),
-                            before_stock=before_stock,
-                            after_stock=product.stock,
-                            notes="Importacion Eleventa",
-                        )
+                main = get_or_create_main_branch(db)
+                before_stock = get_available_stock(db, product, main.id)
+                target = max(stock, 0)
+                delta = round(target - before_stock, 2)
+                if abs(delta) > 0.0001:
+                    adjust_branch_stock(
+                        db,
+                        product,
+                        delta,
+                        branch_id=main.id,
+                        user_id=user_id,
+                        movement_type="adjustment",
+                        notes="Importacion Eleventa",
                     )
             stats.updated += 1
             continue
@@ -278,13 +283,14 @@ def import_eleventa_rows(
             if conflict:
                 barcode = None
 
+        initial_stock = max(stock, 0) if update_stock else 0
         product = Product(
             sku=sku,
             barcode=barcode,
             name=name[:200],
             cost=max(cost, 0),
             price=max(price, 0),
-            stock=max(stock, 0) if update_stock else 0,
+            stock=0,
             min_stock=max(min_stock, 0),
             supplier_id=supplier.id,
             department_id=department.id if department else None,
@@ -292,17 +298,16 @@ def import_eleventa_rows(
         )
         db.add(product)
         db.flush()
-        if update_stock and product.stock > 0:
-            db.add(
-                InventoryMovement(
-                    product_id=product.id,
-                    created_by_user_id=user_id,
-                    movement_type="entry",
-                    quantity=product.stock,
-                    before_stock=0,
-                    after_stock=product.stock,
-                    notes="Importacion Eleventa",
-                )
+        if update_stock and initial_stock > 0:
+            main = get_or_create_main_branch(db)
+            adjust_branch_stock(
+                db,
+                product,
+                initial_stock,
+                branch_id=main.id,
+                user_id=user_id,
+                movement_type="entry",
+                notes="Importacion Eleventa",
             )
         stats.created += 1
 

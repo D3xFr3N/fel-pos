@@ -22,8 +22,8 @@ echo ========================================
 echo Carpeta: %CD%
 echo.
 
-set "FELPOS_RUNTIME_TMP=%LOCALAPPDATA%\FEL POS\tmp"
-if not exist "%LOCALAPPDATA%\FEL POS" mkdir "%LOCALAPPDATA%\FEL POS" >nul 2>&1
+set "FELPOS_RUNTIME_TMP=%LOCALAPPDATA%\FELPOS\runtime-tmp"
+if not exist "%LOCALAPPDATA%\FELPOS" mkdir "%LOCALAPPDATA%\FELPOS" >nul 2>&1
 if not exist "!FELPOS_RUNTIME_TMP!" mkdir "!FELPOS_RUNTIME_TMP!" >nul 2>&1
 if exist "!FELPOS_RUNTIME_TMP!" set "TEMP=!FELPOS_RUNTIME_TMP!"
 if exist "!FELPOS_RUNTIME_TMP!" set "TMP=!FELPOS_RUNTIME_TMP!"
@@ -32,11 +32,12 @@ echo Limpiando carpetas temporales de arranque...
 for /d %%D in ("%~dp0_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
 for /d %%D in ("%LOCALAPPDATA%\Temp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
 for /d %%D in ("!FELPOS_RUNTIME_TMP!\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
+for /d %%D in ("%LOCALAPPDATA%\FEL POS\tmp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
 
 if not exist "FELPOS.exe.pending" goto after_pending_size
 set "PENDING_SIZE=0"
 for %%I in ("FELPOS.exe.pending") do set "PENDING_SIZE=%%~zI"
-if !PENDING_SIZE! LSS 5000000 goto drop_pending
+if !PENDING_SIZE! LSS 15000000 goto drop_pending
 goto after_pending_size
 
 :drop_pending
@@ -47,7 +48,7 @@ del /F /Q "FELPOS.exe.pending" >nul 2>&1
 if not exist "FELPOS.exe" goto try_pending_or_old
 set "EXE_SIZE=0"
 for %%I in ("FELPOS.exe") do set "EXE_SIZE=%%~zI"
-if !EXE_SIZE! LSS 5000000 goto exe_damaged
+if !EXE_SIZE! LSS 15000000 goto exe_damaged
 echo [OK] FELPOS.exe encontrado.
 if exist "FELPOS.exe.pending" goto clear_stale_pending
 goto launch

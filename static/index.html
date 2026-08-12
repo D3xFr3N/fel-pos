@@ -13,36 +13,42 @@
       <div class="brand">
         <img class="brand-icon" src="/static/brand-icon.png" alt="FEL POS">
         <div>
-          <h1>FEL POS</h1>
+          <h1>
+            FEL POS
+            <span id="app-version-label" class="version-label" aria-label="Version del sistema">—</span>
+          </h1>
           <p id="company-name">Punto de venta con factura electronica</p>
           <p class="app-creator">Creado por D3xFr3N</p>
         </div>
       </div>
       <nav class="tabs">
         <button class="tab active" data-tab="pos">Vender</button>
+        <button class="tab" data-tab="today">Hoy</button>
+        <button class="tab" data-tab="cash">Caja</button>
+        <button class="tab" data-tab="sales">Ventas</button>
         <button class="tab" data-tab="products">Productos</button>
         <button class="tab" data-tab="departments">Departamentos</button>
         <button class="tab" data-tab="suppliers">Proveedores</button>
         <button class="tab" data-tab="purchases">Compras</button>
-        <button class="tab" data-tab="inventory">Dashboard inventario</button>
-        <button class="tab" data-tab="stock-count">Conteo fisico</button>
-        <button class="tab" data-tab="sales">Ventas</button>
+        <button class="tab" data-tab="inventory">Inventario</button>
+        <button class="tab" data-tab="stock-count">Conteo</button>
         <button class="tab" data-tab="reports">Reportes</button>
         <button class="tab" data-tab="customers">Clientes</button>
         <button class="tab" data-tab="promotions">Promociones</button>
-        <button class="tab" data-tab="orders">Ordenes</button>
-        <button class="tab" data-tab="cash">Caja</button>
-        <button class="tab" data-tab="config">Configuracion</button>
+        <button class="tab" data-tab="orders" id="tab-btn-orders">Ordenes</button>
+        <button class="tab" data-tab="dining" id="tab-btn-dining" style="display:none;">Mesas</button>
+        <button class="tab" data-tab="config">Config</button>
       </nav>
       <div class="session-box">
-        <span id="app-version-label" class="version-label" hidden></span>
         <span id="session-user">Sin sesion</span>
+        <button id="open-shortcuts-help-btn" class="btn ghost" type="button" title="Ayuda de atajos (?)">Atajos</button>
         <button id="open-mobile-qr-btn" class="btn ghost">QR app cel</button>
         <button id="logout-btn" class="btn ghost">Salir</button>
       </div>
     </header>
 
     <div id="system-alerts-bar" class="system-alerts-bar" hidden></div>
+    <div id="print-recovery-bar" class="print-recovery-bar" hidden></div>
 
     <main>
       <section id="tab-pos" class="panel active">
@@ -50,12 +56,18 @@
           <div class="catalog">
             <div class="search-bar">
               <input id="product-search" type="search" placeholder="SKU / codigo + Enter para agregar...">
-              <select id="pos-department-filter">
-                <option value="">Todos los departamentos</option>
-              </select>
+              <div class="search-bar-filters">
+                <select id="pos-department-filter">
+                  <option value="">Todos los departamentos</option>
+                </select>
+                <select id="pos-branch-filter" title="Sucursal de venta">
+                  <option value="">Sucursal principal</option>
+                </select>
+              </div>
               <div id="pos-department-chips" class="department-chips"></div>
             </div>
             <div id="product-grid" class="product-grid"></div>
+            <div id="product-catalog-pager" class="catalog-pager" hidden></div>
           </div>
 
           <aside class="ticket">
@@ -65,7 +77,6 @@
                 <small id="active-ticket-subtitle" class="ticket-subtitle">Listo para agregar productos</small>
               </div>
               <div class="ticket-actions">
-                <button id="open-sale-session-btn" class="btn primary" type="button" hidden>Iniciar venta</button>
                 <button id="hold-ticket-btn" class="btn ghost" type="button" title="Deja este ticket abierto y empieza otro">Retener</button>
                 <button id="new-ticket-btn" class="btn ghost" type="button" title="Nuevo ticket (retiene el actual si tiene productos)">Nuevo</button>
                 <button id="close-current-sale-btn" class="btn ghost" title="Descarta el ticket actual sin cobrar">Descartar ticket</button>
@@ -74,14 +85,12 @@
             </div>
             <div id="open-tickets-bar" class="open-tickets-bar" hidden></div>
             <p id="cash-owner-indicator" class="cash-owner-indicator">Sin caja activa.</p>
-            <p id="sale-session-indicator" class="cash-owner-indicator">
-              Listo para vender.
-            </p>
 
             <div class="customer-fields">
               <label>
                 NIT cliente
-                <input id="customer-nit" type="text" value="CF" placeholder="CF o NIT">
+                <input id="customer-nit" type="text" value="CF" placeholder="CF o NIT" autocomplete="off">
+                <small id="customer-nit-status" class="nit-status">CF · Consumidor final</small>
               </label>
               <label>
                 Nombre
@@ -96,13 +105,13 @@
             </div>
 
             <div id="school-packages-pos" class="school-packages-pos" hidden>
-              <label>
+              <label class="school-package-label">
                 Paquete escolar
                 <select id="school-package-select">
                   <option value="">Seleccionar paquete...</option>
                 </select>
               </label>
-              <button id="add-school-package-btn" class="btn ghost" type="button">Agregar paquete</button>
+              <button id="add-school-package-btn" class="btn ghost" type="button">Agregar</button>
             </div>
 
             <div id="cart-items" class="cart-items"></div>
@@ -151,7 +160,16 @@
               </label>
               <div class="payment-actions">
                 <button id="open-cash-capture-btn" class="btn primary">Capturar efectivo (F12)</button>
-                <button id="close-cash-shift-btn" class="btn ghost" type="button">Cuadrar fondo (fin del dia)</button>
+              </div>
+              <div id="checkout-credit-options" class="checkout-credit-options" hidden>
+                <label class="inline-option">
+                  <input id="checkout-use-fcam" type="checkbox">
+                  FCAM (factura cambiaria)
+                </label>
+                <label id="checkout-loyalty-wrap" hidden>
+                  Canjear puntos lealtad
+                  <input id="checkout-loyalty-redeem" type="number" step="0.01" min="0" value="0" placeholder="0">
+                </label>
               </div>
               <p class="hint">Flujo efectivo: F12 captura, luego F1 imprime o F2 no imprime para confirmar la venta.</p>
             </div>
@@ -161,15 +179,18 @@
 
       <section id="tab-products" class="panel">
         <div class="panel-header">
-          <h2>Inventario</h2>
+          <h2 id="products-panel-title">Productos</h2>
           <div class="panel-actions">
             <button id="show-low-stock-btn" class="btn ghost">Bajo inventario</button>
+            <button id="show-inactive-products-btn" class="btn ghost">Inactivos</button>
             <button id="show-all-products-btn" class="btn ghost">Ver todos</button>
             <button id="import-eleventa-btn" class="btn ghost">Importar inventario</button>
             <button id="generate-missing-barcodes-btn" class="btn ghost">Generar CB faltantes</button>
+            <button id="manage-school-packages-btn" class="btn ghost" hidden>Paquetes escolares</button>
             <button id="new-product-btn" class="btn primary">Nuevo producto</button>
           </div>
         </div>
+        <div id="school-packages-admin" class="config-card school-packages-admin" hidden></div>
         <div id="products-table" class="table-wrap"></div>
       </section>
 
@@ -206,6 +227,8 @@
           </div>
         </div>
         <div id="inventory-dashboard" class="config-card"></div>
+        <div id="pharmacy-expiry-panel" class="config-card" hidden style="margin-top:1rem;"></div>
+        <div id="pharmacy-rx-panel" class="config-card" hidden style="margin-top:1rem;"></div>
       </section>
 
       <section id="tab-stock-count" class="panel">
@@ -230,9 +253,32 @@
 
       <section id="tab-sales" class="panel">
         <div class="panel-header">
-          <h2>Historial de ventas</h2>
+          <div>
+            <h2 id="sales-panel-title">Historial de ventas</h2>
+            <small id="sales-filter-summary" class="hint">Últimas ventas registradas</small>
+          </div>
+          <button id="sales-go-cash-btn" class="btn ghost" type="button">Ver / cuadrar mi caja</button>
+        </div>
+        <div class="sales-filters" aria-label="Filtros del historial de ventas">
+          <label>Desde<input id="sales-filter-from" type="date"></label>
+          <label>Hasta<input id="sales-filter-to" type="date"></label>
+          <label class="sales-filter-search">NIT o cliente<input id="sales-filter-customer" type="search" placeholder="CF, NIT o nombre"></label>
+          <label>Cajero<select id="sales-filter-cashier"><option value="">Todos</option></select></label>
+          <label>Total mínimo<input id="sales-filter-min-total" type="number" min="0" step="0.01" placeholder="0.00"></label>
+          <label>Total máximo<input id="sales-filter-max-total" type="number" min="0" step="0.01" placeholder="Sin límite"></label>
+          <button id="sales-filter-clear" class="btn ghost" type="button">Limpiar filtros</button>
         </div>
         <div id="sales-table" class="table-wrap"></div>
+      </section>
+
+      <section id="tab-today" class="panel">
+        <div class="panel-header">
+          <h2>Resumen de hoy</h2>
+          <div class="panel-actions">
+            <button id="refresh-today-btn" class="btn primary" type="button">Actualizar</button>
+          </div>
+        </div>
+        <div id="today-dashboard" class="config-card"></div>
       </section>
 
       <section id="tab-reports" class="panel">
@@ -272,6 +318,19 @@
         <div id="orders-table" class="table-wrap"></div>
       </section>
 
+      <section id="tab-dining" class="panel">
+        <div class="panel-header">
+          <h2>Mesas y comandas</h2>
+          <div class="panel-actions">
+            <button id="refresh-dining-btn" class="btn ghost" type="button">Actualizar</button>
+            <button id="new-dining-table-btn" class="btn primary" type="button">Nueva mesa</button>
+          </div>
+        </div>
+        <p class="hint">Abre una mesa, agrega platillos a la comanda y cobra al cerrar.</p>
+        <div id="dining-tables-grid" class="dining-grid"></div>
+        <div id="dining-check-panel" class="config-card dining-check-panel"></div>
+      </section>
+
       <section id="tab-cash" class="panel">
         <div class="panel-header">
           <h2>Control de caja</h2>
@@ -281,9 +340,9 @@
 
       <section id="tab-config" class="panel">
         <div class="panel-header">
-          <h2>Datos del emisor FEL</h2>
+          <h2>Configuracion</h2>
         </div>
-        <div id="config-card" class="config-card"></div>
+        <div id="config-card" class="config-card config-shell"></div>
       </section>
     </main>
   </div>
@@ -327,21 +386,55 @@
           </label>
         </div>
       </section>
-      <label>Precio<input name="price" type="number" step="0.01" min="0" required></label>
-      <label>Costo<input name="cost" type="number" step="0.01" min="0" value="0"></label>
-      <label class="inline-option">
-        <input name="tracks_inventory" type="checkbox" checked>
-        Maneja inventario
+      <div class="form-row-2">
+        <label>Precio<input name="price" type="number" step="0.01" min="0" required></label>
+        <label>Precio VIP<input name="price_vip" type="number" step="0.01" min="0" placeholder="Opcional"></label>
+      </div>
+      <div class="form-row-2">
+        <label>Costo<input name="cost" type="number" step="0.01" min="0" value="0"></label>
+        <label>Bien o servicio
+          <select name="goods_or_services">
+            <option value="B">Bien (B)</option>
+            <option value="S">Servicio (S)</option>
+          </select>
+        </label>
+      </div>
+      <label id="product-dining-modifiers-wrap" hidden>
+        Modificadores comanda (CSV)
+        <input name="dining_modifiers" placeholder="Ej. Sin cebolla, Extra queso, Picante">
       </label>
-      <p class="hint">Desmarca esta opcion para servicios o productos sin control de existencias. Luego podras venderlos aunque el stock sea 0. En Inventario tambien puedes pulsar Si/No en la columna Inventario.</p>
-      <label id="product-stock-label">Stock<input name="stock" type="number" step="0.01" min="0" value="0"></label>
-      <label id="product-min-stock-label">Stock minimo<input name="min_stock" type="number" step="0.01" min="0" value="0"></label>
-      <label>IVA %<input name="tax_rate" type="number" step="0.01" min="0" max="100" value="12"></label>
-      <label>
-        <input name="wholesale_enabled" type="checkbox">
-        Habilitar mayoreo
-      </label>
-      <label>Cantidad minima mayoreo<input name="wholesale_min_qty" type="number" step="1" min="0" value="0"></label>
+      <div class="product-options-grid">
+        <label class="inline-option">
+          <input name="tracks_inventory" type="checkbox" checked>
+          Maneja inventario
+        </label>
+        <label class="inline-option" id="product-sale-by-weight-wrap" hidden>
+          <input name="sale_by_weight" type="checkbox">
+          Vender por peso / medida
+        </label>
+        <label class="inline-option" id="product-track-expiry-wrap" hidden>
+          <input name="track_expiry" type="checkbox">
+          Lotes / vencimiento (FEFO)
+        </label>
+        <label class="inline-option" id="product-requires-prescription-wrap" hidden>
+          <input name="requires_prescription" type="checkbox">
+          Requiere receta medica
+        </label>
+        <label class="inline-option">
+          <input name="wholesale_enabled" type="checkbox">
+          Habilitar mayoreo
+        </label>
+      </div>
+      <p class="hint" id="product-track-expiry-hint" hidden>Si activas FEFO, las entradas deben registrar lote y fecha. Sin lotes en la sucursal, no se podra vender.</p>
+      <div class="form-row-2">
+        <label id="product-stock-label">Stock<input name="stock" type="number" step="0.01" min="0" value="0"></label>
+        <label id="product-min-stock-label">Stock minimo<input name="min_stock" type="number" step="0.01" min="0" value="0"></label>
+      </div>
+      <p class="hint" id="product-stock-edit-hint" hidden>Al editar, el stock es solo lectura (suma de sucursales). Usa Ingreso, Conteo o Transferencia para ajustarlo.</p>
+      <div class="form-row-2">
+        <label>IVA %<input name="tax_rate" type="number" step="0.01" min="0" max="100" value="12"></label>
+        <label>Cant. min. mayoreo<input name="wholesale_min_qty" type="number" step="1" min="0" value="0"></label>
+      </div>
       <label>Descuento mayoreo %<input name="wholesale_discount_pct" type="number" step="0.01" min="0" max="100" value="0"></label>
       <div class="dialog-actions">
         <button type="button" class="btn ghost" id="close-product-dialog">Cancelar</button>
@@ -350,11 +443,39 @@
     </form>
   </dialog>
 
+  <dialog id="school-package-dialog">
+    <form id="school-package-form">
+      <h3 id="school-package-dialog-title">Nuevo paquete escolar</h3>
+      <label>Nombre<input name="name" required placeholder="Ej. Utiles 1ro primaria"></label>
+      <label>Grado<input name="school_grade" placeholder="Ej. Primaria"></label>
+      <label>Notas<input name="notes" placeholder="Opcional"></label>
+      <div id="school-package-lines" class="table-wrap"></div>
+      <div class="panel-actions form-toolbar">
+        <button type="button" class="btn ghost" id="school-package-add-line-btn">Agregar producto</button>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-school-package-dialog">Cancelar</button>
+        <button type="submit" class="btn primary">Guardar paquete</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="stock-entry-dialog">
     <form id="stock-entry-form" method="dialog">
       <h3 id="stock-entry-title">Ingreso de inventario</h3>
+      <label>Sucursal
+        <select name="branch_id" id="stock-entry-branch"></select>
+      </label>
       <label>Cantidad de entrada<input name="quantity" type="number" step="0.01" min="0.01" required></label>
       <label>Notas<input name="notes" placeholder="Compra, ajuste, etc."></label>
+      <fieldset id="stock-entry-lot-fields" class="lot-fieldset">
+        <legend>Lote / vencimiento (opcional)</legend>
+        <div class="form-row-2">
+          <label>Codigo de lote<input name="lot_code" placeholder="Ej. L2401"></label>
+          <label>Vence<input name="expires_at" type="date"></label>
+        </div>
+        <p class="hint">Obligatorio si el producto controla FEFO.</p>
+      </fieldset>
       <div class="dialog-actions">
         <button type="button" class="btn ghost" id="close-stock-entry-dialog">Cancelar</button>
         <button type="submit" class="btn primary">Registrar entrada</button>
@@ -571,9 +692,27 @@
       </div>
       <label>
         Efectivo recibido
-        <input id="cash-checkout-received" type="number" min="0" step="0.01" inputmode="decimal" required>
+        <input id="cash-checkout-received" type="text" inputmode="decimal" autocomplete="off" required>
       </label>
-      <p class="hint">Si paga exacto, solo cobra. Si entrega más, escribe la cantidad recibida; el total seleccionado se reemplazará automáticamente.</p>
+      <div id="cash-checkout-keypad" class="cash-keypad" aria-label="Teclado de cobro">
+        <button type="button" class="cash-key" data-cash-key="1">1</button>
+        <button type="button" class="cash-key" data-cash-key="2">2</button>
+        <button type="button" class="cash-key" data-cash-key="3">3</button>
+        <button type="button" class="cash-key" data-cash-key="50">Q50</button>
+        <button type="button" class="cash-key" data-cash-key="4">4</button>
+        <button type="button" class="cash-key" data-cash-key="5">5</button>
+        <button type="button" class="cash-key" data-cash-key="6">6</button>
+        <button type="button" class="cash-key" data-cash-key="100">Q100</button>
+        <button type="button" class="cash-key" data-cash-key="7">7</button>
+        <button type="button" class="cash-key" data-cash-key="8">8</button>
+        <button type="button" class="cash-key" data-cash-key="9">9</button>
+        <button type="button" class="cash-key" data-cash-key="200">Q200</button>
+        <button type="button" class="cash-key" data-cash-key=".">.</button>
+        <button type="button" class="cash-key" data-cash-key="0">0</button>
+        <button type="button" class="cash-key" data-cash-key="back">⌫</button>
+        <button type="button" class="cash-key cash-key-exact" data-cash-key="exact">Exacto</button>
+      </div>
+      <p class="hint">Teclado tactil: escribe el monto o usa billetes rapidos. Exacto = paga el total.</p>
       <div class="change-box">
         <span>Cambio a entregar</span>
         <strong id="cash-checkout-change">Q 0.00</strong>
@@ -586,12 +725,56 @@
     </form>
   </dialog>
 
+  <dialog id="prescription-confirm-dialog" class="app-modal-dialog">
+    <form id="prescription-confirm-form" method="dialog">
+      <h3>Receta medica</h3>
+      <p class="hint" id="prescription-confirm-intro">Confirma que el cliente presenta receta medica.</p>
+      <ul id="prescription-confirm-list" class="compact-list"></ul>
+      <div class="form-row-2">
+        <label>Medico<input id="prescription-doctor-name" name="doctor_name" placeholder="Nombre del medico"></label>
+        <label>Colegiado<input id="prescription-license-no" name="license_no" placeholder="No. colegiado"></label>
+      </div>
+      <label>Paciente<input id="prescription-patient-name" name="patient_name" placeholder="Opcional"></label>
+      <label>Notas receta<textarea id="prescription-notes" name="notes" rows="2" placeholder="Opcional"></textarea></label>
+      <label class="inline-option">
+        <input id="prescription-confirm-check" type="checkbox">
+        El cliente presenta receta valida
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="prescription-confirm-cancel">Cancelar</button>
+        <button type="submit" class="btn primary" id="prescription-confirm-ok" disabled>Continuar cobro</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="whatsapp-ticket-dialog" class="app-modal-dialog">
+    <form id="whatsapp-ticket-form" method="dialog">
+      <h3>Enviar ticket por WhatsApp</h3>
+      <p class="hint">Se abre WhatsApp con el resumen del ticket listo para enviar.</p>
+      <label>
+        Telefono (502…)
+        <input id="whatsapp-ticket-phone" type="tel" inputmode="tel" placeholder="50255550101" autocomplete="tel">
+      </label>
+      <label>
+        Mensaje
+        <textarea id="whatsapp-ticket-message" rows="8"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="close-whatsapp-ticket-dialog">Cancelar</button>
+        <button type="submit" class="btn primary">Abrir WhatsApp</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="sale-dialog">
     <div id="sale-detail"></div>
     <div class="dialog-actions">
       <button type="button" class="btn ghost" id="close-sale-dialog">Cerrar</button>
+      <button type="button" class="btn ghost" id="whatsapp-ticket-btn">WhatsApp</button>
       <button type="button" class="btn ghost" id="register-return-btn">Registrar devolucion</button>
       <button type="button" class="btn ghost" id="print-receipt-btn">Imprimir ticket</button>
+      <button type="button" class="btn ghost" id="download-fel-pdf-btn" hidden>PDF FEL</button>
+      <button type="button" class="btn ghost" id="void-fel-btn" hidden>Anular FEL</button>
       <button type="button" class="btn primary" id="download-xml-btn">Descargar XML FEL</button>
     </div>
   </dialog>
@@ -614,11 +797,19 @@
 
   <dialog id="order-dialog">
     <form id="order-form" method="dialog">
-      <h3>Nueva orden</h3>
+      <h3 id="order-dialog-title">Nuevo apartado / orden</h3>
       <label>Cliente<input name="customer_name" required></label>
       <label>WhatsApp<input name="customer_phone" placeholder="502XXXXXXXX"></label>
       <label>Gmail<input name="customer_email" type="email"></label>
-      <label>Total estimado<input name="total_estimate" type="number" step="0.01" min="0" value="0"></label>
+      <div id="order-lines" class="table-wrap"></div>
+      <div class="panel-actions form-toolbar">
+        <button type="button" class="btn ghost" id="order-add-line-btn">Agregar producto</button>
+      </div>
+      <div class="form-row-2">
+        <label>Total estimado<input name="total_estimate" type="number" step="0.01" min="0" value="0"></label>
+        <label>Anticipo<input name="deposit_paid" type="number" step="0.01" min="0" value="0"></label>
+      </div>
+      <label>Fecha retiro<input name="pickup_at" type="datetime-local"></label>
       <label>Notas<textarea name="notes" rows="3"></textarea></label>
       <div class="dialog-actions">
         <button type="button" class="btn ghost" id="close-order-dialog">Cancelar</button>
@@ -722,6 +913,14 @@
         <span>Devoluciones en efectivo</span>
         <strong id="cash-close-returns">Q 0.00</strong>
       </div>
+      <div class="change-box" id="cash-close-income-row" hidden>
+        <span>Otros ingresos (abonos, etc.)</span>
+        <strong id="cash-close-income">Q 0.00</strong>
+      </div>
+      <div class="change-box" id="cash-close-expense-row" hidden>
+        <span>Gastos manuales</span>
+        <strong id="cash-close-expense">Q 0.00</strong>
+      </div>
       <div class="change-box">
         <span>Efectivo esperado</span>
         <strong id="cash-close-expected">Q 0.00</strong>
@@ -737,21 +936,6 @@
       <div class="dialog-actions">
         <button type="button" class="btn ghost" id="close-cash-close-summary-dialog">Cancelar</button>
         <button type="submit" class="btn primary">Confirmar cuadre</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="sale-password-dialog" class="startup-dialog">
-    <form id="sale-password-form" method="dialog">
-      <h3>Iniciar venta</h3>
-      <p id="sale-password-hint" class="hint">Escribe tu clave para comenzar a vender.</p>
-      <label>
-        Clave
-        <input id="sale-password-input" type="password" autocomplete="current-password" placeholder="Ingresa tu clave">
-      </label>
-      <div class="dialog-actions">
-        <button type="button" class="btn ghost sale-password-extra-action" id="close-sale-password-dialog">Cancelar</button>
-        <button type="submit" class="btn primary" id="sale-password-submit-btn">Autorizar venta</button>
       </div>
     </form>
   </dialog>
@@ -789,6 +973,17 @@
       <label>Correo<input name="email" type="email"></label>
       <label>Telefono<input name="phone"></label>
       <label>Direccion<input name="address"></label>
+      <label>Tarifa de precio
+        <select name="price_tier">
+          <option value="retail">Detalle (retail)</option>
+          <option value="wholesale">Mayoreo (wholesale)</option>
+          <option value="vip">VIP</option>
+        </select>
+      </label>
+      <label id="customer-loyalty-wrap" hidden>
+        Puntos lealtad
+        <input name="loyalty_points_display" type="text" readonly>
+      </label>
       <label>Limite de credito (Q)<input name="credit_limit" type="number" step="0.01" min="0" value="0"></label>
       <label>Notas<textarea name="notes" rows="2"></textarea></label>
       <div class="dialog-actions">
@@ -841,6 +1036,27 @@
     </form>
   </dialog>
 
+  <dialog id="shortcuts-help-dialog">
+    <form method="dialog" id="shortcuts-help-form">
+      <h3>Atajos de teclado</h3>
+      <div id="shortcuts-help-body" class="table-wrap"></div>
+      <div class="dialog-actions">
+        <button type="button" class="btn primary" id="close-shortcuts-help-dialog">Cerrar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/js/core/utils.js"></script>
+  <script src="/static/js/core/state.js"></script>
+  <script src="/static/js/core/theme.js"></script>
+  <script src="/static/js/core/api.js"></script>
+  <script src="/static/js/features/dialogs.js"></script>
+  <script src="/static/js/features/dining.js"></script>
+  <script src="/static/js/features/orders.js"></script>
+  <script src="/static/js/features/lan.js"></script>
+  <script src="/static/js/features/config-ui.js"></script>
+  <script src="/static/js/features/checkout.js"></script>
+  <script src="/static/js/features/tickets.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>

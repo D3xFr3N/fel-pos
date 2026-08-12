@@ -5,15 +5,19 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app.dependencies import require_roles
+from app.dependencies import require_permission
 from app.models import (
     Department,
-    InventoryMovement,
     Product,
     StockCountItem,
     StockCountScanLog,
     StockCountSession,
     User,
+)
+from app.services.inventory_branch_service import (
+    adjust_branch_stock,
+    get_available_stock,
+    resolve_branch_id,
 )
 from app.schemas import (
     StockCountItemOut,
@@ -43,14 +47,26 @@ def _recalculate_line(line: StockCountItem) -> None:
     line.updated_at = datetime.utcnow()
 
 
-def _refresh_line_snapshot_from_product(line: StockCountItem, product: Product) -> None:
+def _session_branch_id(db, session: StockCountSession) -> int:
+    return resolve_branch_id(db, getattr(session, "branch_id", None))
+
+
+def _refresh_line_snapshot_from_product(
+    db,
+    line: StockCountItem,
+    product: Product,
+    *,
+    branch_id: int | None = None,
+    refresh_system_quantity: bool = False,
+) -> None:
     line.sku_snapshot = product.sku
     line.name_snapshot = product.name
     line.description_snapshot = product.description
     line.unit_cost_snapshot = product.cost
     line.unit_price_snapshot = product.price
-    # Baseline del sistema en el momento del conteo de esta linea.
-    line.system_quantity = product.stock
+    # Baseline solo al crear la linea (o recount explicito). No resetear en scans posteriores.
+    if refresh_system_quantity:
+        line.system_quantity = get_available_stock(db, product, branch_id)
 
 
 def _line_to_schema(line: StockCountItem) -> StockCountItemOut:
@@ -134,6 +150,7 @@ def _session_to_schema(session: StockCountSession, include_items: bool = True) -
         order_code=session.order_code,
         department_id=session.department_id,
         department_name=session.department.name if session.department else None,
+        branch_id=getattr(session, "branch_id", None),
         status=session.status,
         notes=session.notes,
         applied_at=session.applied_at,
@@ -205,7 +222,7 @@ def _add_scan_log(
 @router.get("/sessions", response_model=list[StockCountSessionOut])
 def list_stock_count_sessions(
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_permission("stock.count")),
 ):
     sessions = (
         db.query(StockCountSession)
@@ -220,7 +237,7 @@ def list_stock_count_sessions(
 @router.get("/sessions/current", response_model=StockCountSessionOut | None)
 def get_current_stock_count_session(
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin", "user")),
+    user: User = Depends(require_permission("stock.count")),
 ):
     current = (
         db.query(StockCountSession)
@@ -247,7 +264,7 @@ def get_current_stock_count_session(
 def create_stock_count_session(
     payload: StockCountSessionCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_permission("stock.count")),
 ):
     current_open = (
         db.query(StockCountSession)
@@ -284,6 +301,7 @@ def create_stock_count_session(
         created_by_user_id=user.id,
         order_code=order_code,
         department_id=department.id,
+        branch_id=resolve_branch_id(db, payload.branch_id),
         status="open",
         notes=(payload.notes or "").strip() or None,
     )
@@ -297,7 +315,7 @@ def create_stock_count_session(
 def get_stock_count_session(
     session_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_permission("stock.count")),
 ):
     session = _fetch_session(db, session_id)
     if not session:
@@ -310,7 +328,7 @@ def scan_stock_count_item(
     session_id: int,
     payload: StockCountScanIn,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin", "user")),
+    user: User = Depends(require_permission("stock.count")),
 ):
     session = _fetch_session(db, session_id)
     if not session:
@@ -355,6 +373,7 @@ def scan_stock_count_item(
             ),
         )
 
+    branch_id = _session_branch_id(db, session)
     line = next((item for item in session.items if item.product_id == product.id), None)
     if not line:
         line = StockCountItem(
@@ -365,7 +384,7 @@ def scan_stock_count_item(
             description_snapshot=product.description,
             unit_cost_snapshot=product.cost,
             unit_price_snapshot=product.price,
-            system_quantity=product.stock,
+            system_quantity=get_available_stock(db, product, branch_id),
             counted_quantity=0,
         )
         db.add(line)
@@ -376,7 +395,7 @@ def scan_stock_count_item(
     else:
         line.counted_quantity = float(line.counted_quantity or 0) + float(payload.counted_quantity or 0)
 
-    _refresh_line_snapshot_from_product(line, product)
+    _refresh_line_snapshot_from_product(db, line, product, branch_id=branch_id)
     _recalculate_line(line)
     _add_scan_log(
         db,
@@ -402,7 +421,7 @@ def set_stock_count_item_quantity(
     product_id: int,
     payload: StockCountSetQuantityIn,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_permission("stock.count")),
 ):
     session = _fetch_session(db, session_id)
     if not session:
@@ -420,7 +439,7 @@ def set_stock_count_item_quantity(
 
     before_counted = float(line.counted_quantity or 0)
     line.counted_quantity = payload.counted_quantity
-    _refresh_line_snapshot_from_product(line, product)
+    _refresh_line_snapshot_from_product(db, line, product, branch_id=_session_branch_id(db, session))
     _recalculate_line(line)
     _add_scan_log(
         db,
@@ -446,7 +465,7 @@ def delete_stock_count_item(
     session_id: int,
     product_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_permission("stock.count")),
 ):
     session = _fetch_session(db, session_id)
     if not session:
@@ -478,8 +497,18 @@ def delete_stock_count_item(
 def apply_stock_count_session(
     session_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_permission("stock.count")),
 ):
+    locked = (
+        db.query(StockCountSession)
+        .filter(StockCountSession.id == session_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if not locked:
+        raise HTTPException(status_code=404, detail="Sesion de conteo no encontrada.")
+    _require_open_session(locked)
+
     session = _fetch_session(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Sesion de conteo no encontrada.")
@@ -500,29 +529,37 @@ def apply_stock_count_session(
         if abs(captured_diff) < 0.0001:
             continue
 
-        before_stock = _round2(product.stock)
-        after_stock = _round2(before_stock + captured_diff)
-        if after_stock < 0:
-            after_stock = 0.0
-        adjustment = _round2(after_stock - before_stock)
-        if abs(adjustment) < 0.0001:
+        branch_id = _session_branch_id(db, session)
+        before = _round2(get_available_stock(db, product, branch_id))
+        after = max(0.0, _round2(before + captured_diff))
+        delta = _round2(after - before)
+        if abs(delta) < 0.0001:
             continue
 
-        product.stock = after_stock
-        db.add(
-            InventoryMovement(
-                product_id=product.id,
-                created_by_user_id=user.id,
+        try:
+            adjust_branch_stock(
+                db,
+                product,
+                delta,
+                branch_id=branch_id,
+                user_id=user.id,
                 movement_type="count_adjustment",
-                quantity=adjustment,
-                before_stock=before_stock,
-                after_stock=after_stock,
                 notes=(
                     f"Ajuste por conteo de inventario #{session.id} "
                     f"(orden {session.order_code or session.id}, diff capturada {captured_diff:+.2f})"
                 ),
             )
-        )
+            from app.services.lot_service import adjust_lots_quantity
+
+            adjust_lots_quantity(
+                db,
+                product=product,
+                quantity_delta=delta,
+                branch_id=branch_id,
+                lot_code=f"CONTEO-{session.order_code or session.id}",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     session.status = "applied"
     session.applied_at = datetime.utcnow()
@@ -540,7 +577,7 @@ def recount_stock_count_session(
     session_id: int,
     payload: StockCountRecountIn,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin")),
+    user: User = Depends(require_permission("stock.count")),
 ):
     session = _fetch_session(db, session_id)
     if not session:

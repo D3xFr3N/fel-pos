@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.business_profiles import BusinessProfile
 
@@ -22,10 +22,16 @@ class ProductBase(BaseModel):
     stock: float = Field(default=0, ge=0)
     min_stock: float = Field(default=0, ge=0)
     tracks_inventory: int = Field(default=1, ge=0, le=1)
+    track_expiry: int = Field(default=0, ge=0, le=1)
+    requires_prescription: int = Field(default=0, ge=0, le=1)
+    sale_by_weight: int = Field(default=0, ge=0, le=1)
     tax_rate: float = Field(default=0.12, ge=0, le=1)
     wholesale_enabled: int = Field(default=0, ge=0, le=1)
     wholesale_min_qty: float = Field(default=0, ge=0)
     wholesale_discount_pct: float = Field(default=0, ge=0, le=100)
+    price_vip: float | None = Field(default=None, ge=0)
+    goods_or_services: str = Field(default="B", max_length=1)
+    dining_modifiers: str | None = Field(default=None, max_length=500)
 
 
 class ProductCreate(ProductBase):
@@ -48,10 +54,16 @@ class ProductUpdate(BaseModel):
     stock: float | None = Field(default=None, ge=0)
     min_stock: float | None = Field(default=None, ge=0)
     tracks_inventory: int | None = Field(default=None, ge=0, le=1)
+    track_expiry: int | None = Field(default=None, ge=0, le=1)
+    requires_prescription: int | None = Field(default=None, ge=0, le=1)
+    sale_by_weight: int | None = Field(default=None, ge=0, le=1)
     tax_rate: float | None = Field(default=None, ge=0, le=1)
     wholesale_enabled: int | None = Field(default=None, ge=0, le=1)
     wholesale_min_qty: float | None = Field(default=None, ge=0)
     wholesale_discount_pct: float | None = Field(default=None, ge=0, le=100)
+    price_vip: float | None = Field(default=None, ge=0)
+    goods_or_services: str | None = Field(default=None, max_length=1)
+    dining_modifiers: str | None = Field(default=None, max_length=500)
     active: int | None = None
 
 
@@ -171,7 +183,10 @@ class CustomerBase(BaseModel):
     email: str | None = None
     phone: str | None = None
     address: str | None = None
+    municipality: str | None = None
+    department: str | None = None
     credit_limit: float = Field(default=0, ge=0)
+    price_tier: str = Field(default="retail")
     notes: str | None = None
 
 
@@ -184,7 +199,10 @@ class CustomerUpdate(BaseModel):
     email: str | None = None
     phone: str | None = None
     address: str | None = None
+    municipality: str | None = None
+    department: str | None = None
     credit_limit: float | None = Field(default=None, ge=0)
+    price_tier: str | None = None
     notes: str | None = None
     active: int | None = Field(default=None, ge=0, le=1)
 
@@ -192,6 +210,7 @@ class CustomerUpdate(BaseModel):
 class CustomerOut(CustomerBase):
     id: int
     credit_balance: float = 0
+    loyalty_points: float = 0
     active: int = 1
 
     model_config = {"from_attributes": True}
@@ -222,11 +241,14 @@ class CustomerLookupOut(BaseModel):
     email: str | None = None
     address: str | None = None
     found: bool = False
+    source: str = "none"  # local | remote | none
+    lookup_available: bool = False
 
 
 class StockEntryCreate(BaseModel):
     quantity: float = Field(gt=0)
     notes: str | None = None
+    branch_id: int | None = None
 
 
 class InventoryMovementOut(BaseModel):
@@ -239,6 +261,7 @@ class InventoryMovementOut(BaseModel):
     before_stock: float
     after_stock: float
     notes: str | None = None
+    branch_id: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -264,6 +287,7 @@ class LowStockReportOut(BaseModel):
 class SaleItemInput(BaseModel):
     product_id: int
     quantity: float = Field(gt=0)
+    unit_price: float | None = Field(default=None, ge=0)
 
 
 class SalePaymentInput(BaseModel):
@@ -278,17 +302,32 @@ class SalePaymentOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PrescriptionInput(BaseModel):
+    doctor_name: str = ""
+    license_no: str = ""
+    patient_name: str = ""
+    notes: str | None = None
+    product_ids: list[int] = Field(default_factory=list)
+
+
 class SaleCreate(BaseModel):
     customer_id: int | None = None
     customer_nit: str | None = None
     customer_name: str | None = None
     payment_method: str = "efectivo"
     is_credit: bool = False
+    use_fcam: bool = False
+    tip_amount: float = Field(default=0, ge=0)
+    loyalty_points_redeem: float = Field(default=0, ge=0)
     cart_discount_amount: float = Field(default=0, ge=0)
     cash_received: float = Field(default=0, ge=0)
     promotion_id: int | None = None
     payments: list[SalePaymentInput] | None = None
     items: list[SaleItemInput]
+    client_request_id: str | None = Field(default=None, max_length=64)
+    branch_id: int | None = None
+    prescription_confirmed: bool = False
+    prescription: PrescriptionInput | None = None
 
 
 class SaleItemOut(BaseModel):
@@ -313,6 +352,7 @@ class SaleReturnItemInput(BaseModel):
 class SaleReturnCreate(BaseModel):
     reason: str | None = None
     items: list[SaleReturnItemInput] = Field(min_length=1)
+    client_request_id: str | None = Field(default=None, max_length=64)
 
 
 class SaleReturnItemOut(BaseModel):
@@ -341,6 +381,7 @@ class SaleReturnOut(BaseModel):
     fel_numero: str
     fel_document_type: str
     fel_status: str
+    cash_refund_amount: float = 0
     items: list[SaleReturnItemOut] = Field(default_factory=list)
 
 
@@ -350,6 +391,8 @@ class FelInvoiceOut(BaseModel):
     numero: str
     document_type: str
     status: str
+    voided_at: datetime | None = None
+    void_reason: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -358,6 +401,9 @@ class FelInvoiceOut(BaseModel):
 class SaleOut(BaseModel):
     id: int
     created_at: datetime
+    created_by_user_id: int | None = None
+    created_by_username: str | None = None
+    created_by_full_name: str | None = None
     subtotal: float
     tax_total: float
     total: float
@@ -366,6 +412,10 @@ class SaleOut(BaseModel):
     cart_discount_amount: float = 0
     cash_received: float = 0
     change_amount: float = 0
+    tip_amount: float = 0
+    loyalty_points_earned: float = 0
+    loyalty_points_redeemed: float = 0
+    document_type: str = "FACT"
     wholesale_savings: float = 0
     returned_total: float = 0
     net_total: float = 0
@@ -418,6 +468,7 @@ class CompanyConfigUpdateIn(BaseModel):
 class BusinessProfileConfigOut(BaseModel):
     business_profile: BusinessProfile
     business_profile_label: str
+    capabilities: dict = Field(default_factory=dict)
     cash_shared_session: bool = False
     nit_lookup_configured: bool = False
     primary_color: str = "#00a884"
@@ -429,11 +480,14 @@ class UiThemeConfigOut(BaseModel):
     primary_color: str = "#00a884"
     primary_dark: str = "#008f70"
     primary_rgb: str = "0, 168, 132"
+    background_theme: str = "oscuro"
     presets: list[dict] = Field(default_factory=list)
+    background_presets: list[dict] = Field(default_factory=list)
 
 
 class UiThemeConfigUpdateIn(BaseModel):
     primary_color: str = Field(default="#00a884", min_length=4, max_length=7)
+    background_theme: Literal["oscuro", "claro", "azul", "gris", "crema"] = "oscuro"
 
 
 class LoginRequest(BaseModel):
@@ -461,8 +515,16 @@ class UserOut(BaseModel):
     role: Literal["admin", "user"]
     active: int
     must_change_password: int = 0
+    permissions: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
+
+    @field_validator("permissions", mode="before")
+    @classmethod
+    def coerce_permissions(cls, value):
+        from app.services.permission_service import parse_permissions
+
+        return parse_permissions(value)
 
 
 class ChangePasswordRequest(BaseModel):
@@ -479,15 +541,17 @@ class UserCreate(BaseModel):
     username: str
     full_name: str
     role: Literal["admin", "user"] = "user"
-    password: str = Field(min_length=4, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
     active: int = Field(default=1, ge=0, le=1)
+    permissions: list[str] | None = None
 
 
 class UserUpdate(BaseModel):
     full_name: str | None = None
     role: Literal["admin", "user"] | None = None
-    password: str | None = Field(default=None, min_length=4, max_length=128)
+    password: str | None = Field(default=None, min_length=8, max_length=128)
     active: int | None = Field(default=None, ge=0, le=1)
+    permissions: list[str] | None = None
 
 
 class LoginResponse(BaseModel):
@@ -549,11 +613,41 @@ class CashSessionMonitorOut(BaseModel):
     movements: list[CashMovementOut] = []
 
 
+class OrderItemInput(BaseModel):
+    product_id: int
+    quantity: float = Field(gt=0)
+    unit_price: float | None = Field(default=None, ge=0)
+
+
+class OrderItemOut(BaseModel):
+    id: int
+    product_id: int
+    product_name: str | None = None
+    quantity: float
+    unit_price: float
+    line_total: float
+    reserved: int = 0
+
+    model_config = {"from_attributes": True}
+
+
 class OrderCreate(BaseModel):
     customer_name: str
     customer_phone: str | None = None
     customer_email: str | None = None
+    customer_nit: str | None = None
+    customer_id: int | None = None
+    branch_id: int | None = None
     total_estimate: float = Field(default=0, ge=0)
+    deposit_paid: float = Field(default=0, ge=0)
+    pickup_at: datetime | None = None
+    notes: str | None = None
+    items: list[OrderItemInput] = Field(default_factory=list)
+
+
+class OrderDepositRequest(BaseModel):
+    amount: float = Field(gt=0)
+    payment_method: str = "efectivo"
     notes: str | None = None
 
 
@@ -578,12 +672,21 @@ class OrderOut(BaseModel):
     id: int
     created_at: datetime
     created_by_user_id: int
+    customer_id: int | None = None
     customer_name: str
     customer_phone: str | None = None
     customer_email: str | None = None
+    customer_nit: str | None = None
+    branch_id: int | None = None
     total_estimate: float
+    deposit_paid: float = 0
+    balance_due: float = 0
+    pickup_at: datetime | None = None
+    sale_id: int | None = None
+    stock_reserved: int = 0
     status: str
     notes: str | None = None
+    items: list[OrderItemOut] = Field(default_factory=list)
     dispatches: list[OrderDispatchOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
@@ -592,6 +695,12 @@ class OrderOut(BaseModel):
 class PrintReceiptResponse(BaseModel):
     ok: bool
     message: str
+    printed: bool = False
+    drawer_opened: bool = False
+    printer_name: str | None = None
+    print_error: str | None = None
+    drawer_error: str | None = None
+    attempts: int = 1
 
 
 class ReceiptPrinterConfigOut(BaseModel):
@@ -806,6 +915,7 @@ class PurchaseOrderOut(BaseModel):
 class StockCountSessionCreate(BaseModel):
     order_code: str = Field(min_length=3, max_length=60)
     department_id: int
+    branch_id: int | None = None
     notes: str | None = None
 
 
@@ -871,6 +981,7 @@ class StockCountSessionOut(BaseModel):
     order_code: str | None = None
     department_id: int | None = None
     department_name: str | None = None
+    branch_id: int | None = None
     status: str
     notes: str | None = None
     applied_at: datetime | None = None
@@ -886,6 +997,8 @@ class SalesSummaryOut(BaseModel):
     tax_total: float
     credit_sales_count: int
     credit_sales_amount: float
+    gross_amount: float | None = None
+    returns_total: float | None = None
 
 
 class TopProductOut(BaseModel):
@@ -912,7 +1025,9 @@ class CashCutReportOut(BaseModel):
     sales_total: float
     returns_total: float
     other_income: float
+    manual_expenses: float = 0
     status: str
+    open_sessions_count: int = 1
 
 
 class CashierRankingOut(BaseModel):
@@ -928,8 +1043,21 @@ class OwnerDashboardOut(BaseModel):
     payment_methods: list[PaymentMethodBreakdownOut]
     top_products: list[TopProductOut]
     cash_cut: CashCutReportOut | None = None
+    cash_cuts: list[CashCutReportOut] = Field(default_factory=list)
     alerts: list[dict] = Field(default_factory=list)
     pending_fel_count: int = 0
+
+
+class MyDayDashboardOut(BaseModel):
+    role: str
+    date: str
+    sales_summary: SalesSummaryOut
+    payment_methods: list[PaymentMethodBreakdownOut]
+    top_products: list[TopProductOut] = Field(default_factory=list)
+    cash_cut: CashCutReportOut | None = None
+    cash_cuts: list[CashCutReportOut] = Field(default_factory=list)
+    pending_fel_count: int = 0
+    alerts: list[dict] = Field(default_factory=list)
 
 
 class SystemAlertOut(BaseModel):
@@ -979,6 +1107,11 @@ class BranchBase(BaseModel):
     name: str
     address: str | None = None
     phone: str | None = None
+    fel_nombre_comercial: str | None = None
+    fel_direccion: str | None = None
+    fel_codigo_establecimiento: str | None = None
+    fel_municipio: str | None = None
+    fel_departamento: str | None = None
     active: int = Field(default=1, ge=0, le=1)
 
 
@@ -991,6 +1124,11 @@ class BranchUpdate(BaseModel):
     name: str | None = None
     address: str | None = None
     phone: str | None = None
+    fel_nombre_comercial: str | None = None
+    fel_direccion: str | None = None
+    fel_codigo_establecimiento: str | None = None
+    fel_municipio: str | None = None
+    fel_departamento: str | None = None
     active: int | None = Field(default=None, ge=0, le=1)
 
 
@@ -999,6 +1137,102 @@ class BranchOut(BranchBase):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class BranchStockOut(BaseModel):
+    product_id: int
+    branch_id: int
+    branch_code: str | None = None
+    branch_name: str | None = None
+    stock: float
+
+
+class BranchTransferCreate(BaseModel):
+    product_id: int
+    from_branch_id: int
+    to_branch_id: int
+    quantity: float = Field(gt=0)
+    notes: str | None = None
+
+
+class DiningTableCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=20)
+    name: str = Field(min_length=1, max_length=80)
+    seats: int = Field(default=4, ge=1, le=50)
+    branch_id: int | None = None
+
+
+class DiningTableUpdate(BaseModel):
+    code: str | None = Field(default=None, max_length=20)
+    name: str | None = Field(default=None, max_length=80)
+    seats: int | None = Field(default=None, ge=1, le=50)
+    active: int | None = Field(default=None, ge=0, le=1)
+    branch_id: int | None = None
+
+
+class DiningTableOut(BaseModel):
+    id: int
+    code: str
+    name: str
+    seats: int
+    status: str
+    active: int
+    branch_id: int | None = None
+    open_check_id: int | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class DiningCheckItemCreate(BaseModel):
+    product_id: int
+    quantity: float = Field(gt=0)
+    notes: str | None = None
+
+
+class DiningCheckItemOut(BaseModel):
+    id: int
+    product_id: int
+    product_name: str | None = None
+    quantity: float
+    unit_price: float
+    notes: str | None = None
+    status: str
+    line_total: float = 0
+
+
+class DiningCheckOut(BaseModel):
+    id: int
+    table_id: int
+    table_code: str | None = None
+    table_name: str | None = None
+    status: str
+    notes: str | None = None
+    tip_amount: float = 0
+    opened_at: datetime
+    closed_at: datetime | None = None
+    sale_id: int | None = None
+    branch_id: int | None = None
+    items: list[DiningCheckItemOut] = []
+    total: float = 0
+
+
+class DiningCheckOpen(BaseModel):
+    table_id: int
+    notes: str | None = None
+    branch_id: int | None = None
+
+
+class DiningCheckPay(BaseModel):
+    payment_method: str = "efectivo"
+    cash_received: float = Field(default=0, ge=0)
+    tip_amount: float = Field(default=0, ge=0)
+    customer_nit: str | None = "CF"
+    customer_name: str | None = "CONSUMIDOR FINAL"
+    payments: list[SalePaymentInput] | None = None
+
+
+class DiningSplitRequest(BaseModel):
+    item_ids: list[int] = Field(min_length=1)
 
 
 class AuditLogOut(BaseModel):
@@ -1017,6 +1251,7 @@ class ProductLotBase(BaseModel):
     expires_at: datetime | None = None
     quantity: float = Field(ge=0)
     active: int = Field(default=1, ge=0, le=1)
+    branch_id: int | None = None
 
 
 class ProductLotCreate(ProductLotBase):
@@ -1043,6 +1278,14 @@ class SchoolPackageCreate(BaseModel):
     items: list[SchoolPackageItemInput] = Field(min_length=1)
 
 
+class SchoolPackageUpdate(BaseModel):
+    name: str | None = None
+    school_grade: str | None = None
+    notes: str | None = None
+    active: int | None = Field(default=None, ge=0, le=1)
+    items: list[SchoolPackageItemInput] | None = None
+
+
 class SchoolPackageItemOut(BaseModel):
     product_id: int
     product_name: str
@@ -1063,6 +1306,7 @@ class SchoolPackageOut(BaseModel):
 
 class PurchaseReceiveRequest(BaseModel):
     invoice_ref: str | None = None
+    branch_id: int | None = None
 
 
 class PurchaseSuggestionOut(BaseModel):

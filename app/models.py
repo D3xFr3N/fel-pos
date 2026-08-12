@@ -48,17 +48,21 @@ class Product(Base):
     supplier_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id"), nullable=True)
     department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id"), nullable=True)
     price: Mapped[float] = mapped_column(Float, default=0)
+    price_vip: Mapped[float | None] = mapped_column(Float, nullable=True)
     cost: Mapped[float] = mapped_column(Float, default=0)
     stock: Mapped[float] = mapped_column(Float, default=0)
     min_stock: Mapped[float] = mapped_column(Float, default=0)
     tracks_inventory: Mapped[int] = mapped_column(Integer, default=1)
     tax_rate: Mapped[float] = mapped_column(Float, default=0.12)
+    goods_or_services: Mapped[str] = mapped_column(String(1), default="B")  # B|S
     wholesale_enabled: Mapped[int] = mapped_column(Integer, default=0)
     wholesale_min_qty: Mapped[float] = mapped_column(Float, default=0)
     wholesale_discount_pct: Mapped[float] = mapped_column(Float, default=0)
     active: Mapped[int] = mapped_column(Integer, default=1)
     sale_by_weight: Mapped[int] = mapped_column(Integer, default=0)
     track_expiry: Mapped[int] = mapped_column(Integer, default=0)
+    requires_prescription: Mapped[int] = mapped_column(Integer, default=0)
+    dining_modifiers: Mapped[str | None] = mapped_column(String(500), nullable=True)  # CSV chips
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
 
     supplier: Mapped[Supplier | None] = relationship("Supplier", back_populates="products")
@@ -82,8 +86,12 @@ class Customer(Base):
     email: Mapped[str | None] = mapped_column(String(120), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     address: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    municipality: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    department: Mapped[str | None] = mapped_column(String(80), nullable=True)
     credit_limit: Mapped[float] = mapped_column(Float, default=0)
     credit_balance: Mapped[float] = mapped_column(Float, default=0)
+    price_tier: Mapped[str] = mapped_column(String(20), default="retail")  # retail|wholesale|vip
+    loyalty_points: Mapped[float] = mapped_column(Float, default=0)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
     active: Mapped[int] = mapped_column(Integer, default=1)
 
@@ -99,15 +107,28 @@ class Sale(Base):
     total: Mapped[float] = mapped_column(Float, default=0)
     payment_method: Mapped[str] = mapped_column(String(30), default="efectivo")
     status: Mapped[str] = mapped_column(String(20), default="completed")
-    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
     cart_discount_amount: Mapped[float] = mapped_column(Float, default=0)
     cash_received: Mapped[float] = mapped_column(Float, default=0)
     change_amount: Mapped[float] = mapped_column(Float, default=0)
     promotion_id: Mapped[int | None] = mapped_column(ForeignKey("promotions.id"), nullable=True)
     is_credit: Mapped[int] = mapped_column(Integer, default=0)
+    document_type: Mapped[str] = mapped_column(String(10), default="FACT")  # FACT|FCAM
+    tip_amount: Mapped[float] = mapped_column(Float, default=0)
+    loyalty_points_earned: Mapped[float] = mapped_column(Float, default=0)
+    loyalty_points_redeemed: Mapped[float] = mapped_column(Float, default=0)
+    client_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
 
     customer: Mapped[Customer | None] = relationship("Customer")
+    created_by: Mapped["User | None"] = relationship(
+        "User",
+        foreign_keys=[created_by_user_id],
+    )
     items: Mapped[list["SaleItem"]] = relationship(
         "SaleItem", back_populates="sale", cascade="all, delete-orphan"
     )
@@ -168,6 +189,8 @@ class SaleReturn(Base):
     tax_total: Mapped[float] = mapped_column(Float, default=0)
     total: Mapped[float] = mapped_column(Float, default=0)
     status: Mapped[str] = mapped_column(String(20), default="completed")
+    client_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    cash_refund_amount: Mapped[float] = mapped_column(Float, default=0)
     fel_uuid: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     fel_serie: Mapped[str] = mapped_column(String(20))
     fel_numero: Mapped[str] = mapped_column(String(20))
@@ -215,6 +238,8 @@ class FelInvoice(Base):
     status: Mapped[str] = mapped_column(String(20), default="certified")
     xml_content: Mapped[str] = mapped_column(Text)
     certifier_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    void_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     sale: Mapped[Sale] = relationship("Sale", back_populates="fel_invoice")
@@ -230,6 +255,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     active: Mapped[int] = mapped_column(Integer, default=1)
     must_change_password: Mapped[int] = mapped_column(Integer, default=0)
+    permissions: Mapped[str] = mapped_column(Text, default='["sales.returns"]')
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -289,17 +315,48 @@ class Order(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"), nullable=True)
     customer_name: Mapped[str] = mapped_column(String(200))
     customer_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     customer_email: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    customer_nit: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
     total_estimate: Mapped[float] = mapped_column(Float, default=0)
+    deposit_paid: Mapped[float] = mapped_column(Float, default=0)
+    balance_due: Mapped[float] = mapped_column(Float, default=0)
+    pickup_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sale_id: Mapped[int | None] = mapped_column(ForeignKey("sales.id"), nullable=True)
+    stock_reserved: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(20), default="draft")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_by: Mapped[User] = relationship("User")
+    customer: Mapped[Customer | None] = relationship("Customer")
+    items: Mapped[list["OrderItem"]] = relationship(
+        "OrderItem", back_populates="order", cascade="all, delete-orphan"
+    )
     dispatches: Mapped[list["OrderDispatch"]] = relationship(
         "OrderDispatch", back_populates="order", cascade="all, delete-orphan"
     )
+
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    quantity: Mapped[float] = mapped_column(Float, default=0)
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+    line_total: Mapped[float] = mapped_column(Float, default=0)
+    reserved: Mapped[int] = mapped_column(Integer, default=0)
+
+    order: Mapped["Order"] = relationship("Order", back_populates="items")
+    product: Mapped[Product] = relationship("Product")
+
+    @property
+    def product_name(self) -> str | None:
+        return self.product.name if self.product else None
 
 
 class OrderDispatch(Base):
@@ -377,6 +434,7 @@ class InventoryMovement(Base):
     before_stock: Mapped[float] = mapped_column(Float, default=0)
     after_stock: Mapped[float] = mapped_column(Float, default=0)
     notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True, index=True)
 
     product: Mapped[Product] = relationship("Product")
     created_by: Mapped[User] = relationship("User")
@@ -390,6 +448,7 @@ class StockCountSession(Base):
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     order_code: Mapped[str | None] = mapped_column(String(60), nullable=True)
     department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id"), nullable=True)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="open")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     applied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -455,6 +514,11 @@ class Branch(Base):
     name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     address: Mapped[str | None] = mapped_column(String(300), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    fel_nombre_comercial: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    fel_direccion: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    fel_codigo_establecimiento: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    fel_municipio: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    fel_departamento: Mapped[str | None] = mapped_column(String(80), nullable=True)
     active: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -515,12 +579,89 @@ class ProductLot(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True, index=True)
     lot_code: Mapped[str] = mapped_column(String(80))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     quantity: Mapped[float] = mapped_column(Float, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     active: Mapped[int] = mapped_column(Integer, default=1)
 
+    product: Mapped[Product] = relationship("Product")
+    branch: Mapped["Branch"] = relationship("Branch")
+
+
+class BranchStock(Base):
+    __tablename__ = "branch_stocks"
+    __table_args__ = (UniqueConstraint("product_id", "branch_id", name="uq_branch_stock_product_branch"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"), index=True)
+    stock: Mapped[float] = mapped_column(Float, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    product: Mapped[Product] = relationship("Product")
+    branch: Mapped[Branch] = relationship("Branch")
+
+
+class SaleItemLot(Base):
+    __tablename__ = "sale_item_lots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    sale_item_id: Mapped[int] = mapped_column(ForeignKey("sale_items.id"), index=True)
+    product_lot_id: Mapped[int] = mapped_column(ForeignKey("product_lots.id"), index=True)
+    quantity: Mapped[float] = mapped_column(Float, default=0)
+
+    sale_item: Mapped[SaleItem] = relationship("SaleItem")
+    product_lot: Mapped[ProductLot] = relationship("ProductLot")
+
+
+class DiningTable(Base):
+    __tablename__ = "dining_tables"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    code: Mapped[str] = mapped_column(String(20), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    seats: Mapped[int] = mapped_column(Integer, default=4)
+    status: Mapped[str] = mapped_column(String(20), default="free")  # free|occupied
+    active: Mapped[int] = mapped_column(Integer, default=1)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class DiningCheck(Base):
+    __tablename__ = "dining_checks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    table_id: Mapped[int] = mapped_column(ForeignKey("dining_tables.id"), index=True)
+    opened_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    opened_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="open")  # open|sent|paid|cancelled
+    notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    tip_amount: Mapped[float] = mapped_column(Float, default=0)
+    sale_id: Mapped[int | None] = mapped_column(ForeignKey("sales.id"), nullable=True)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
+
+    table: Mapped[DiningTable] = relationship("DiningTable")
+    opened_by: Mapped[User] = relationship("User")
+    items: Mapped[list["DiningCheckItem"]] = relationship(
+        "DiningCheckItem", back_populates="check", cascade="all, delete-orphan"
+    )
+
+
+class DiningCheckItem(Base):
+    __tablename__ = "dining_check_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    check_id: Mapped[int] = mapped_column(ForeignKey("dining_checks.id"), index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    quantity: Mapped[float] = mapped_column(Float, default=1)
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+    notes: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending|sent|done
+
+    check: Mapped[DiningCheck] = relationship("DiningCheck", back_populates="items")
     product: Mapped[Product] = relationship("Product")
 
 
@@ -599,3 +740,40 @@ class PendingFelSale(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     sale: Mapped[Sale] = relationship("Sale")
+
+
+class AuthorizedDevice(Base):
+    """PCs/cajas autorizadas para usar el servidor FEL POS en la red."""
+
+    __tablename__ = "authorized_devices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    hostname: Mapped[str] = mapped_column(String(120), default="")
+    label: Mapped[str] = mapped_column(String(120), default="")
+    last_ip: Mapped[str] = mapped_column(String(64), default="")
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    is_server: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
+
+
+class PrescriptionLog(Base):
+    __tablename__ = "prescription_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    sale_id: Mapped[int | None] = mapped_column(ForeignKey("sales.id"), nullable=True, index=True)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"), nullable=True)
+    doctor_name: Mapped[str] = mapped_column(String(150), default="")
+    license_no: Mapped[str] = mapped_column(String(80), default="")
+    patient_name: Mapped[str] = mapped_column(String(150), default="")
+    notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    confirmed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    sale: Mapped[Sale | None] = relationship("Sale")
+    product: Mapped[Product | None] = relationship("Product")
+    confirmed_by: Mapped[User | None] = relationship("User")

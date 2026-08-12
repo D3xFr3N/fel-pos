@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     receipt_show_item_detail: bool = True
 
     ui_primary_color: str = "#00a884"
+    ui_background_theme: str = "oscuro"
 
     label_printer_name: str = ""
     label_default_width_mm: int = 50
