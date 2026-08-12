@@ -7,6 +7,7 @@
 build/
 dist/
 *.spec
+!FELPOS.spec
 .gh-pages-worktree/
 licenses/private-registry.json
 licenses/activaciones/
