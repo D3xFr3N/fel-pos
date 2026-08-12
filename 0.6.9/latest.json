@@ -1,0 +1,7 @@
+{
+    "version":  "0.6.9",
+    "build_date":  "2026-08-12 12:47:02",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.9/felpos-update-0.6.9.zip",
+    "sha256":  "6e4247b83e47be75067c95d3f65842828817695f430346d1c6bdd1e3c21471dd",
+    "release_notes":  "- Corrige reinicio post-update: ya no abre CMD ni usa \"start\" (rompe en Program Files (x86))\r\n- Arranque silencioso con Boot_FELPOS.vbs\r\n- Mantiene desempaquetado fijo en C:\\Users\\Public\\FELPOS\\runtime-tmp"
+}
