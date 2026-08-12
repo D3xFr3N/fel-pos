@@ -4259,6 +4259,10 @@ async function submitAutoPurchaseOrders(event) {
   }
 }
 
+function syncProductsSearchStripActive(term = getProductsTableSearchTerm()) {
+  document.querySelector(".products-search-strip")?.classList.toggle("is-active", Boolean(term));
+}
+
 function getProductsTableSearchTerm() {
   const input = document.getElementById("products-table-search");
   const fromInput = String(input?.value || "").trim().toLowerCase();
@@ -4312,6 +4316,7 @@ function renderProductsTable() {
     searchInput.value = state.productsTableSearch || "";
   }
   const searchTerm = getProductsTableSearchTerm();
+  syncProductsSearchStripActive(searchTerm);
   const canEdit = hasPermission("products.edit");
   const canStockEntry = hasPermission("stock.entry");
   const showExtraColumns = hasProductExtraFields();
@@ -11187,6 +11192,7 @@ function setupEvents() {
   document.getElementById("new-product-btn").addEventListener("click", () => openProductEditor(null));
   document.getElementById("products-table-search")?.addEventListener("input", (event) => {
     state.productsTableSearch = String(event.target.value || "").trim().toLowerCase();
+    syncProductsSearchStripActive(state.productsTableSearch);
     renderProductsTable();
   });
   document.getElementById("import-eleventa-btn")?.addEventListener("click", openEleventaImportDialog);

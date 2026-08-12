@@ -181,7 +181,6 @@
         <div class="panel-header">
           <h2 id="products-panel-title">Productos</h2>
           <div class="panel-actions">
-            <input id="products-table-search" type="search" placeholder="Buscar producto, SKU, codigo..." autocomplete="off">
             <button id="show-low-stock-btn" class="btn ghost">Bajo inventario</button>
             <button id="show-inactive-products-btn" class="btn ghost">Inactivos</button>
             <button id="show-all-products-btn" class="btn ghost">Ver todos</button>
@@ -190,6 +189,19 @@
             <button id="manage-school-packages-btn" class="btn ghost" hidden>Paquetes escolares</button>
             <button id="new-product-btn" class="btn primary">Nuevo producto</button>
           </div>
+        </div>
+        <div class="products-search-strip" role="search">
+          <label class="products-search-label" for="products-table-search">Buscar</label>
+          <div class="products-search-field">
+            <span class="products-search-icon" aria-hidden="true">⌕</span>
+            <input
+              id="products-table-search"
+              type="search"
+              placeholder="Nombre, SKU, codigo de barras, departamento o proveedor..."
+              autocomplete="off"
+            >
+          </div>
+          <p class="products-search-hint">Escribe para filtrar la lista al instante</p>
         </div>
         <div id="school-packages-admin" class="config-card school-packages-admin" hidden></div>
         <div id="products-table" class="table-wrap"></div>
