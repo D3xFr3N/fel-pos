@@ -1,7 +1,0 @@
-{
-    "version":  "0.6.3",
-    "build_date":  "2026-08-12 10:08:04",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.3/felpos-update-0.6.3.zip",
-    "sha256":  "81a1c6b19e896228dc573fa8d537443f2885f3b6a211d52e756502042dccc0ee",
-    "release_notes":  "- Corrige nombres de productos invisibles en la pantalla Vender (WebView2)\r\n- Fuerza color y peso tipografico legible en cards del catalogo y ticket\r\n- Escapa HTML en nombres de producto para evitar cards rotas"
-}
