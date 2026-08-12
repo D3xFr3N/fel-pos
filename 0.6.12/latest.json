@@ -1,0 +1,7 @@
+{
+    "version":  "0.6.12",
+    "build_date":  "2026-08-12 15:37:00",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.12/felpos-update-0.6.12.zip",
+    "sha256":  "f4bfb131a2b4064c9f9eef3c2dfe14e884b934c64a09604c094c779abe8a21e0",
+    "release_notes":  "## FEL POS 0.6.12\r\n\r\n- Pantalla Vender rediseñada al estilo ticket: tabla de lineas, pestañas y barra inferior de acciones.\r\n- Botones F5 Cambiar, F6 Pendiente, Eliminar, Asignar cliente (CF/NIT), F12 Cobrar, reimprimir y ventas del dia."
+}
