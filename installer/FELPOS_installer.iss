@@ -63,6 +63,8 @@ Name: "{app}"; Permissions: users-modify
 Name: "{app}\data"; Permissions: users-full
 Name: "{app}\data\backups"; Permissions: users-full
 Name: "{app}\update_backups"; Permissions: users-full
+Name: "C:\Users\Public\FELPOS"; Permissions: users-full
+Name: "C:\Users\Public\FELPOS\runtime-tmp"; Permissions: users-full
 
 [Icons]
 Name: "{group}\FEL POS"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\Iniciar_FELPOS.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Check: IsLocalMode
