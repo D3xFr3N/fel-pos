@@ -1,7 +1,7 @@
 {
-    "version":  "0.6.9",
-    "build_date":  "2026-08-12 12:47:02",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.9/felpos-update-0.6.9.zip",
-    "sha256":  "6e4247b83e47be75067c95d3f65842828817695f430346d1c6bdd1e3c21471dd",
-    "release_notes":  "- Corrige reinicio post-update: ya no abre CMD ni usa \"start\" (rompe en Program Files (x86))\r\n- Arranque silencioso con Boot_FELPOS.vbs\r\n- Mantiene desempaquetado fijo en C:\\Users\\Public\\FELPOS\\runtime-tmp"
+    "version":  "0.6.10",
+    "build_date":  "2026-08-12 12:56:11",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.10/felpos-update-0.6.10.zip",
+    "sha256":  "044c884285da38892f70d32854ab283e3179934f271774d42446db7bbb3c114f",
+    "release_notes":  "## FEL POS 0.6.10\r\n\r\n- Corrige el reinicio tras actualizar en instalaciones en `Program Files (x86)`: CMD ya no parte la ruta por los paréntesis.\r\n- Tras actualizar, el reinicio usa `C:\\Users\\Public\\FELPOS\\relaunch.vbs` (ruta sin espacios ni `(x86)`).\r\n- Boot / reparación también prefieren ese relaunch seguro."
 }
