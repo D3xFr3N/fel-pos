@@ -49,6 +49,7 @@ foreach ($assetName in @(
     "Iniciar_FELPOS_Servidor.bat",
     "Iniciar_FELPOS_Servidor.vbs",
     "Boot_FELPOS.cmd",
+    "Boot_FELPOS.vbs",
     "_resolve_runtime_tmp.cmd",
     "Limpiar_actualizacion_pendiente.bat",
     "Diagnostico_instalacion.bat",

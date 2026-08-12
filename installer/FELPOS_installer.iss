@@ -46,6 +46,7 @@ Source: "staging\Iniciar_FELPOS_Caja.vbs"; DestDir: "{app}"; Flags: ignoreversio
 Source: "staging\Iniciar_FELPOS_Servidor.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\Iniciar_FELPOS_Servidor.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\Boot_FELPOS.cmd"; DestDir: "{app}"; Flags: ignoreversion
+Source: "staging\Boot_FELPOS.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\_resolve_runtime_tmp.cmd"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\pre_update_backup.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "staging\update_system_safe.bat"; DestDir: "{app}"; Flags: ignoreversion

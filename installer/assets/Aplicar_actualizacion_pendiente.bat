@@ -83,14 +83,18 @@ exit /b 1
 :exe_ok
 echo Listo. La copia anterior queda en FELPOS.exe.old hasta el primer arranque OK.
 echo Reiniciando FELPOS...
-timeout /t 3 >nul
-REM No usar VBS viejo: puede seguir apuntando a TEMP con espacios.
-if exist "Boot_FELPOS.cmd" goto start_boot
-start "" cmd /c "set \"TEMP=!FELPOS_RUNTIME_TMP!\"&& set \"TMP=!FELPOS_RUNTIME_TMP!\"&& start \"\" \"!APP_DIR!\FELPOS.exe\""
+timeout /t 2 >nul
+if exist "Boot_FELPOS.vbs" goto start_boot_vbs
+if exist "Iniciar_FELPOS.vbs" goto start_iniciar_vbs
+powershell -NoProfile -WindowStyle Hidden -Command "Start-Process -LiteralPath '!APP_DIR!\FELPOS.exe' -WorkingDirectory '!APP_DIR!'"
 goto end_ok
 
-:start_boot
-start "" "!APP_DIR!\Boot_FELPOS.cmd"
+:start_boot_vbs
+start "" wscript //nologo "!APP_DIR!\Boot_FELPOS.vbs"
+goto end_ok
+
+:start_iniciar_vbs
+start "" wscript //nologo "!APP_DIR!\Iniciar_FELPOS.vbs"
 goto end_ok
 
 :end_ok

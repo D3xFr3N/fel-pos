@@ -103,15 +103,15 @@ exit /b 1
 
 :launch
 echo.
-echo Iniciando FEL POS con carpeta temporal segura...
-if exist "Boot_FELPOS.cmd" goto launch_boot
+echo Iniciando FEL POS con arranque seguro...
+if exist "Boot_FELPOS.vbs" goto launch_boot_vbs
 if exist "Iniciar_FELPOS.vbs" goto launch_vbs
 if exist "Iniciar_FELPOS.bat" goto launch_bat
-start "" cmd /c "set \"TEMP=!FELPOS_RUNTIME_TMP!\"&& set \"TMP=!FELPOS_RUNTIME_TMP!\"&& start \"\" \"FELPOS.exe\""
+powershell -NoProfile -WindowStyle Hidden -Command "Start-Process -LiteralPath 'FELPOS.exe' -WorkingDirectory '%CD%'"
 goto done
 
-:launch_boot
-call "Boot_FELPOS.cmd"
+:launch_boot_vbs
+wscript //nologo "Boot_FELPOS.vbs"
 goto done
 
 :launch_vbs
