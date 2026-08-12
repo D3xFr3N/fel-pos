@@ -1,7 +1,0 @@
-{
-    "version":  "0.6.1",
-    "build_date":  "2026-08-08 14:07:16",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.1/felpos-update-0.6.1.zip",
-    "sha256":  "ab3effc139f86833968d4f10b5da0c6a5033b226202fabd8a61d329296754ecb",
-    "release_notes":  "- Correccion tabla de productos (columnas legibles, scroll horizontal)\r\n- Correccion doble ventana en Productos (panel paquetes oculto correctamente)\r\n- Titulo de pestana Productos alineado con el perfil"
-}

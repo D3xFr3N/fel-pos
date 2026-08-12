@@ -1,0 +1,7 @@
+{
+    "version":  "0.6.5",
+    "build_date":  "2026-08-12 11:56:02",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.5/felpos-update-0.6.5.zip",
+    "sha256":  "51e3f4d9cf06588d2d073d5a36ee447ab2887cedb20ee954552e6f9ba3a5f9d0",
+    "release_notes":  "- Corrige fallo al abrir despues de actualizar en PCs cuyo usuario Windows tiene espacios (ej. \"COMPU SAN JUAN\")\r\n- TEMP de PyInstaller pasa a C:\\ProgramData\\FELPOS\\runtime-tmp (ruta sin espacios)\r\n- Actualiza lanzadores VBS/BAT y script de reinicio post-update"
+}
