@@ -71,7 +71,7 @@ if (Test-Path $versionFile) {
 
 # Smoke: arranca el EXE unos segundos y busca el ModuleNotFoundError tipico.
 Write-Host "Probando arranque de FELPOS.exe..."
-$tmp = Join-Path $env:LOCALAPPDATA "FELPOS\runtime-tmp"
+$tmp = Join-Path $env:ProgramData "FELPOS\runtime-tmp"
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 $errLog = Join-Path $root "dist\felpos-error.log"
 if (Test-Path $errLog) { Remove-Item $errLog -Force }

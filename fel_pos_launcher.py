@@ -374,9 +374,13 @@ def main() -> None:
     os.chdir(runtime_root)
     _load_env_file(runtime_root)
 
-    # Carpeta temporal writable SIN espacios (PyInstaller LoadLibrary falla con "FEL POS").
+    # Carpeta temporal writable SIN espacios.
+    # LOCALAPPDATA falla si el usuario Windows tiene espacios (PyInstaller LoadLibrary).
+    program_data = Path(os.environ.get("PROGRAMDATA") or r"C:\ProgramData")
+    if " " in str(program_data):
+        program_data = Path(r"C:\ProgramData")
+    runtime_tmp = program_data / "FELPOS" / "runtime-tmp"
     local_app = Path(os.environ.get("LOCALAPPDATA") or "")
-    runtime_tmp = local_app / "FELPOS" / "runtime-tmp"
     try:
         runtime_tmp.mkdir(parents=True, exist_ok=True)
         os.environ["TEMP"] = str(runtime_tmp)
@@ -396,6 +400,7 @@ def main() -> None:
 
     for base in (
         runtime_tmp,
+        local_app / "FELPOS" / "runtime-tmp",
         local_app / "Temp",
         local_app / "FEL POS" / "tmp",
         Path(os.environ.get("TEMP") or ""),

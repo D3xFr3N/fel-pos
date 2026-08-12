@@ -44,6 +44,10 @@ foreach ($assetName in @(
     "Reparar_instalacion.bat",
     "Iniciar_FELPOS.bat",
     "Iniciar_FELPOS.vbs",
+    "Iniciar_FELPOS_Caja.bat",
+    "Iniciar_FELPOS_Caja.vbs",
+    "Iniciar_FELPOS_Servidor.bat",
+    "Iniciar_FELPOS_Servidor.vbs",
     "Limpiar_actualizacion_pendiente.bat",
     "Diagnostico_instalacion.bat",
     "Reparar_permisos_instalacion.bat"

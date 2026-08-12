@@ -1,31 +1,25 @@
 ' FEL POS - lanzador silencioso
-' Fija TEMP/TMP sin espacios antes de arrancar el EXE (PyInstaller).
+' TEMP/TMP SIN espacios: PyInstaller falla LoadLibrary si el usuario Windows tiene espacios
+' (ej. "COMPU SAN JUAN" -> LOCALAPPDATA con espacios).
 Option Explicit
 
-Dim shell, fso, appDir, tmpRoot, tmpDir, exePath, bindHost, folder, subFolder
+Dim shell, fso, appDir, tmpRoot, tmpDir, exePath, bindHost
 
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 
 appDir = fso.GetParentFolderName(WScript.ScriptFullName)
 exePath = appDir & "\FELPOS.exe"
-tmpRoot = shell.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\FELPOS"
+tmpRoot = ResolveRuntimeRoot()
 tmpDir = tmpRoot & "\runtime-tmp"
 
-If Not fso.FolderExists(tmpRoot) Then
-  On Error Resume Next
-  fso.CreateFolder tmpRoot
-  On Error GoTo 0
-End If
-If Not fso.FolderExists(tmpDir) Then
-  On Error Resume Next
-  fso.CreateFolder tmpDir
-  On Error GoTo 0
-End If
+EnsureFolder tmpRoot
+EnsureFolder tmpDir
 
-' Limpia extracciones _MEI viejas/corruptas (runtime + Temp del sistema + ruta antigua).
+' Limpia extracciones _MEI viejas/corruptas.
 On Error Resume Next
 Call CleanMeiFolders(tmpDir)
+Call CleanMeiFolders(shell.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\FELPOS\runtime-tmp")
 Call CleanMeiFolders(shell.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Temp")
 Call CleanMeiFolders(shell.ExpandEnvironmentStrings("%TEMP%"))
 Call CleanMeiFolders(shell.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\FEL POS\tmp")
@@ -57,6 +51,24 @@ End If
 
 shell.Run """" & exePath & """", 1, False
 WScript.Quit 0
+
+Function ResolveRuntimeRoot()
+  Dim programData
+  programData = Trim(shell.ExpandEnvironmentStrings("%ProgramData%"))
+  If programData <> "" And InStr(programData, " ") = 0 Then
+    ResolveRuntimeRoot = programData & "\FELPOS"
+    Exit Function
+  End If
+  ResolveRuntimeRoot = "C:\FELPOS"
+End Function
+
+Sub EnsureFolder(path)
+  If Trim(path) = "" Then Exit Sub
+  If fso.FolderExists(path) Then Exit Sub
+  On Error Resume Next
+  fso.CreateFolder path
+  On Error GoTo 0
+End Sub
 
 Sub CleanMeiFolders(basePath)
   Dim baseFolder, child

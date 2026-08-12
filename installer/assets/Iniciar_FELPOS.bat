@@ -5,18 +5,19 @@ pushd "%~dp0"
 set "APP_DIR=%CD%"
 
 REM PyInstaller desempaqueta a %%TEMP%%\_MEI* ANTES de ejecutar Python.
-REM Usar ruta SIN espacios: rutas con "FEL POS" rompen LoadLibrary en algunos PCs.
-set "FELPOS_RUNTIME_TMP=%LOCALAPPDATA%\FELPOS\runtime-tmp"
-if not exist "%LOCALAPPDATA%\FELPOS" mkdir "%LOCALAPPDATA%\FELPOS" >nul 2>&1
+REM TEMP SIN espacios: usuarios Windows con espacios (ej. "COMPU SAN JUAN")
+REM rompen LoadLibrary de python312.dll.
+set "FELPOS_RUNTIME_TMP=%ProgramData%\FELPOS\runtime-tmp"
+if not exist "%ProgramData%\FELPOS" mkdir "%ProgramData%\FELPOS" >nul 2>&1
 if not exist "!FELPOS_RUNTIME_TMP!" mkdir "!FELPOS_RUNTIME_TMP!" >nul 2>&1
 if exist "!FELPOS_RUNTIME_TMP!" set "TEMP=!FELPOS_RUNTIME_TMP!"
 if exist "!FELPOS_RUNTIME_TMP!" set "TMP=!FELPOS_RUNTIME_TMP!"
 set "FELPOS_RUNTIME_TMP=!FELPOS_RUNTIME_TMP!"
 
-REM Limpia extracciones rotas (nuevo + Temp del sistema + ruta antigua con espacios).
+REM Limpia extracciones rotas (nuevo + rutas antiguas).
 for /d %%D in ("!FELPOS_RUNTIME_TMP!\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
+for /d %%D in ("%LOCALAPPDATA%\FELPOS\runtime-tmp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
 for /d %%D in ("%LOCALAPPDATA%\Temp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
-for /d %%D in ("%TEMP%\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
 for /d %%D in ("%LOCALAPPDATA%\FEL POS\tmp\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1
 
 if exist "FELPOS.exe" goto launch
