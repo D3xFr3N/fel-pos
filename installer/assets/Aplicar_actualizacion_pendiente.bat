@@ -72,6 +72,7 @@ if exist "VERSION.pending" move /Y "VERSION.pending" "VERSION" >nul
 if exist "BUILD_DATE.pending" move /Y "BUILD_DATE.pending" "BUILD_DATE" >nul
 if exist "pending_update.json" del /F /Q "pending_update.json" >nul
 if exist "apply_pending_update.bat" del /F /Q "apply_pending_update.bat" >nul
+if exist "apply_pending_update.ps1" del /F /Q "apply_pending_update.ps1" >nul
 
 if exist "FELPOS.exe" goto exe_ok
 echo ERROR: FELPOS.exe no existe despues de aplicar la actualizacion.

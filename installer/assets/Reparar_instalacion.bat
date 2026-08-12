@@ -57,6 +57,7 @@ del /F /Q "VERSION.pending" >nul 2>&1
 del /F /Q "BUILD_DATE.pending" >nul 2>&1
 del /F /Q "pending_update.json" >nul 2>&1
 del /F /Q "apply_pending_update.bat" >nul 2>&1
+del /F /Q "apply_pending_update.ps1" >nul 2>&1
 goto launch
 
 :exe_damaged
@@ -83,6 +84,7 @@ if exist "VERSION.pending" move /Y "VERSION.pending" "VERSION" >nul
 if exist "BUILD_DATE.pending" move /Y "BUILD_DATE.pending" "BUILD_DATE" >nul
 if exist "pending_update.json" del /F /Q "pending_update.json" >nul
 if exist "apply_pending_update.bat" del /F /Q "apply_pending_update.bat" >nul
+if exist "apply_pending_update.ps1" del /F /Q "apply_pending_update.ps1" >nul
 goto check_exe
 
 :restore_old

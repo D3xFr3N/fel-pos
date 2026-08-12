@@ -35,6 +35,7 @@ if exist "VERSION.pending" del /F /Q "VERSION.pending"
 if exist "BUILD_DATE.pending" del /F /Q "BUILD_DATE.pending"
 if exist "pending_update.json" del /F /Q "pending_update.json"
 if exist "apply_pending_update.bat" del /F /Q "apply_pending_update.bat"
+if exist "apply_pending_update.ps1" del /F /Q "apply_pending_update.ps1"
 
 echo [OK] Limpieza completada.
 echo Ahora intenta abrir FELPOS.exe directamente.

@@ -20,9 +20,12 @@ from app.services.license_service import assert_license_allows_updates, validate
 from app.services.backup_service import create_backup
 from app.version import get_app_version, get_install_dir
 
-PENDING_UPDATE_SCRIPT = "apply_pending_update.bat"
+PENDING_UPDATE_SCRIPT = "apply_pending_update.ps1"
+LEGACY_PENDING_UPDATE_SCRIPT = "apply_pending_update.bat"
 PENDING_UPDATE_META = "pending_update.json"
 PENDING_UPDATE_LOG = "felpos-update.log"
+SAFE_RELAUNCH_VBS = r"C:\Users\Public\FELPOS\relaunch.vbs"
+SAFE_APPLY_RUNNER_VBS = r"C:\Users\Public\FELPOS\apply_update.vbs"
 UPDATE_FILES = ("FELPOS.exe", "VERSION", "BUILD_DATE")
 UPDATE_SUPPORT_FILES = (
     "Aplicar_actualizacion_pendiente.bat",
@@ -345,6 +348,7 @@ def clear_pending_update_artifacts(install_dir: Path | None = None) -> list[str]
         "BUILD_DATE.pending",
         PENDING_UPDATE_META,
         PENDING_UPDATE_SCRIPT,
+        LEGACY_PENDING_UPDATE_SCRIPT,
     ):
         path = root / name
         if not path.exists():
@@ -352,6 +356,16 @@ def clear_pending_update_artifacts(install_dir: Path | None = None) -> list[str]
         try:
             path.unlink()
             removed.append(name)
+        except OSError:
+            pass
+    updates_dir = _user_updates_dir()
+    for name in (PENDING_UPDATE_SCRIPT, LEGACY_PENDING_UPDATE_SCRIPT):
+        path = updates_dir / name
+        if not path.exists():
+            continue
+        try:
+            path.unlink()
+            removed.append(f"updates/{name}")
         except OSError:
             pass
     if removed:
@@ -455,9 +469,10 @@ def apply_pending_update_at_startup(install_dir: Path | None = None) -> dict | N
             meta = {}
         meta_path.unlink(missing_ok=True)
 
-    script_path = root / PENDING_UPDATE_SCRIPT
-    if script_path.exists() and not has_pending_executable_update(root):
-        script_path.unlink(missing_ok=True)
+    for script_name in (PENDING_UPDATE_SCRIPT, LEGACY_PENDING_UPDATE_SCRIPT):
+        script_path = root / script_name
+        if script_path.exists() and not has_pending_executable_update(root):
+            script_path.unlink(missing_ok=True)
 
     if errors and not applied:
         raise RuntimeError("No se pudo aplicar la actualizacion pendiente: " + "; ".join(errors))
@@ -473,6 +488,40 @@ def apply_pending_update_at_startup(install_dir: Path | None = None) -> dict | N
     }
 
 
+def _ps_single_quote(value: str) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _write_apply_runner_vbs(ps1_path: Path) -> Path:
+    """
+    Runner fijo en Public (sin parentesis) que ejecuta el .ps1 con PowerShell.
+    Evita CMD / start / rutas Program Files (x86).
+    """
+    public = _safe_public_felpos_dir()
+    target = public / "apply_update.vbs"
+    ps1 = str(ps1_path.resolve()).replace('"', '""')
+    content = "\r\n".join(
+        [
+            "' Auto-generado por FEL POS - no editar",
+            "Option Explicit",
+            "Dim shell, fso, ps1Path, cmd",
+            'Set shell = CreateObject("WScript.Shell")',
+            'Set fso = CreateObject("Scripting.FileSystemObject")',
+            f'ps1Path = "{ps1}"',
+            "If Not fso.FileExists(ps1Path) Then",
+            '  MsgBox "No se encontro el script de actualizacion:" & vbCrLf & ps1Path, vbCritical, "FEL POS"',
+            "  WScript.Quit 1",
+            "End If",
+            'cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & ps1Path & """"',
+            "shell.Run cmd, 0, False",
+            "WScript.Quit 0",
+            "",
+        ]
+    )
+    target.write_text(content, encoding="utf-8")
+    return target
+
+
 def _write_restart_script(
     install_dir: Path,
     *,
@@ -480,173 +529,218 @@ def _write_restart_script(
     require_elevation: bool = False,
     expected_exe_bytes: int | None = None,
 ) -> Path:
-    # Siempre escribir fuera de Program Files (x86): los parentesis rompen CMD.
+    """
+    Escribe apply_pending_update.ps1 fuera de Program Files.
+    PowerShell usa -LiteralPath y no se rompe con (x86) ni espacios.
+    """
+    del require_elevation  # reservado; la elevacion la decide _launch_updater_script
     updates_dir = _user_updates_dir()
     updates_dir.mkdir(parents=True, exist_ok=True)
     script_path = updates_dir / PENDING_UPDATE_SCRIPT
-    relaunch_vbs = _write_safe_relaunch_vbs(install_dir)
-    # Ruta fija sin espacios/parentesis: CMD puede invocarla sin romper.
-    relaunch_vbs_cmd = r"C:\Users\Public\FELPOS\relaunch.vbs"
+    _write_safe_relaunch_vbs(install_dir)
+    _write_apply_runner_vbs(script_path)
 
-    log_name = PENDING_UPDATE_LOG
-    install_quoted = str(install_dir)
-    stage_quoted = str(stage_dir) if stage_dir else ""
+    # Limpiar bat legado para no lanzar el flujo viejo por error.
+    legacy_bat = updates_dir / LEGACY_PENDING_UPDATE_SCRIPT
+    if legacy_bat.exists():
+        try:
+            legacy_bat.unlink()
+        except OSError:
+            pass
+
+    install_q = _ps_single_quote(str(Path(install_dir).resolve()))
+    stage_q = _ps_single_quote(str(Path(stage_dir).resolve()) if stage_dir else "")
+    log_q = _ps_single_quote(PENDING_UPDATE_LOG)
+    relaunch_q = _ps_single_quote(SAFE_RELAUNCH_VBS)
+    runtime_q = _ps_single_quote(r"C:\Users\Public\FELPOS\runtime-tmp")
+    meta_q = _ps_single_quote(PENDING_UPDATE_META)
     min_exe_bytes = max(MIN_EXE_BYTES, int(expected_exe_bytes or 0) // 2)
 
+    support_names = ", ".join(_ps_single_quote(name) for name in UPDATE_SUPPORT_FILES)
+    update_names = ", ".join(_ps_single_quote(name) for name in UPDATE_FILES)
+
     lines = [
-        "@echo off",
-        "setlocal EnableExtensions EnableDelayedExpansion",
-        f'set "INSTALL_DIR={install_quoted}"',
-        f'set "STAGE_DIR={stage_quoted}"',
-        f'set "RELAUNCH_VBS={relaunch_vbs_cmd}"',
-        # TEMP sin espacios y escribible (usuarios Windows con espacios rompen PyInstaller).
-        'set "FELPOS_RUNTIME_TMP=C:\\Users\\Public\\FELPOS\\runtime-tmp"',
-        'if not exist "C:\\Users\\Public\\FELPOS" mkdir "C:\\Users\\Public\\FELPOS" >nul 2>&1',
-        'if not exist "!FELPOS_RUNTIME_TMP!" mkdir "!FELPOS_RUNTIME_TMP!" >nul 2>&1',
-        'if exist "!FELPOS_RUNTIME_TMP!" goto runtime_ok',
-        'for %%I in ("%LOCALAPPDATA%") do set "SHORT_LOCAL=%%~sI"',
-        'if defined SHORT_LOCAL if not "!SHORT_LOCAL!"=="!SHORT_LOCAL: =!" set "SHORT_LOCAL="',
-        'if defined SHORT_LOCAL set "FELPOS_RUNTIME_TMP=!SHORT_LOCAL!\\FELPOS\\runtime-tmp"',
-        'if defined SHORT_LOCAL if not exist "!SHORT_LOCAL!\\FELPOS" mkdir "!SHORT_LOCAL!\\FELPOS" >nul 2>&1',
-        'if defined SHORT_LOCAL if not exist "!FELPOS_RUNTIME_TMP!" mkdir "!FELPOS_RUNTIME_TMP!" >nul 2>&1',
-        'if exist "!FELPOS_RUNTIME_TMP!" goto runtime_ok',
-        'set "FELPOS_RUNTIME_TMP=C:\\FELPOS\\runtime-tmp"',
-        'if not exist "C:\\FELPOS" mkdir "C:\\FELPOS" >nul 2>&1',
-        'if not exist "!FELPOS_RUNTIME_TMP!" mkdir "!FELPOS_RUNTIME_TMP!" >nul 2>&1',
-        ":runtime_ok",
-        'if exist "!FELPOS_RUNTIME_TMP!" set "TEMP=!FELPOS_RUNTIME_TMP!"',
-        'if exist "!FELPOS_RUNTIME_TMP!" set "TMP=!FELPOS_RUNTIME_TMP!"',
-        'for /d %%D in ("!FELPOS_RUNTIME_TMP!\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
-        'for /d %%D in ("%LOCALAPPDATA%\\FELPOS\\runtime-tmp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
-        'for /d %%D in ("%LOCALAPPDATA%\\Temp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
-        'for /d %%D in ("%ProgramData%\\FELPOS\\runtime-tmp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
-        'for /d %%D in ("%LOCALAPPDATA%\\FEL POS\\tmp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
-        'pushd "!INSTALL_DIR!"',
-        f'echo [%date% %time%] Iniciando actualizacion >> "{log_name}"',
-        f'echo [%date% %time%] TEMP=!FELPOS_RUNTIME_TMP! >> "{log_name}"',
-        f'echo [%date% %time%] Relaunch={relaunch_vbs} >> "{log_name}"',
-        "set /a tries=0",
-        ":wait",
-        "set /a tries+=1",
-        'tasklist /FI "IMAGENAME eq FELPOS.exe" 2>nul | find /I "FELPOS.exe" >nul',
-        "if errorlevel 1 goto apply",
-        "if !tries! GEQ 60 goto force_kill",
-        "timeout /t 1 >nul",
-        "goto wait",
-        ":force_kill",
-        f'echo [%date% %time%] Forzando cierre de FELPOS.exe >> "{log_name}"',
-        "taskkill /F /IM FELPOS.exe /T >nul 2>&1",
-        "timeout /t 2 >nul",
-        "goto apply",
-        ":apply",
+        "# Auto-generado por FEL POS - no editar",
+        "$ErrorActionPreference = 'Stop'",
+        f"$InstallDir = {install_q}",
+        f"$StageDir = {stage_q}",
+        f"$LogName = {log_q}",
+        f"$RelaunchVbs = {relaunch_q}",
+        f"$RuntimeTmp = {runtime_q}",
+        f"$MetaName = {meta_q}",
+        f"$MinExeBytes = {min_exe_bytes}",
+        f"$UpdateFiles = @({update_names})",
+        f"$SupportFiles = @({support_names})",
+        "$ScriptSelf = $MyInvocation.MyCommand.Path",
+        "$LogPath = Join-Path $InstallDir $LogName",
+        "",
+        "function Write-UpdateLog([string]$Message) {",
+        "  try {",
+        "    $line = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message",
+        "    Add-Content -LiteralPath $LogPath -Value $line -ErrorAction SilentlyContinue",
+        "  } catch {}",
+        "}",
+        "",
+        "function Ensure-Dir([string]$Path) {",
+        "  if (-not [string]::IsNullOrWhiteSpace($Path) -and -not (Test-Path -LiteralPath $Path)) {",
+        "    New-Item -ItemType Directory -Path $Path -Force | Out-Null",
+        "  }",
+        "}",
+        "",
+        "function Clear-MeiTemps([string]$Root) {",
+        "  if ([string]::IsNullOrWhiteSpace($Root) -or -not (Test-Path -LiteralPath $Root)) { return }",
+        "  Get-ChildItem -LiteralPath $Root -Directory -Filter '_MEI*' -ErrorAction SilentlyContinue |",
+        "    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue",
+        "}",
+        "",
+        "function Restore-Exe {",
+        "  $exe = Join-Path $InstallDir 'FELPOS.exe'",
+        "  $old = Join-Path $InstallDir 'FELPOS.exe.old'",
+        "  if (-not (Test-Path -LiteralPath $exe) -and (Test-Path -LiteralPath $old)) {",
+        "    Rename-Item -LiteralPath $old -NewName 'FELPOS.exe' -ErrorAction SilentlyContinue",
+        "  }",
+        "}",
+        "",
+        "function Start-Relaunch {",
+        "  if (Test-Path -LiteralPath $RelaunchVbs) {",
+        "    Write-UpdateLog \"Relanzando via $RelaunchVbs\"",
+        "    Start-Process -FilePath 'wscript.exe' -ArgumentList @('//nologo', $RelaunchVbs) -WindowStyle Hidden | Out-Null",
+        "    return",
+        "  }",
+        "  $exe = Join-Path $InstallDir 'FELPOS.exe'",
+        "  if (Test-Path -LiteralPath $exe) {",
+        "    Write-UpdateLog 'Relanzando via Start-Process -LiteralPath'",
+        "    Start-Process -FilePath $exe -WorkingDirectory $InstallDir | Out-Null",
+        "  } else {",
+        "    Write-UpdateLog 'ERROR: no se pudo relanzar; falta FELPOS.exe y relaunch.vbs'",
+        "  }",
+        "}",
+        "",
+        "Ensure-Dir (Split-Path -Parent $RuntimeTmp)",
+        "Ensure-Dir $RuntimeTmp",
+        "$env:TEMP = $RuntimeTmp",
+        "$env:TMP = $RuntimeTmp",
+        "$env:FELPOS_RUNTIME_TMP = $RuntimeTmp",
+        "Clear-MeiTemps $RuntimeTmp",
+        "Clear-MeiTemps (Join-Path $env:LOCALAPPDATA 'FELPOS\\runtime-tmp')",
+        "Clear-MeiTemps (Join-Path $env:LOCALAPPDATA 'Temp')",
+        "Clear-MeiTemps (Join-Path $env:ProgramData 'FELPOS\\runtime-tmp')",
+        "Clear-MeiTemps (Join-Path $env:LOCALAPPDATA 'FEL POS\\tmp')",
+        "",
+        "$script:UpdateExitCode = 1",
+        "Write-UpdateLog 'Iniciando actualizacion (PowerShell)'",
+        "Write-UpdateLog \"TEMP=$RuntimeTmp\"",
+        "Write-UpdateLog \"InstallDir=$InstallDir\"",
+        "",
+        "for ($i = 1; $i -le 60; $i++) {",
+        "  $procs = @(Get-Process -Name 'FELPOS' -ErrorAction SilentlyContinue)",
+        "  if ($procs.Count -eq 0) { break }",
+        "  if ($i -ge 60) {",
+        "    Write-UpdateLog 'Forzando cierre de FELPOS.exe'",
+        "    $procs | Stop-Process -Force -ErrorAction SilentlyContinue",
+        "    Start-Sleep -Seconds 2",
+        "    break",
+        "  }",
+        "  Start-Sleep -Seconds 1",
+        "}",
+        "",
+        "try {",
     ]
 
     if stage_dir is not None:
-        for file_name in UPDATE_FILES:
-            pending_name = f"{file_name}.pending"
-            safe_label = file_name.replace(".", "_")
-            lines.extend(
-                [
-                    f'if not exist "!STAGE_DIR!\\{pending_name}" goto after_stage_{safe_label}',
-                    f'copy /Y "!STAGE_DIR!\\{pending_name}" "{pending_name}"',
-                    f"if errorlevel 1 goto stage_copy_fail_{safe_label}",
-                    f"goto after_stage_{safe_label}",
-                    f":stage_copy_fail_{safe_label}",
-                    f'echo [%date% %time%] ERROR copiando {pending_name} desde staging >> "{log_name}"',
-                    "goto fail_restore",
-                    f":after_stage_{safe_label}",
-                ]
-            )
-        for file_name in UPDATE_SUPPORT_FILES:
-            pending_name = f"{file_name}.pending"
-            safe_label = file_name.replace(".", "_").replace(" ", "_")
-            lines.extend(
-                [
-                    f'if not exist "!STAGE_DIR!\\{pending_name}" goto after_support_{safe_label}',
-                    f'copy /Y "!STAGE_DIR!\\{pending_name}" "{file_name}"',
-                    f"if errorlevel 1 goto support_copy_warn_{safe_label}",
-                    f"goto after_support_{safe_label}",
-                    f":support_copy_warn_{safe_label}",
-                    f'echo [%date% %time%] AVISO: no se pudo copiar {file_name} >> "{log_name}"',
-                    f":after_support_{safe_label}",
-                ]
-            )
-
-    lines.extend(
-        [
-            'if exist "FELPOS.exe.pending" goto pending_ok',
-            f'echo [%date% %time%] ERROR: falta FELPOS.exe.pending >> "{log_name}"',
-            "goto fail_restore",
-            ":pending_ok",
-            'set "PENDING_SIZE=0"',
-            'for %%I in ("FELPOS.exe.pending") do set "PENDING_SIZE=%%~zI"',
-            f'if !PENDING_SIZE! LSS {min_exe_bytes} goto pending_too_small',
-            "goto pending_size_ok",
-            ":pending_too_small",
-            f'echo [%date% %time%] ERROR: FELPOS.exe.pending incompleto ^(!PENDING_SIZE! bytes^) >> "{log_name}"',
-            'del /F /Q "FELPOS.exe.pending" >nul 2>&1',
-            "goto fail_restore",
-            ":pending_size_ok",
-            f'echo [%date% %time%] Reemplazando FELPOS.exe ^(!PENDING_SIZE! bytes^) >> "{log_name}"',
-            'if exist "FELPOS.exe.old" del /F /Q "FELPOS.exe.old" >nul 2>&1',
-            'if exist "FELPOS.exe" ren "FELPOS.exe" "FELPOS.exe.old"',
-            'ren "FELPOS.exe.pending" "FELPOS.exe"',
-            "if errorlevel 1 goto ren_fail",
-            "goto ren_ok",
-            ":ren_fail",
-            f'echo [%date% %time%] ERROR al reemplazar FELPOS.exe >> "{log_name}"',
-            "goto fail_restore",
-            ":ren_ok",
-            f'echo [%date% %time%] FELPOS.exe actualizado >> "{log_name}"',
-        ]
-    )
-
-    for file_name in UPDATE_FILES:
-        if file_name == "FELPOS.exe":
-            continue
-        pending_name = f"{file_name}.pending"
-        safe_label = file_name.replace(".", "_")
         lines.extend(
             [
-                f'if not exist "{pending_name}" goto after_file_{safe_label}',
-                f'move /Y "{pending_name}" "{file_name}" >nul',
-                f'echo [%date% %time%] {file_name} actualizado >> "{log_name}"',
-                f":after_file_{safe_label}",
+                "  if (-not [string]::IsNullOrWhiteSpace($StageDir)) {",
+                "    foreach ($name in $UpdateFiles) {",
+                "      $src = Join-Path $StageDir ($name + '.pending')",
+                "      if (Test-Path -LiteralPath $src) {",
+                "        $dst = Join-Path $InstallDir ($name + '.pending')",
+                "        Copy-Item -LiteralPath $src -Destination $dst -Force",
+                "      }",
+                "    }",
+                "    foreach ($name in $SupportFiles) {",
+                "      $src = Join-Path $StageDir ($name + '.pending')",
+                "      if (Test-Path -LiteralPath $src) {",
+                "        $dst = Join-Path $InstallDir $name",
+                "        try {",
+                "          Copy-Item -LiteralPath $src -Destination $dst -Force",
+                "        } catch {",
+                "          Write-UpdateLog (\"AVISO: no se pudo copiar $name\")",
+                "        }",
+                "      }",
+                "    }",
+                "  }",
             ]
         )
 
     lines.extend(
         [
-            f'if exist "{PENDING_UPDATE_META}" del /F /Q "{PENDING_UPDATE_META}" >nul',
-            f'echo [%date% %time%] Reiniciando FELPOS >> "{log_name}"',
-            'if exist "FELPOS.exe" goto exe_ready',
-            f'echo [%date% %time%] ERROR: FELPOS.exe no existe despues de actualizar >> "{log_name}"',
-            "goto fail_restore",
-            ":exe_ready",
-            "timeout /t 2 >nul",
-            'for /d %%D in ("!FELPOS_RUNTIME_TMP!\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
-            'for /d %%D in ("%LOCALAPPDATA%\\FELPOS\\runtime-tmp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
-            'for /d %%D in ("%LOCALAPPDATA%\\Temp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
-            'for /d %%D in ("%ProgramData%\\FELPOS\\runtime-tmp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
-            'for /d %%D in ("%LOCALAPPDATA%\\FEL POS\\tmp\\_MEI*") do rmdir /S /Q "%%D" >nul 2>&1',
-            # NUNCA pasar rutas de Program Files (x86) a start/wscript desde CMD.
-            f'echo [%date% %time%] Relanzando via {relaunch_vbs_cmd} >> "{log_name}"',
-            f'if exist "{relaunch_vbs_cmd}" wscript //nologo "{relaunch_vbs_cmd}"',
-            f'if not exist "{relaunch_vbs_cmd}" echo [%date% %time%] ERROR: falta relaunch.vbs >> "{log_name}"',
-            ":start_done",
-            "popd",
-            'del /F /Q "%~f0" >nul 2>&1',
-            "endlocal",
-            "exit /b 0",
-            ":fail_restore",
-            'if not exist "FELPOS.exe" if exist "FELPOS.exe.old" ren "FELPOS.exe.old" "FELPOS.exe"',
-            f'echo [%date% %time%] Actualizacion abortada; se conserva/restaura EXE anterior >> "{log_name}"',
-            'if not exist "FELPOS.exe" goto fail_end',
-            f'if exist "{relaunch_vbs_cmd}" wscript //nologo "{relaunch_vbs_cmd}"',
-            ":fail_end",
-            "popd",
-            "endlocal",
-            "exit /b 1",
+            "  $pending = Join-Path $InstallDir 'FELPOS.exe.pending'",
+            "  if (-not (Test-Path -LiteralPath $pending)) {",
+            "    throw 'ERROR: falta FELPOS.exe.pending'",
+            "  }",
+            "  $pendingSize = [int64](Get-Item -LiteralPath $pending).Length",
+            "  if ($pendingSize -lt $MinExeBytes) {",
+            "    Remove-Item -LiteralPath $pending -Force -ErrorAction SilentlyContinue",
+            "    throw (\"ERROR: FELPOS.exe.pending incompleto ($pendingSize bytes)\")",
+            "  }",
+            "",
+            "  Write-UpdateLog \"Reemplazando FELPOS.exe ($pendingSize bytes)\"",
+            "  $exe = Join-Path $InstallDir 'FELPOS.exe'",
+            "  $old = Join-Path $InstallDir 'FELPOS.exe.old'",
+            "  if (Test-Path -LiteralPath $old) {",
+            "    Remove-Item -LiteralPath $old -Force",
+            "  }",
+            "  if (Test-Path -LiteralPath $exe) {",
+            "    Rename-Item -LiteralPath $exe -NewName 'FELPOS.exe.old'",
+            "  }",
+            "  Rename-Item -LiteralPath $pending -NewName 'FELPOS.exe'",
+            "  Write-UpdateLog 'FELPOS.exe actualizado'",
+            "",
+            "  foreach ($name in $UpdateFiles) {",
+            "    if ($name -eq 'FELPOS.exe') { continue }",
+            "    $src = Join-Path $InstallDir ($name + '.pending')",
+            "    if (Test-Path -LiteralPath $src) {",
+            "      Move-Item -LiteralPath $src -Destination (Join-Path $InstallDir $name) -Force",
+            "      Write-UpdateLog \"$name actualizado\"",
+            "    }",
+            "  }",
+            "",
+            "  foreach ($metaCandidate in @(",
+            "    (Join-Path $InstallDir $MetaName),",
+            "    $(if ($StageDir) { Join-Path $StageDir $MetaName } else { $null })",
+            "  )) {",
+            "    if ($metaCandidate -and (Test-Path -LiteralPath $metaCandidate)) {",
+            "      Remove-Item -LiteralPath $metaCandidate -Force -ErrorAction SilentlyContinue",
+            "    }",
+            "  }",
+            "",
+            "  if (-not (Test-Path -LiteralPath $exe)) {",
+            "    throw 'ERROR: FELPOS.exe no existe despues de actualizar'",
+            "  }",
+            "",
+            "  Write-UpdateLog 'Reiniciando FELPOS'",
+            "  Start-Sleep -Seconds 2",
+            "  Clear-MeiTemps $RuntimeTmp",
+            "  Start-Relaunch",
+            "  Write-UpdateLog 'Actualizacion aplicada OK'",
+            "  $script:UpdateExitCode = 0",
+            "}",
+            "catch {",
+            "  Write-UpdateLog (\"Actualizacion abortada: \" + $_.Exception.Message)",
+            "  Restore-Exe",
+            "  if (Test-Path -LiteralPath (Join-Path $InstallDir 'FELPOS.exe')) {",
+            "    Start-Relaunch",
+            "  }",
+            "  $script:UpdateExitCode = 1",
+            "}",
+            "finally {",
+            "  if ($ScriptSelf -and (Test-Path -LiteralPath $ScriptSelf)) {",
+            "    Remove-Item -LiteralPath $ScriptSelf -Force -ErrorAction SilentlyContinue",
+            "  }",
+            "}",
+            "exit ([int]$script:UpdateExitCode)",
+            "",
         ]
     )
     script_path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
@@ -656,32 +750,59 @@ def _write_restart_script(
 def _launch_updater_script(script_path: Path, install_dir: Path, *, elevate: bool = False) -> None:
     import subprocess
 
-    _append_update_log(install_dir, f"Ejecutando actualizador: {script_path.name} (elevate={elevate})")
-    script_str = str(script_path.resolve())
+    resolved = script_path.resolve()
+    # Si solo queda el .bat legado, regenerar .ps1 cuando haya pendiente usable.
+    if resolved.suffix.lower() == ".bat":
+        stage_dir = _user_updates_dir() / "pending"
+        stage_pending = stage_dir / "FELPOS.exe.pending"
+        install_pending = Path(install_dir) / "FELPOS.exe.pending"
+        if stage_pending.exists():
+            resolved = _write_restart_script(install_dir, stage_dir=stage_dir, require_elevation=elevate)
+        elif install_pending.exists():
+            resolved = _write_restart_script(install_dir, require_elevation=elevate)
+        else:
+            raise RuntimeError(
+                "Solo hay un actualizador .bat antiguo y no hay FELPOS.exe.pending. "
+                "Usa Reparar_instalacion.bat o reinstala con FELPOS_Setup.exe."
+            )
+
+    if resolved.suffix.lower() != ".ps1":
+        raise RuntimeError(f"Script de actualizacion no soportado: {resolved}")
+
+    _write_safe_relaunch_vbs(install_dir)
+    runner = _write_apply_runner_vbs(resolved)
+    _append_update_log(
+        install_dir,
+        f"Ejecutando actualizador: {resolved.name} via {runner.name} (elevate={elevate})",
+    )
+    script_str = str(resolved)
+    public_dir = str(_safe_public_felpos_dir())
+
     if elevate and sys.platform.startswith("win"):
         import ctypes
 
-        # ShellExecuteW returns >32 on success. Comillas dobles para rutas con espacios.
+        # PowerShell directo con runas; cwd = Public (sin parentesis).
         result = ctypes.windll.shell32.ShellExecuteW(
             None,
             "runas",
-            "cmd.exe",
-            f'/c call "{script_str}"',
-            str(script_path.parent.resolve()),
-            1,
+            "powershell.exe",
+            f'-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{script_str}"',
+            public_dir,
+            0,
         )
         if int(result) <= 32:
             raise PermissionError(_permission_denied_help(install_dir))
         return
 
-    creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
-    # Lanzar con una sola cadena bien entrecomillada evita romper rutas con (x86).
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) or getattr(
+        subprocess, "DETACHED_PROCESS", 0
+    )
     subprocess.Popen(
-        f'cmd.exe /c call "{script_str}"',
-        cwd=str(install_dir),
+        ["wscript.exe", "//nologo", str(runner)],
+        cwd=public_dir,
         creationflags=creationflags,
         close_fds=True,
-        shell=True,
+        shell=False,
     )
 
 def delegate_pending_executable_update(install_dir: Path | None = None) -> bool:
@@ -702,9 +823,15 @@ def delegate_pending_executable_update(install_dir: Path | None = None) -> bool:
     script_path = _user_updates_dir() / PENDING_UPDATE_SCRIPT
     elevate = not _dir_is_writable(root)
     if not script_path.exists():
-        # Compatibilidad con scripts viejos dejados en la carpeta de instalacion.
         legacy = root / PENDING_UPDATE_SCRIPT
-        script_path = legacy if legacy.exists() else _write_restart_script(root)
+        legacy_bat = root / LEGACY_PENDING_UPDATE_SCRIPT
+        legacy_updates_bat = _user_updates_dir() / LEGACY_PENDING_UPDATE_SCRIPT
+        if legacy.exists():
+            script_path = legacy
+        elif legacy_updates_bat.exists() or legacy_bat.exists():
+            script_path = _write_restart_script(root)
+        else:
+            script_path = _write_restart_script(root)
     _launch_updater_script(script_path, root, elevate=elevate)
     time.sleep(0.3)
     os._exit(0)
@@ -828,12 +955,27 @@ def launch_pending_update_restart() -> bool:
     if not script_path.exists():
         stage_script = updates_dir / "pending" / PENDING_UPDATE_SCRIPT
         legacy_script = install_dir / PENDING_UPDATE_SCRIPT
+        legacy_bat = updates_dir / LEGACY_PENDING_UPDATE_SCRIPT
+        legacy_install_bat = install_dir / LEGACY_PENDING_UPDATE_SCRIPT
         if stage_script.exists():
             script_path = stage_script
             elevate = True
         elif legacy_script.exists():
             script_path = legacy_script
             elevate = not _dir_is_writable(install_dir)
+        elif legacy_bat.exists() or legacy_install_bat.exists():
+            # Regenerar .ps1 moderno; no ejecutar el .bat (rompe con (x86)).
+            stage_dir = updates_dir / "pending"
+            if (stage_dir / "FELPOS.exe.pending").exists():
+                script_path = _write_restart_script(
+                    install_dir, stage_dir=stage_dir, require_elevation=True
+                )
+                elevate = True
+            elif (install_dir / "FELPOS.exe.pending").exists():
+                script_path = _write_restart_script(install_dir)
+                elevate = not _dir_is_writable(install_dir)
+            else:
+                return False
         else:
             return False
     else:

@@ -641,6 +641,8 @@ begin
     DeleteFile(AppDir + '\pending_update.json');
   if FileExists(AppDir + '\apply_pending_update.bat') then
     DeleteFile(AppDir + '\apply_pending_update.bat');
+  if FileExists(AppDir + '\apply_pending_update.ps1') then
+    DeleteFile(AppDir + '\apply_pending_update.ps1');
 end;
 
 procedure DeleteFileIfExists(const FilePath: String);
