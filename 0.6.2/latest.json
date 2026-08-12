@@ -1,7 +1,0 @@
-{
-    "version":  "0.6.2",
-    "build_date":  "2026-08-08 16:05:30",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.2/felpos-update-0.6.2.zip",
-    "sha256":  "cf5b33340af300948fd8308bab5efdc66597a49433246b00c529556a168076b8",
-    "release_notes":  "- Pulido general de apariencia (tabs, botones, tipografia)\r\n- Catalogo POS y ticket mas claros\r\n- Tablas con filas alternadas y hover\r\n- Mejor contraste en temas claro y crema"
-}
