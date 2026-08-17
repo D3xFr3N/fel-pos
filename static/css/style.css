@@ -2762,73 +2762,123 @@ select {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-2);
 }
+
+/* Product dialog: always keep fields in rows (POS window is often <720px). */
 #product-dialog {
-  width: min(760px, 96vw);
-  max-height: min(86vh, 640px);
-  padding: 0.7rem 0.85rem;
+  width: min(820px, 96vw);
+  max-height: min(82vh, 560px);
+  padding: 0.55rem 0.7rem;
+  box-sizing: border-box;
 }
-#product-dialog form {
-  gap: 0.4rem;
+#product-dialog form.product-form-compact,
+#product-dialog #product-form {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
 }
 #product-dialog h3 {
   margin: 0;
-  font-size: 1.02rem;
-  line-height: 1.2;
+  font-size: 0.98rem;
+  line-height: 1.15;
 }
 #product-dialog label {
-  gap: 0.18rem;
-  font-size: 0.76rem;
+  display: grid;
+  gap: 0.12rem;
+  font-size: 0.72rem;
+  min-width: 0;
 }
 #product-dialog .hint {
   margin: 0;
-  font-size: 0.72rem;
-  line-height: 1.25;
+  font-size: 0.7rem;
+  line-height: 1.2;
 }
 #product-dialog input,
 #product-dialog select,
 #product-dialog textarea {
-  padding: 0.38rem 0.5rem;
-  min-height: 2rem;
-  border-radius: 8px;
-  font-size: 0.86rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.32rem 0.45rem;
+  min-height: 1.9rem;
+  height: auto;
+  border-radius: 7px;
+  font-size: 0.84rem;
 }
 #product-dialog textarea {
-  min-height: 2rem;
+  min-height: 1.9rem;
+  max-height: 3.2rem;
   resize: vertical;
-  max-height: 4.5rem;
+}
+#product-dialog .product-form-row {
+  display: grid !important;
+  gap: 0.35rem;
+  min-width: 0;
+  width: 100%;
+}
+#product-dialog .product-form-row-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+#product-dialog .product-form-row-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+#product-dialog .product-form-row-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
 }
 #product-dialog .barcode-field-row {
-  gap: 0.18rem;
+  gap: 0.12rem;
 }
 #product-dialog .barcode-field-actions {
-  gap: 0.35rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.3rem;
+  align-items: center;
 }
 #product-dialog .barcode-field-actions .btn {
-  min-height: 2rem;
-  padding: 0.28rem 0.55rem;
-  font-size: 0.76rem;
+  min-height: 1.9rem;
+  padding: 0.22rem 0.5rem;
+  font-size: 0.72rem;
   white-space: nowrap;
 }
 #product-dialog .product-options-grid {
-  padding: 0.3rem 0.45rem;
-  gap: 0.2rem 0.5rem;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  padding: 0.28rem 0.4rem;
+  gap: 0.15rem 0.4rem;
   border-radius: 8px;
 }
 #product-dialog .product-options-grid .inline-option {
-  font-size: 0.76rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  margin: 0;
 }
 #product-dialog .school-fields-block {
   margin: 0;
-  padding: 0.35rem 0.45rem;
+  padding: 0.3rem 0.4rem;
+}
+#product-dialog .school-fields-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.3rem;
 }
 #product-dialog .dialog-actions {
-  margin-top: 0.15rem;
-  padding-top: 0.15rem;
+  margin-top: 0.1rem;
+  padding-top: 0.1rem;
 }
 #product-dialog .dialog-actions .btn {
-  min-height: 2rem;
-  padding: 0.32rem 0.75rem;
+  min-height: 1.95rem;
+  padding: 0.28rem 0.7rem;
 }
+@media (max-width: 640px) {
+  #product-dialog .product-form-row-4,
+  #product-dialog .product-form-row-5 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  #product-dialog .product-options-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
 .product-options-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

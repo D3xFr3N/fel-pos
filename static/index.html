@@ -360,9 +360,9 @@
   </div>
 
   <dialog id="product-dialog">
-    <form id="product-form" method="dialog">
+    <form id="product-form" method="dialog" class="product-form-compact">
       <h3 id="product-dialog-title">Nuevo producto</h3>
-      <div class="form-row-2">
+      <div class="product-form-row product-form-row-2">
         <label>SKU<input name="sku" required></label>
         <label class="barcode-field-row">
           <span>Codigo de barras</span>
@@ -372,12 +372,14 @@
           </div>
         </label>
       </div>
-      <label>Nombre<input name="name" required></label>
-      <label>
-        Descripcion
-        <textarea name="description" rows="1" placeholder="Ej. Cuaderno 100 hojas rayado, lapiz HB"></textarea>
-      </label>
-      <div class="form-row-2">
+      <div class="product-form-row product-form-row-2">
+        <label>Nombre<input name="name" required></label>
+        <label>
+          Descripcion
+          <textarea name="description" rows="1" placeholder="Ej. Cuaderno 100 hojas rayado"></textarea>
+        </label>
+      </div>
+      <div class="product-form-row product-form-row-2">
         <label>Proveedor<select name="supplier_id" id="product-supplier-select" required></select></label>
         <label>Departamento<select name="department_id" id="product-department-select"></select></label>
       </div>
@@ -402,7 +404,7 @@
           </label>
         </div>
       </section>
-      <div class="form-row-4">
+      <div class="product-form-row product-form-row-4">
         <label>Precio<input name="price" type="number" step="0.01" min="0" required></label>
         <label>Precio VIP<input name="price_vip" type="number" step="0.01" min="0" placeholder="Opcional"></label>
         <label>Costo<input name="cost" type="number" step="0.01" min="0" value="0"></label>
@@ -440,14 +442,14 @@
         </label>
       </div>
       <p class="hint" id="product-track-expiry-hint" hidden>Si activas FEFO, las entradas deben registrar lote y fecha. Sin lotes en la sucursal, no se podra vender.</p>
-      <div class="form-row-4">
+      <div class="product-form-row product-form-row-5">
         <label id="product-stock-label">Stock<input name="stock" type="number" step="0.01" min="0" value="0"></label>
-        <label id="product-min-stock-label">Stock minimo<input name="min_stock" type="number" step="0.01" min="0" value="0"></label>
+        <label id="product-min-stock-label">Stock min.<input name="min_stock" type="number" step="0.01" min="0" value="0"></label>
         <label>IVA %<input name="tax_rate" type="number" step="0.01" min="0" max="100" value="12"></label>
-        <label>Cant. min. mayoreo<input name="wholesale_min_qty" type="number" step="1" min="0" value="0"></label>
+        <label>Min. mayoreo<input name="wholesale_min_qty" type="number" step="1" min="0" value="0"></label>
+        <label>Desc. mayoreo %<input name="wholesale_discount_pct" type="number" step="0.01" min="0" max="100" value="0"></label>
       </div>
       <p class="hint" id="product-stock-edit-hint" hidden>Con multi-sucursal activo, el stock es solo lectura (suma de sucursales). Usa Ingreso, Conteo o Transferencia para ajustarlo.</p>
-      <label>Descuento mayoreo %<input name="wholesale_discount_pct" type="number" step="0.01" min="0" max="100" value="0"></label>
       <div class="dialog-actions">
         <button type="button" class="btn ghost" id="close-product-dialog">Cancelar</button>
         <button type="submit" class="btn primary">Guardar</button>
