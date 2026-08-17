@@ -1,7 +1,0 @@
-{
-    "version":  "0.6.11",
-    "build_date":  "2026-08-12 14:30:33",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.11/felpos-update-0.6.11.zip",
-    "sha256":  "8147574b5a369d1d051af408ff1d88db26937878cbd7b182bf8773185ef48198",
-    "release_notes":  "## FEL POS 0.6.11\r\n\r\n- En Vender se quitan el catalogo de productos y los filtros de departamentos.\r\n- La venta queda centrada en busqueda/escaneo (SKU o codigo) y el ticket."
-}
