@@ -1,7 +1,0 @@
-{
-    "version":  "0.6.13",
-    "build_date":  "2026-08-12 16:21:07",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.13/felpos-update-0.6.13.zip",
-    "sha256":  "f7a39a312d062f226017283aedc14d3fa7bd9e3dd36c807a95aa70cefb91a773",
-    "release_notes":  "## FEL POS 0.6.13\r\n\r\n- Filas del ticket mas compactas y sugerencias al escribir en el buscador.\r\n- Descuento y metodo de pago se eligen al cobrar (F12), con botones claros de pago recibido."
-}
