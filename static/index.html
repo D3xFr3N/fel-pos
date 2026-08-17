@@ -362,27 +362,41 @@
   <dialog id="product-dialog">
     <form id="product-form" method="dialog" class="product-form-compact">
       <h3 id="product-dialog-title">Nuevo producto</h3>
-      <div class="product-form-row product-form-row-2">
-        <label>SKU<input name="sku" required></label>
-        <label class="barcode-field-row">
-          <span>Codigo de barras</span>
-          <div class="barcode-field-actions">
-            <input name="barcode" placeholder="Escanea o escribe (opcional)">
-            <button type="button" class="btn ghost" id="product-generate-barcode-btn">Generar</button>
-          </div>
-        </label>
-      </div>
-      <div class="product-form-row product-form-row-2">
-        <label>Nombre<input name="name" required></label>
-        <label>
-          Descripcion
-          <textarea name="description" rows="1" placeholder="Ej. Cuaderno 100 hojas rayado"></textarea>
-        </label>
-      </div>
-      <div class="product-form-row product-form-row-2">
-        <label>Proveedor<select name="supplier_id" id="product-supplier-select" required></select></label>
-        <label>Departamento<select name="department_id" id="product-department-select"></select></label>
-      </div>
+      <table class="product-form-table" role="presentation">
+        <tr>
+          <td>
+            <label>SKU<input name="sku" required></label>
+          </td>
+          <td>
+            <label class="barcode-field-row">
+              <span>Codigo de barras</span>
+              <div class="barcode-field-actions">
+                <input name="barcode" placeholder="Escanea o escribe (opcional)">
+                <button type="button" class="btn ghost" id="product-generate-barcode-btn">Generar</button>
+              </div>
+            </label>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <label>Nombre<input name="name" required></label>
+          </td>
+          <td>
+            <label>
+              Descripcion
+              <textarea name="description" rows="1" placeholder="Ej. Cuaderno 100 hojas rayado"></textarea>
+            </label>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <label>Proveedor<select name="supplier_id" id="product-supplier-select" required></select></label>
+          </td>
+          <td>
+            <label>Departamento<select name="department_id" id="product-department-select"></select></label>
+          </td>
+        </tr>
+      </table>
       <section id="product-school-fields" class="school-fields-block" hidden>
         <p id="product-school-fields-title" class="hint">Datos utiles escolares</p>
         <div class="school-fields-grid">
@@ -404,17 +418,21 @@
           </label>
         </div>
       </section>
-      <div class="product-form-row product-form-row-4">
-        <label>Precio<input name="price" type="number" step="0.01" min="0" required></label>
-        <label>Precio VIP<input name="price_vip" type="number" step="0.01" min="0" placeholder="Opcional"></label>
-        <label>Costo<input name="cost" type="number" step="0.01" min="0" value="0"></label>
-        <label>Bien o servicio
-          <select name="goods_or_services">
-            <option value="B">Bien (B)</option>
-            <option value="S">Servicio (S)</option>
-          </select>
-        </label>
-      </div>
+      <table class="product-form-table" role="presentation">
+        <tr>
+          <td><label>Precio<input name="price" type="number" step="0.01" min="0" required></label></td>
+          <td><label>Precio VIP<input name="price_vip" type="number" step="0.01" min="0" placeholder="Opcional"></label></td>
+          <td><label>Costo<input name="cost" type="number" step="0.01" min="0" value="0"></label></td>
+          <td>
+            <label>Bien o servicio
+              <select name="goods_or_services">
+                <option value="B">Bien (B)</option>
+                <option value="S">Servicio (S)</option>
+              </select>
+            </label>
+          </td>
+        </tr>
+      </table>
       <label id="product-dining-modifiers-wrap" hidden>
         Modificadores comanda (CSV)
         <input name="dining_modifiers" placeholder="Ej. Sin cebolla, Extra queso, Picante">
@@ -442,13 +460,15 @@
         </label>
       </div>
       <p class="hint" id="product-track-expiry-hint" hidden>Si activas FEFO, las entradas deben registrar lote y fecha. Sin lotes en la sucursal, no se podra vender.</p>
-      <div class="product-form-row product-form-row-5">
-        <label id="product-stock-label">Stock<input name="stock" type="number" step="0.01" min="0" value="0"></label>
-        <label id="product-min-stock-label">Stock min.<input name="min_stock" type="number" step="0.01" min="0" value="0"></label>
-        <label>IVA %<input name="tax_rate" type="number" step="0.01" min="0" max="100" value="12"></label>
-        <label>Min. mayoreo<input name="wholesale_min_qty" type="number" step="1" min="0" value="0"></label>
-        <label>Desc. mayoreo %<input name="wholesale_discount_pct" type="number" step="0.01" min="0" max="100" value="0"></label>
-      </div>
+      <table class="product-form-table" role="presentation">
+        <tr>
+          <td><label id="product-stock-label">Stock<input name="stock" type="number" step="0.01" min="0" value="0"></label></td>
+          <td><label id="product-min-stock-label">Stock min.<input name="min_stock" type="number" step="0.01" min="0" value="0"></label></td>
+          <td><label>IVA %<input name="tax_rate" type="number" step="0.01" min="0" max="100" value="12"></label></td>
+          <td><label>Min. mayoreo<input name="wholesale_min_qty" type="number" step="1" min="0" value="0"></label></td>
+          <td><label>Desc. mayoreo %<input name="wholesale_discount_pct" type="number" step="0.01" min="0" max="100" value="0"></label></td>
+        </tr>
+      </table>
       <p class="hint" id="product-stock-edit-hint" hidden>Con multi-sucursal activo, el stock es solo lectura (suma de sucursales). Usa Ingreso, Conteo o Transferencia para ajustarlo.</p>
       <div class="dialog-actions">
         <button type="button" class="btn ghost" id="close-product-dialog">Cancelar</button>

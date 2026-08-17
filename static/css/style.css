@@ -2763,29 +2763,51 @@ select {
   gap: var(--space-2);
 }
 
-/* Product dialog: always keep fields in rows (POS window is often <720px). */
+/* Product dialog: HTML table rows (WebView2-safe side-by-side fields). */
 #product-dialog {
-  width: min(820px, 96vw);
+  width: min(860px, 96vw);
   max-height: min(82vh, 560px);
   padding: 0.55rem 0.7rem;
   box-sizing: border-box;
 }
 #product-dialog form.product-form-compact,
 #product-dialog #product-form {
-  display: grid;
-  gap: 0.35rem;
-  align-content: start;
+  display: block;
+}
+#product-dialog form.product-form-compact > * + * {
+  margin-top: 0.35rem;
 }
 #product-dialog h3 {
   margin: 0;
   font-size: 0.98rem;
   line-height: 1.15;
 }
+#product-dialog .product-form-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0.35rem 0.2rem;
+  table-layout: fixed;
+  margin: 0;
+  min-width: 0 !important;
+}
+#product-dialog .product-form-table td {
+  vertical-align: top;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  width: auto;
+}
 #product-dialog label {
-  display: grid;
-  gap: 0.12rem;
+  display: block;
+  margin: 0;
   font-size: 0.72rem;
   min-width: 0;
+  color: var(--muted);
+}
+#product-dialog label > span,
+#product-dialog .barcode-field-row > span {
+  display: block;
+  margin-bottom: 0.12rem;
 }
 #product-dialog .hint {
   margin: 0;
@@ -2795,6 +2817,7 @@ select {
 #product-dialog input,
 #product-dialog select,
 #product-dialog textarea {
+  display: block;
   width: 100%;
   box-sizing: border-box;
   padding: 0.32rem 0.45rem;
@@ -2808,48 +2831,47 @@ select {
   max-height: 3.2rem;
   resize: vertical;
 }
-#product-dialog .product-form-row {
-  display: grid !important;
-  gap: 0.35rem;
-  min-width: 0;
-  width: 100%;
-}
-#product-dialog .product-form-row-2 {
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-}
-#product-dialog .product-form-row-4 {
-  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-}
-#product-dialog .product-form-row-5 {
-  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
-}
 #product-dialog .barcode-field-row {
-  gap: 0.12rem;
+  display: block;
 }
 #product-dialog .barcode-field-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   gap: 0.3rem;
   align-items: center;
 }
+#product-dialog .barcode-field-actions input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 #product-dialog .barcode-field-actions .btn {
+  flex: 0 0 auto;
   min-height: 1.9rem;
   padding: 0.22rem 0.5rem;
   font-size: 0.72rem;
   white-space: nowrap;
 }
 #product-dialog .product-options-grid {
-  display: grid !important;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  padding: 0.28rem 0.4rem;
-  gap: 0.15rem 0.4rem;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 0.25rem 0.85rem !important;
+  padding: 0.28rem 0.45rem;
   border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--inset-panel);
 }
 #product-dialog .product-options-grid .inline-option {
-  display: flex;
+  display: inline-flex !important;
+  flex-direction: row !important;
   align-items: center;
   gap: 0.35rem;
   font-size: 0.72rem;
+  margin: 0;
+  width: auto !important;
+  color: var(--text);
+}
+#product-dialog .product-options-grid .inline-option input {
+  width: auto;
+  min-height: 0;
   margin: 0;
 }
 #product-dialog .school-fields-block {
@@ -2858,25 +2880,19 @@ select {
 }
 #product-dialog .school-fields-grid {
   display: grid !important;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  grid-template-columns: 1fr 1fr !important;
   gap: 0.3rem;
 }
 #product-dialog .dialog-actions {
-  margin-top: 0.1rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  margin-top: 0.25rem;
   padding-top: 0.1rem;
 }
 #product-dialog .dialog-actions .btn {
   min-height: 1.95rem;
   padding: 0.28rem 0.7rem;
-}
-@media (max-width: 640px) {
-  #product-dialog .product-form-row-4,
-  #product-dialog .product-form-row-5 {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
-  #product-dialog .product-options-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
 }
 
 .product-options-grid {
