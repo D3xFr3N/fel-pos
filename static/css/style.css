@@ -488,20 +488,17 @@ main {
 .pos-lines-wrap {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  display: block;
+  overflow: auto;
+  background: var(--surface);
 }
 
 .pos-lines-table {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  flex: 1;
-}
-
-.pos-lines-wrap {
-  overflow: auto;
+  height: auto;
+  flex: none;
 }
 
 .pos-lines-table thead th {
@@ -510,15 +507,15 @@ main {
   z-index: 1;
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 700;
   text-transform: none;
   letter-spacing: 0.01em;
   text-align: left;
-  padding: 0.28rem 0.45rem;
+  padding: 0.22rem 0.4rem;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .pos-lines-table th:nth-child(3),
@@ -546,19 +543,21 @@ main {
 .pos-lines-table td:nth-child(6) { width: 12%; }
 
 .pos-lines-table tbody td {
-  padding: 0.22rem 0.45rem;
+  padding: 0.12rem 0.4rem !important;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  font-size: 0.8rem;
-  line-height: 1.25;
+  font-size: 0.76rem !important;
+  line-height: 1.15;
   vertical-align: middle;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  height: auto;
 }
 
 .pos-lines-table tbody tr {
   cursor: pointer;
-  height: 1.7rem;
+  height: 1.4rem;
+  max-height: 1.55rem;
 }
 
 .pos-lines-table tbody tr:hover {
@@ -570,14 +569,20 @@ main {
   outline: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
 }
 
+.pos-lines-table tbody tr.is-empty {
+  height: auto;
+  max-height: none;
+  cursor: default;
+}
+
 .pos-lines-table tbody tr.is-empty td {
   text-align: center;
   color: var(--muted);
-  padding: 1rem 0.75rem;
+  padding: 0.55rem 0.75rem !important;
   white-space: normal;
   cursor: default;
   height: auto;
-  font-size: 0.82rem;
+  font-size: 0.78rem !important;
 }
 
 .pos-lines-meta {
