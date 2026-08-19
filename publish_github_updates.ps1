@@ -117,10 +117,19 @@ Copy-Item $versionSourceDir $targetVersionDir -Recurse -Force
 # Actualizador independiente (sirve aunque la tienda tenga una version vieja rota).
 $toolsDir = Join-Path $pagesWorktree "tools"
 New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
-$standaloneUpdater = Join-Path $root "installer\assets\Actualizar_FELPOS.ps1"
-if (Test-Path $standaloneUpdater) {
-    Copy-Item $standaloneUpdater (Join-Path $toolsDir "Actualizar_FELPOS.ps1") -Force
-    Write-Host "  tools/Actualizar_FELPOS.ps1 listo"
+foreach ($toolName in @("Actualizar_FELPOS.ps1", "Actualizar_FELPOS.cmd")) {
+    $src = Join-Path $root "installer\assets\$toolName"
+    if (Test-Path $src) {
+        Copy-Item $src (Join-Path $toolsDir $toolName) -Force
+        Write-Host "  tools/$toolName listo"
+    }
+}
+
+# Setup completo (reinstalar encima conserva data\)
+$setupSrc = Join-Path $root "dist\FELPOS_Setup.exe"
+if (Test-Path $setupSrc) {
+    Copy-Item $setupSrc (Join-Path $toolsDir "FELPOS_Setup.exe") -Force
+    Write-Host "  tools/FELPOS_Setup.exe listo"
 }
 
 Remove-OldGhPagesVersions -PagesWorktree $pagesWorktree -KeepCount $KeepVersionCount
