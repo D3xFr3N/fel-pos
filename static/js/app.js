@@ -2566,14 +2566,7 @@ function applyCashKeypadInput(key) {
 }
 
 function wireCashCheckoutKeypad() {
-  const keypad = document.getElementById("cash-checkout-keypad");
-  if (!keypad || keypad.dataset.wired === "1") return;
-  keypad.dataset.wired = "1";
-  keypad.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-cash-key]");
-    if (!button) return;
-    applyCashKeypadInput(button.dataset.cashKey);
-  });
+  // Teclado tactil de cobro eliminado; se usa teclado fisico / input.
 }
 
 async function confirmPrescriptionForCheckout(rxLines) {
@@ -9276,7 +9269,14 @@ async function openCashSessionWithValues(openingAmount, notes = null) {
       notes: notes || null,
     }),
   });
-  // Al abrir fondo, la venta queda lista.
+  // Abrir cajon para ingresar el fondo fisico.
+  if (Number(openingAmount || 0) > 0) {
+    try {
+      await openCashDrawer(true);
+    } catch (error) {
+      alert(`Fondo abierto, pero no se pudo abrir el cajon: ${error.message}`);
+    }
+  }
   return session;
 }
 
@@ -11747,11 +11747,11 @@ function setupEvents() {
     const received = document.getElementById("cash-checkout-received");
     if (!received) return;
     if (event.target === received) return;
-    // Si el foco esta en botones/teclado, digitos van directo al efectivo recibido.
+    // Si el foco esta en botones del dialogo, digitos van al efectivo recibido.
     const target = event.target;
     const onControls =
       target === dialog ||
-      target?.closest?.(".checkout-pay-choice, .cash-keypad, .dialog-actions, #checkout-payment-choices");
+      target?.closest?.(".checkout-pay-choice, .dialog-actions, #checkout-payment-choices");
     if (!onControls) return;
     if (/^\d$/.test(event.key) || event.key === "." || event.key === "Backspace") {
       event.preventDefault();

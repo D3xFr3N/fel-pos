@@ -1306,6 +1306,8 @@ dialog textarea {
   border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border));
   border-radius: 12px;
   background: color-mix(in srgb, var(--primary) 10%, var(--surface-2));
+  overflow: hidden;
+  min-width: 0;
 }
 .checkout-payment-ask-title {
   font-size: 0.92rem;
@@ -1318,11 +1320,18 @@ dialog textarea {
 }
 .checkout-pay-choice {
   min-height: 2.55rem;
+  padding: 0.45rem 0.35rem;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
   color: var(--text);
   font-weight: 700;
+  font-size: 0.86rem;
+  line-height: 1.15;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   cursor: pointer;
 }
 .checkout-pay-choice:hover {
@@ -1340,6 +1349,11 @@ dialog textarea {
   margin-top: 0.35rem;
 }
 @media (min-width: 560px) {
+  .checkout-payment-choices {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 760px) {
   .checkout-payment-choices {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
@@ -1526,31 +1540,6 @@ dialog textarea {
 #cash-checkout-received::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
-}
-
-.cash-keypad {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.45rem;
-  margin: 0.75rem 0 0.35rem;
-}
-.cash-key {
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text);
-  border-radius: 12px;
-  min-height: 3rem;
-  font-size: 1.15rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-.cash-key:hover {
-  border-color: var(--primary);
-  background: rgba(var(--primary-rgb), 0.12);
-}
-.cash-key-exact {
-  background: rgba(var(--primary-rgb), 0.18);
-  color: var(--accent-text);
 }
 
 .app-modal-dialog {
@@ -1943,6 +1932,12 @@ dialog {
   color: var(--text);
   padding: 1.2rem;
   width: min(480px, 92vw);
+  box-sizing: border-box;
+  overflow: auto;
+  max-height: min(92vh, 900px);
+}
+#cash-checkout-dialog {
+  width: min(560px, 94vw);
 }
 dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 dialog.startup-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
@@ -1950,8 +1945,13 @@ dialog.startup-dialog {
   border: 1px solid var(--border);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
 }
-dialog form, #sale-detail { display: grid; gap: 0.8rem; }
-.dialog-actions { display: flex; justify-content: flex-end; gap: 0.6rem; }
+dialog form, #sale-detail { display: grid; gap: 0.8rem; min-width: 0; }
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
 #cash-close-summary-dialog {
   width: min(520px, 94vw);
 }
