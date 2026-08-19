@@ -1,7 +1,7 @@
 {
-    "version":  "0.6.25",
-    "build_date":  "2026-08-19 15:47:42",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.25/felpos-update-0.6.25.zip",
-    "sha256":  "4b1c0c41d1ed32c33338eb9211541270b1289ddf7c856442d5d2d430f99fa3d7",
-    "release_notes":  "Actualizacion FEL POS v0.6.25\r\n\r\n- Instalador: Agregar/Importar llave con archivo .felpos-lic (sin pegar la clave larga).\r\n- Configuracion: activacion por archivo de licencia.\r\n- Licencias firmadas Ed25519 sin cambios de seguridad."
+    "version":  "0.6.26",
+    "build_date":  "2026-08-19 15:55:41",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.26/felpos-update-0.6.26.zip",
+    "sha256":  "72d654290ff374abd305718a8d81df36c2c3f17a85b3205056136edbce34edba",
+    "release_notes":  "Actualizacion FEL POS v0.6.26\r\n\r\n- Corrige error WScript \"No existe ninguna extension en C:\\Program\" en Program Files (x86).\r\n- Relanzado post-update con rutas citadas correctamente.\r\n- Lanzadores BAT/CMD sin bloques if (...) que rompen con (x86)."
 }
