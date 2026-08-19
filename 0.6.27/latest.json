@@ -1,0 +1,7 @@
+{
+    "version":  "0.6.27",
+    "build_date":  "2026-08-19 16:29:23",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.27/felpos-update-0.6.27.zip",
+    "sha256":  "d3ea4f519dba211dfddbf7509b52248388f04132c9ceb21c69f892f899282faa",
+    "release_notes":  "Actualizacion FEL POS v0.6.27\r\n\r\n- Licencia: solo acepta archivo .felpos-lic firmado (rechaza .txt y cualquier otro archivo).\r\n- Instalador y Config validan la firma Ed25519 antes de guardar."
+}
