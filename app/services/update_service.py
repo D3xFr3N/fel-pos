@@ -24,8 +24,11 @@ PENDING_UPDATE_SCRIPT = "apply_pending_update.ps1"
 LEGACY_PENDING_UPDATE_SCRIPT = "apply_pending_update.bat"
 PENDING_UPDATE_META = "pending_update.json"
 PENDING_UPDATE_LOG = "felpos-update.log"
+SAFE_PUBLIC_DIR = r"C:\Users\Public\FELPOS"
 SAFE_RELAUNCH_VBS = r"C:\Users\Public\FELPOS\relaunch.vbs"
 SAFE_APPLY_RUNNER_VBS = r"C:\Users\Public\FELPOS\apply_update.vbs"
+SAFE_APPLY_PS1 = r"C:\Users\Public\FELPOS\apply_pending_update.ps1"
+SAFE_UPDATE_LOG = r"C:\Users\Public\FELPOS\felpos-update.log"
 UPDATE_FILES = ("FELPOS.exe", "VERSION", "BUILD_DATE")
 UPDATE_SUPPORT_FILES = (
     "Aplicar_actualizacion_pendiente.bat",
@@ -258,8 +261,8 @@ def _user_updates_dir() -> Path:
 
 
 def _safe_public_felpos_dir() -> Path:
-    """Ruta sin espacios ni parentesis; segura para invocar desde CMD."""
-    target = Path(r"C:\Users\Public\FELPOS")
+    """Ruta sin espacios ni parentesis; segura para invocar desde CMD/VBS."""
+    target = Path(SAFE_PUBLIC_DIR)
     target.mkdir(parents=True, exist_ok=True)
     return target
 
@@ -267,7 +270,7 @@ def _safe_public_felpos_dir() -> Path:
 def _write_safe_relaunch_vbs(install_dir: Path) -> Path:
     """
     Escribe un VBS fuera de Program Files para relanzar FELPOS.exe.
-    Evita que CMD rompa rutas con '(x86)' al hacer start/wscript.
+    Usa ShellExecute (no CMD) para rutas con '(x86)' y espacios.
     """
     public = _safe_public_felpos_dir()
     runtime_tmp = public / "runtime-tmp"
@@ -285,8 +288,9 @@ def _write_safe_relaunch_vbs(install_dir: Path) -> Path:
         [
             "' Auto-generado por FEL POS - no editar",
             "Option Explicit",
-            "Dim shell, fso, exePath, workDir, tmpDir",
+            "Dim shell, app, fso, exePath, workDir, tmpDir",
             'Set shell = CreateObject("WScript.Shell")',
+            'Set app = CreateObject("Shell.Application")',
             'Set fso = CreateObject("Scripting.FileSystemObject")',
             f'exePath = "{exe_s}"',
             f'workDir = "{work_s}"',
@@ -304,12 +308,49 @@ def _write_safe_relaunch_vbs(install_dir: Path) -> Path:
             'shell.Environment("PROCESS")("TEMP") = tmpDir',
             'shell.Environment("PROCESS")("TMP") = tmpDir',
             'shell.Environment("PROCESS")("FELPOS_RUNTIME_TMP") = tmpDir',
-            'shell.Run """" & exePath & """", 1, False',
+            # ShellExecute no parte rutas con (x86) como hace CMD/start.
+            'app.ShellExecute exePath, "", workDir, "open", 1',
             "WScript.Quit 0",
             "",
         ]
     )
     target = public / "relaunch.vbs"
+    target.write_text(content, encoding="utf-8")
+    return target
+
+
+def _write_apply_runner_vbs(ps1_path: Path | None = None) -> Path:
+    """
+    Runner fijo en Public (sin espacios/parentesis).
+    Siempre apunta a C:\\Users\\Public\\FELPOS\\apply_pending_update.ps1
+    """
+    public = _safe_public_felpos_dir()
+    target = public / "apply_update.vbs"
+    # Preferir ruta fija sin espacios; ignorar ps1_path con LocalAppData.
+    ps1 = SAFE_APPLY_PS1
+    if ps1_path is not None:
+        resolved = str(Path(ps1_path).resolve())
+        if resolved.lower().startswith(SAFE_PUBLIC_DIR.lower()):
+            ps1 = resolved
+    ps1_escaped = ps1.replace('"', '""')
+    content = "\r\n".join(
+        [
+            "' Auto-generado por FEL POS - no editar",
+            "Option Explicit",
+            "Dim shell, fso, ps1Path",
+            'Set shell = CreateObject("WScript.Shell")',
+            'Set fso = CreateObject("Scripting.FileSystemObject")',
+            f'ps1Path = "{ps1_escaped}"',
+            "If Not fso.FileExists(ps1Path) Then",
+            '  MsgBox "No se encontro el script de actualizacion:" & vbCrLf & ps1Path, vbCritical, "FEL POS"',
+            "  WScript.Quit 1",
+            "End If",
+            # Ruta Public sin espacios: no hace falta entrecomillar -File.
+            'shell.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & ps1Path, 0, False',
+            "WScript.Quit 0",
+            "",
+        ]
+    )
     target.write_text(content, encoding="utf-8")
     return target
 
@@ -492,36 +533,6 @@ def _ps_single_quote(value: str) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def _write_apply_runner_vbs(ps1_path: Path) -> Path:
-    """
-    Runner fijo en Public (sin parentesis) que ejecuta el .ps1 con PowerShell.
-    Evita CMD / start / rutas Program Files (x86).
-    """
-    public = _safe_public_felpos_dir()
-    target = public / "apply_update.vbs"
-    ps1 = str(ps1_path.resolve()).replace('"', '""')
-    content = "\r\n".join(
-        [
-            "' Auto-generado por FEL POS - no editar",
-            "Option Explicit",
-            "Dim shell, fso, ps1Path, cmd",
-            'Set shell = CreateObject("WScript.Shell")',
-            'Set fso = CreateObject("Scripting.FileSystemObject")',
-            f'ps1Path = "{ps1}"',
-            "If Not fso.FileExists(ps1Path) Then",
-            '  MsgBox "No se encontro el script de actualizacion:" & vbCrLf & ps1Path, vbCritical, "FEL POS"',
-            "  WScript.Quit 1",
-            "End If",
-            'cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & ps1Path & """"',
-            "shell.Run cmd, 0, False",
-            "WScript.Quit 0",
-            "",
-        ]
-    )
-    target.write_text(content, encoding="utf-8")
-    return target
-
-
 def _write_restart_script(
     install_dir: Path,
     *,
@@ -530,27 +541,34 @@ def _write_restart_script(
     expected_exe_bytes: int | None = None,
 ) -> Path:
     """
-    Escribe apply_pending_update.ps1 fuera de Program Files.
-    PowerShell usa -LiteralPath y no se rompe con (x86) ni espacios.
+    Escribe apply_pending_update.ps1 en C:\\Users\\Public\\FELPOS
+    (sin espacios ni parentesis). PowerShell usa -LiteralPath.
     """
     del require_elevation  # reservado; la elevacion la decide _launch_updater_script
+    public = _safe_public_felpos_dir()
+    script_path = Path(SAFE_APPLY_PS1)
     updates_dir = _user_updates_dir()
     updates_dir.mkdir(parents=True, exist_ok=True)
-    script_path = updates_dir / PENDING_UPDATE_SCRIPT
     _write_safe_relaunch_vbs(install_dir)
     _write_apply_runner_vbs(script_path)
 
-    # Limpiar bat legado para no lanzar el flujo viejo por error.
-    legacy_bat = updates_dir / LEGACY_PENDING_UPDATE_SCRIPT
-    if legacy_bat.exists():
-        try:
-            legacy_bat.unlink()
-        except OSError:
-            pass
+    # Limpiar scripts viejos en LocalAppData / bat legado (rutas con espacios).
+    for legacy in (
+        updates_dir / PENDING_UPDATE_SCRIPT,
+        updates_dir / LEGACY_PENDING_UPDATE_SCRIPT,
+        Path(install_dir) / PENDING_UPDATE_SCRIPT,
+        Path(install_dir) / LEGACY_PENDING_UPDATE_SCRIPT,
+    ):
+        if legacy.exists():
+            try:
+                legacy.unlink()
+            except OSError:
+                pass
 
     install_q = _ps_single_quote(str(Path(install_dir).resolve()))
     stage_q = _ps_single_quote(str(Path(stage_dir).resolve()) if stage_dir else "")
     log_q = _ps_single_quote(PENDING_UPDATE_LOG)
+    public_log_q = _ps_single_quote(SAFE_UPDATE_LOG)
     relaunch_q = _ps_single_quote(SAFE_RELAUNCH_VBS)
     runtime_q = _ps_single_quote(r"C:\Users\Public\FELPOS\runtime-tmp")
     meta_q = _ps_single_quote(PENDING_UPDATE_META)
@@ -565,6 +583,7 @@ def _write_restart_script(
         f"$InstallDir = {install_q}",
         f"$StageDir = {stage_q}",
         f"$LogName = {log_q}",
+        f"$PublicLogPath = {public_log_q}",
         f"$RelaunchVbs = {relaunch_q}",
         f"$RuntimeTmp = {runtime_q}",
         f"$MetaName = {meta_q}",
@@ -578,6 +597,7 @@ def _write_restart_script(
         "  try {",
         "    $line = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message",
         "    Add-Content -LiteralPath $LogPath -Value $line -ErrorAction SilentlyContinue",
+        "    Add-Content -LiteralPath $PublicLogPath -Value $line -ErrorAction SilentlyContinue",
         "  } catch {}",
         "}",
         "",
@@ -731,6 +751,16 @@ def _write_restart_script(
             "  Restore-Exe",
             "  if (Test-Path -LiteralPath (Join-Path $InstallDir 'FELPOS.exe')) {",
             "    Start-Relaunch",
+            "  } else {",
+            "    try {",
+            "      Add-Type -AssemblyName PresentationFramework -ErrorAction SilentlyContinue",
+            "      [System.Windows.MessageBox]::Show(",
+            "        ('No se pudo aplicar la actualizacion: ' + $_.Exception.Message + [Environment]::NewLine + 'Revisa C:\\Users\\Public\\FELPOS\\felpos-update.log o reinstala FELPOS_Setup.exe'),",
+            "        'FEL POS',",
+            "        'OK',",
+            "        'Error'",
+            "      ) | Out-Null",
+            "    } catch {}",
             "  }",
             "  $script:UpdateExitCode = 1",
             "}",
@@ -750,7 +780,7 @@ def _write_restart_script(
 def _launch_updater_script(script_path: Path, install_dir: Path, *, elevate: bool = False) -> None:
     import subprocess
 
-    resolved = script_path.resolve()
+    resolved = Path(script_path).resolve()
     # Si solo queda el .bat legado, regenerar .ps1 cuando haya pendiente usable.
     if resolved.suffix.lower() == ".bat":
         stage_dir = _user_updates_dir() / "pending"
@@ -766,6 +796,14 @@ def _launch_updater_script(script_path: Path, install_dir: Path, *, elevate: boo
                 "Usa Reparar_instalacion.bat o reinstala con FELPOS_Setup.exe."
             )
 
+    # Siempre preferir el script fijo en Public (sin espacios).
+    public_script = Path(SAFE_APPLY_PS1)
+    if not resolved.exists() or resolved != public_script.resolve():
+        if public_script.exists():
+            resolved = public_script.resolve()
+        elif resolved.suffix.lower() != ".ps1":
+            raise RuntimeError(f"Script de actualizacion no soportado: {resolved}")
+
     if resolved.suffix.lower() != ".ps1":
         raise RuntimeError(f"Script de actualizacion no soportado: {resolved}")
 
@@ -773,7 +811,7 @@ def _launch_updater_script(script_path: Path, install_dir: Path, *, elevate: boo
     runner = _write_apply_runner_vbs(resolved)
     _append_update_log(
         install_dir,
-        f"Ejecutando actualizador: {resolved.name} via {runner.name} (elevate={elevate})",
+        f"Ejecutando actualizador: {resolved} via {runner.name} (elevate={elevate})",
     )
     script_str = str(resolved)
     public_dir = str(_safe_public_felpos_dir())
@@ -781,12 +819,12 @@ def _launch_updater_script(script_path: Path, install_dir: Path, *, elevate: boo
     if elevate and sys.platform.startswith("win"):
         import ctypes
 
-        # PowerShell directo con runas; cwd = Public (sin parentesis).
+        # PowerShell directo con runas; ruta Public sin espacios.
         result = ctypes.windll.shell32.ShellExecuteW(
             None,
             "runas",
             "powershell.exe",
-            f'-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{script_str}"',
+            f"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File {script_str}",
             public_dir,
             0,
         )
@@ -807,31 +845,25 @@ def _launch_updater_script(script_path: Path, install_dir: Path, *, elevate: boo
 
 def delegate_pending_executable_update(install_dir: Path | None = None) -> bool:
     root = (install_dir or _install_dir()).resolve()
-    if not has_pending_executable_update(root):
-        # Tambien revisar staging del usuario.
-        stage_dir = _user_updates_dir() / "pending"
-        stage_pending = stage_dir / "FELPOS.exe.pending"
-        if not stage_pending.exists():
-            return False
-        script_path = _user_updates_dir() / PENDING_UPDATE_SCRIPT
-        if not script_path.exists():
-            script_path = _write_restart_script(root, stage_dir=stage_dir, require_elevation=True)
+    stage_dir = _user_updates_dir() / "pending"
+    stage_pending = stage_dir / "FELPOS.exe.pending"
+    install_pending = root / "FELPOS.exe.pending"
+
+    if not install_pending.exists() and not stage_pending.exists():
+        return False
+
+    if stage_pending.exists() and not install_pending.exists():
+        script_path = _write_restart_script(root, stage_dir=stage_dir, require_elevation=True)
         _launch_updater_script(script_path, root, elevate=True)
         time.sleep(0.3)
         os._exit(0)
 
-    script_path = _user_updates_dir() / PENDING_UPDATE_SCRIPT
     elevate = not _dir_is_writable(root)
-    if not script_path.exists():
-        legacy = root / PENDING_UPDATE_SCRIPT
-        legacy_bat = root / LEGACY_PENDING_UPDATE_SCRIPT
-        legacy_updates_bat = _user_updates_dir() / LEGACY_PENDING_UPDATE_SCRIPT
-        if legacy.exists():
-            script_path = legacy
-        elif legacy_updates_bat.exists() or legacy_bat.exists():
-            script_path = _write_restart_script(root)
-        else:
-            script_path = _write_restart_script(root)
+    script_path = _write_restart_script(
+        root,
+        stage_dir=stage_dir if stage_pending.exists() else None,
+        require_elevation=elevate,
+    )
     _launch_updater_script(script_path, root, elevate=elevate)
     time.sleep(0.3)
     os._exit(0)
@@ -950,36 +982,23 @@ def prepare_update_apply() -> dict:
 def launch_pending_update_restart() -> bool:
     install_dir = _install_dir()
     updates_dir = _user_updates_dir()
-    script_path = updates_dir / PENDING_UPDATE_SCRIPT
-    elevate = False
-    if not script_path.exists():
-        stage_script = updates_dir / "pending" / PENDING_UPDATE_SCRIPT
-        legacy_script = install_dir / PENDING_UPDATE_SCRIPT
-        legacy_bat = updates_dir / LEGACY_PENDING_UPDATE_SCRIPT
-        legacy_install_bat = install_dir / LEGACY_PENDING_UPDATE_SCRIPT
-        if stage_script.exists():
-            script_path = stage_script
-            elevate = True
-        elif legacy_script.exists():
-            script_path = legacy_script
-            elevate = not _dir_is_writable(install_dir)
-        elif legacy_bat.exists() or legacy_install_bat.exists():
-            # Regenerar .ps1 moderno; no ejecutar el .bat (rompe con (x86)).
-            stage_dir = updates_dir / "pending"
-            if (stage_dir / "FELPOS.exe.pending").exists():
-                script_path = _write_restart_script(
-                    install_dir, stage_dir=stage_dir, require_elevation=True
-                )
-                elevate = True
-            elif (install_dir / "FELPOS.exe.pending").exists():
-                script_path = _write_restart_script(install_dir)
-                elevate = not _dir_is_writable(install_dir)
-            else:
-                return False
-        else:
-            return False
+    stage_dir = updates_dir / "pending"
+    stage_pending = stage_dir / "FELPOS.exe.pending"
+    install_pending = Path(install_dir) / "FELPOS.exe.pending"
+    elevate = not _dir_is_writable(install_dir)
+
+    # Siempre regenerar el script en Public con la ruta/stage actuales.
+    if stage_pending.exists():
+        script_path = _write_restart_script(
+            install_dir, stage_dir=stage_dir, require_elevation=True
+        )
+        elevate = True
+    elif install_pending.exists():
+        script_path = _write_restart_script(install_dir)
+    elif Path(SAFE_APPLY_PS1).exists():
+        script_path = Path(SAFE_APPLY_PS1)
     else:
-        elevate = not _dir_is_writable(install_dir)
+        return False
 
     _append_update_log(install_dir, "Reinicio solicitado para aplicar actualizacion.")
     _launch_updater_script(script_path, install_dir, elevate=elevate)
