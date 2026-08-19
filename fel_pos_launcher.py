@@ -235,13 +235,13 @@ def _apply_pending_update_if_needed(runtime_root: Path) -> None:
             apply_pending_update_at_startup,
             cleanup_stale_pending_update,
             delegate_pending_executable_update,
-            has_pending_executable_update,
         )
 
         cleanup_stale_pending_update(runtime_root)
 
-        if has_pending_executable_update(runtime_root):
-            delegate_pending_executable_update(runtime_root)
+        # Incluye pendientes en staging (LocalAppData) cuando Program Files no escribible.
+        # Si hay EXE pendiente, delega al script y termina el proceso.
+        delegate_pending_executable_update(runtime_root)
 
         result = apply_pending_update_at_startup(runtime_root)
         if result and result.get("applied_files"):

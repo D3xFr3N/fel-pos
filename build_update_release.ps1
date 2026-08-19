@@ -41,6 +41,7 @@ Set-Content (Join-Path $stagingDir "BUILD_DATE") $buildDate
 $assetsDir = Join-Path $root "installer\assets"
 foreach ($assetName in @(
     "Aplicar_actualizacion_pendiente.bat",
+    "Actualizar_FELPOS.ps1",
     "Reparar_instalacion.bat",
     "Iniciar_FELPOS.bat",
     "Iniciar_FELPOS.vbs",
