@@ -175,9 +175,27 @@ try {
 
   $runtimeTmp = Join-Path $PublicDir "runtime-tmp"
   New-Item -ItemType Directory -Force -Path $runtimeTmp | Out-Null
-  $relaunchVbs = Join-Path $PublicDir "relaunch.vbs"
   $exePath = Join-Path $installDir "FELPOS.exe"
-  @"
+  $iniciarVbs = Join-Path $installDir "Iniciar_FELPOS.vbs"
+  Start-Sleep -Seconds 1
+  $opened = $false
+  if (Test-Path -LiteralPath $exePath) {
+    try {
+      Start-Process -LiteralPath $exePath -WorkingDirectory $installDir | Out-Null
+      $opened = $true
+      Write-Log "Abriendo FELPOS.exe"
+    } catch {
+      Write-Log ("AVISO al abrir EXE: " + $_.Exception.Message)
+    }
+  }
+  if (-not $opened -and (Test-Path -LiteralPath $iniciarVbs)) {
+    Start-Process -FilePath "wscript.exe" -ArgumentList @("//nologo", $iniciarVbs) -WorkingDirectory $installDir | Out-Null
+    $opened = $true
+    Write-Log "Abriendo via Iniciar_FELPOS.vbs"
+  }
+  if (-not $opened) {
+    $relaunchVbs = Join-Path $PublicDir "relaunch.vbs"
+    @"
 Option Explicit
 Dim app, fso, exePath, workDir
 Set app = CreateObject("Shell.Application")
@@ -190,8 +208,9 @@ If Not fso.FileExists(exePath) Then
 End If
 app.ShellExecute exePath, "", workDir, "open", 1
 "@ | Set-Content -LiteralPath $relaunchVbs -Encoding ASCII
+    Start-Process -FilePath "wscript.exe" -ArgumentList @("//nologo", $relaunchVbs) | Out-Null
+  }
 
-  Start-Process -FilePath "wscript.exe" -ArgumentList @("//nologo", $relaunchVbs) | Out-Null
   Write-Log "OK actualizado a v$version (onedir)"
   Show-Msg "Actualizacion aplicada: v$version`nFEL POS se esta abriendo."
   exit 0
