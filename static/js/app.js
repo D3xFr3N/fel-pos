@@ -2160,6 +2160,8 @@ function setCheckoutPaymentMethod(method) {
     if (otherMethod && !otherMethod.value) otherMethod.value = "tarjeta";
   }
   updateCheckoutMethodSections();
+  // Tras elegir metodo, deja listo el campo de efectivo para teclear encima.
+  setTimeout(() => focusCheckoutTenderField(), 0);
 }
 
 function updateCheckoutMethodSections() {
@@ -2223,9 +2225,33 @@ function openCheckoutDialog() {
   updateCheckoutMethodSections();
   wireCashCheckoutKeypad();
   if (!dialog.open) dialog.showModal();
-  setTimeout(() => {
-    document.querySelector(".checkout-pay-choice.is-active")?.focus();
-  }, 0);
+  // Efectivo recibido queda seleccionado: teclear reemplaza el total sin mouse.
+  setTimeout(() => focusCheckoutTenderField(), 0);
+}
+
+function focusCheckoutTenderField() {
+  const dialog = document.getElementById("cash-checkout-dialog");
+  if (!dialog?.open) return;
+  const method = document.getElementById("payment-method")?.value || "efectivo";
+  if (method === "efectivo") {
+    const receivedInput = document.getElementById("cash-checkout-received");
+    if (!receivedInput) return;
+    receivedInput.dataset.replaceOnType = "1";
+    focusCashReceivedInput(receivedInput);
+    return;
+  }
+  if (method === "mixto") {
+    const cashReceivedInput = document.getElementById("mixed-cash-received");
+    if (!cashReceivedInput) return;
+    cashReceivedInput.focus();
+    try {
+      cashReceivedInput.select();
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  document.querySelector(".checkout-pay-choice.is-active")?.focus();
 }
 
 function openCashCheckoutDialog() {
@@ -11705,6 +11731,36 @@ function setupEvents() {
   });
   document.getElementById("close-current-sale-btn").addEventListener("click", closeCurrentSaleDraft);
   document.getElementById("cash-checkout-received").addEventListener("input", updateCashCheckoutChange);
+  document.getElementById("cash-checkout-received")?.addEventListener("focus", (event) => {
+    // Al entrar al campo, selecciona todo para reemplazar con lo recibido.
+    try {
+      event.target.select();
+    } catch {
+      /* ignore */
+    }
+  });
+  document.getElementById("cash-checkout-dialog")?.addEventListener("keydown", (event) => {
+    const dialog = document.getElementById("cash-checkout-dialog");
+    if (!dialog?.open) return;
+    const method = document.getElementById("payment-method")?.value || "efectivo";
+    if (method !== "efectivo") return;
+    const received = document.getElementById("cash-checkout-received");
+    if (!received) return;
+    if (event.target === received) return;
+    // Si el foco esta en botones/teclado, digitos van directo al efectivo recibido.
+    const target = event.target;
+    const onControls =
+      target === dialog ||
+      target?.closest?.(".checkout-pay-choice, .cash-keypad, .dialog-actions, #checkout-payment-choices");
+    if (!onControls) return;
+    if (/^\d$/.test(event.key) || event.key === "." || event.key === "Backspace") {
+      event.preventDefault();
+      focusCashReceivedInput(received);
+      if (event.key === "Backspace") applyCashKeypadInput("back");
+      else if (event.key === ".") applyCashKeypadInput(".");
+      else applyCashKeypadInput(event.key);
+    }
+  });
   document.getElementById("mixed-cash-amount")?.addEventListener("input", updateMixedCheckoutAmounts);
   document.getElementById("mixed-cash-received")?.addEventListener("input", updateMixedCheckoutAmounts);
   document.getElementById("mixed-other-method")?.addEventListener("change", updateMixedCheckoutAmounts);
