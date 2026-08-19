@@ -50,7 +50,8 @@ UPDATE_SUPPORT_FILES = (
     "Reparar_permisos_instalacion.bat",
 )
 HTTP_TIMEOUT_SECONDS = 180
-MIN_EXE_BYTES = 15 * 1024 * 1024
+MIN_EXE_BYTES = 1 * 1024 * 1024  # onedir: el EXE es chico; _internal trae los nativos
+
 
 
 @dataclass
@@ -715,6 +716,14 @@ def _write_restart_script(
         lines.extend(
             [
                 "  if (-not [string]::IsNullOrWhiteSpace($StageDir)) {",
+                "    $stagePackage = Join-Path $StageDir 'package'",
+                "    if (Test-Path -LiteralPath $stagePackage) {",
+                "      $installPackage = Join-Path $InstallDir 'package'",
+                "      if (Test-Path -LiteralPath $installPackage) {",
+                "        Remove-Item -LiteralPath $installPackage -Recurse -Force -ErrorAction SilentlyContinue",
+                "      }",
+                "      Copy-Item -LiteralPath $stagePackage -Destination $installPackage -Recurse -Force",
+                "    }",
                 "    foreach ($name in $UpdateFiles) {",
                 "      $src = Join-Path $StageDir ($name + '.pending')",
                 "      if (Test-Path -LiteralPath $src) {",
@@ -739,37 +748,72 @@ def _write_restart_script(
 
     lines.extend(
         [
-            "  $pending = Join-Path $InstallDir 'FELPOS.exe.pending'",
-            "  if (-not (Test-Path -LiteralPath $pending)) {",
-            "    throw 'ERROR: falta FELPOS.exe.pending'",
+            "  $payload = Join-Path $InstallDir 'package'",
+            "  if (-not (Test-Path -LiteralPath $payload) -and -not [string]::IsNullOrWhiteSpace($StageDir)) {",
+            "    $payload = Join-Path $StageDir 'package'",
             "  }",
-            "  $pendingSize = [int64](Get-Item -LiteralPath $pending).Length",
-            "  if ($pendingSize -lt $MinExeBytes) {",
-            "    Remove-Item -LiteralPath $pending -Force -ErrorAction SilentlyContinue",
-            "    throw (\"ERROR: FELPOS.exe.pending incompleto ($pendingSize bytes)\")",
-            "  }",
-            "",
-            "  Write-UpdateLog \"Reemplazando FELPOS.exe ($pendingSize bytes)\"",
-            "  $exe = Join-Path $InstallDir 'FELPOS.exe'",
-            "  $old = Join-Path $InstallDir 'FELPOS.exe.old'",
-            "  if (Test-Path -LiteralPath $old) {",
-            "    Remove-Item -LiteralPath $old -Force",
-            "  }",
-            "  if (Test-Path -LiteralPath $exe) {",
-            "    Rename-Item -LiteralPath $exe -NewName 'FELPOS.exe.old'",
-            "  }",
-            "  Rename-Item -LiteralPath $pending -NewName 'FELPOS.exe'",
-            "  Write-UpdateLog 'FELPOS.exe actualizado'",
-            "",
-            "  foreach ($name in $UpdateFiles) {",
-            "    if ($name -eq 'FELPOS.exe') { continue }",
-            "    $src = Join-Path $InstallDir ($name + '.pending')",
-            "    if (Test-Path -LiteralPath $src) {",
-            "      Move-Item -LiteralPath $src -Destination (Join-Path $InstallDir $name) -Force",
-            "      Write-UpdateLog \"$name actualizado\"",
+            "  if (Test-Path -LiteralPath $payload) {",
+            "    Write-UpdateLog \"Aplicando paquete onedir desde $payload\"",
+            "    $excludeDirs = @('data','update_backups','runtime-tmp','package')",
+            "    $excludeFiles = @('.env','felpos-error.log','felpos-update.log','pending_update.json')",
+            "    Get-ChildItem -LiteralPath $payload -Force | ForEach-Object {",
+            "      $name = $_.Name",
+            "      if ($excludeDirs -contains $name.ToLower()) { return }",
+            "      if ($excludeFiles -contains $name.ToLower()) { return }",
+            "      $dest = Join-Path $InstallDir $name",
+            "      if ($_.PSIsContainer) {",
+            "        if (Test-Path -LiteralPath $dest) {",
+            "          Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue",
+            "        }",
+            "        Copy-Item -LiteralPath $_.FullName -Destination $dest -Recurse -Force",
+            "      } else {",
+            "        if ($name -eq 'FELPOS.exe') {",
+            "          $old = Join-Path $InstallDir 'FELPOS.exe.old'",
+            "          if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Force }",
+            "          if (Test-Path -LiteralPath $dest) {",
+            "            Rename-Item -LiteralPath $dest -NewName 'FELPOS.exe.old' -ErrorAction SilentlyContinue",
+            "          }",
+            "        }",
+            "        Copy-Item -LiteralPath $_.FullName -Destination $dest -Force",
+            "      }",
+            "    }",
+            "    Remove-Item -LiteralPath $payload -Recurse -Force -ErrorAction SilentlyContinue",
+            "    if (-not [string]::IsNullOrWhiteSpace($StageDir)) {",
+            "      $stagePackage = Join-Path $StageDir 'package'",
+            "      if (Test-Path -LiteralPath $stagePackage) {",
+            "        Remove-Item -LiteralPath $stagePackage -Recurse -Force -ErrorAction SilentlyContinue",
+            "      }",
+            "    }",
+            "    Remove-Item -LiteralPath (Join-Path $InstallDir 'FELPOS.exe.pending') -Force -ErrorAction SilentlyContinue",
+            "    foreach ($name in @('VERSION','BUILD_DATE')) {",
+            "      Remove-Item -LiteralPath (Join-Path $InstallDir ($name + '.pending')) -Force -ErrorAction SilentlyContinue",
+            "    }",
+            "  } else {",
+            "    $pending = Join-Path $InstallDir 'FELPOS.exe.pending'",
+            "    if (-not (Test-Path -LiteralPath $pending)) {",
+            "      throw 'ERROR: falta paquete onedir y FELPOS.exe.pending'",
+            "    }",
+            "    $pendingSize = [int64](Get-Item -LiteralPath $pending).Length",
+            "    if ($pendingSize -lt $MinExeBytes) {",
+            "      Remove-Item -LiteralPath $pending -Force -ErrorAction SilentlyContinue",
+            "      throw (\"ERROR: FELPOS.exe.pending incompleto ($pendingSize bytes)\")",
+            "    }",
+            "    Write-UpdateLog \"Reemplazando FELPOS.exe ($pendingSize bytes)\"",
+            "    $exe = Join-Path $InstallDir 'FELPOS.exe'",
+            "    $old = Join-Path $InstallDir 'FELPOS.exe.old'",
+            "    if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Force }",
+            "    if (Test-Path -LiteralPath $exe) { Rename-Item -LiteralPath $exe -NewName 'FELPOS.exe.old' }",
+            "    Rename-Item -LiteralPath $pending -NewName 'FELPOS.exe'",
+            "    foreach ($name in $UpdateFiles) {",
+            "      if ($name -eq 'FELPOS.exe') { continue }",
+            "      $src = Join-Path $InstallDir ($name + '.pending')",
+            "      if (Test-Path -LiteralPath $src) {",
+            "        Move-Item -LiteralPath $src -Destination (Join-Path $InstallDir $name) -Force",
+            "      }",
             "    }",
             "  }",
             "",
+            "  $exe = Join-Path $InstallDir 'FELPOS.exe'",
             "  foreach ($metaCandidate in @(",
             "    (Join-Path $InstallDir $MetaName),",
             "    $(if ($StageDir) { Join-Path $StageDir $MetaName } else { $null })",
@@ -781,6 +825,9 @@ def _write_restart_script(
             "",
             "  if (-not (Test-Path -LiteralPath $exe)) {",
             "    throw 'ERROR: FELPOS.exe no existe despues de actualizar'",
+            "  }",
+            "  if (-not (Test-Path -LiteralPath (Join-Path $InstallDir '_internal'))) {",
+            "    throw 'ERROR: falta _internal despues de actualizar (usa FELPOS_Setup.exe)'",
             "  }",
             "",
             "  Write-UpdateLog 'Reiniciando FELPOS'",
@@ -939,18 +986,29 @@ def prepare_update_apply() -> dict:
             raise ValueError(
                 f"El FELPOS.exe del paquete parece incompleto ({exe_size} bytes)."
             )
+        payload_root = exe_source.parent
+        internal_dir = payload_root / "_internal"
+        if not internal_dir.exists():
+            raise ValueError(
+                "El paquete de actualizacion no incluye _internal. "
+                "Reinstala con FELPOS_Setup.exe (v0.6.23+)."
+            )
         staged_files: list[str] = []
         try:
-            for file_name, source_path in extracted.items():
-                pending_target = stage_dir / f"{file_name}.pending"
-                shutil.copy2(source_path, pending_target)
-                if file_name == "FELPOS.exe" and pending_target.stat().st_size != exe_size:
-                    raise ValueError("No se pudo copiar FELPOS.exe completo a la carpeta temporal.")
-                staged_files.append(file_name)
+            package_dir = stage_dir / "package"
+            if package_dir.exists():
+                shutil.rmtree(package_dir, ignore_errors=True)
+            shutil.copytree(payload_root, package_dir)
+            # Senal para detectores de pendiente + apply legado.
+            shutil.copy2(exe_source, stage_dir / "FELPOS.exe.pending")
+            for name in ("VERSION", "BUILD_DATE"):
+                src = payload_root / name
+                if src.exists():
+                    shutil.copy2(src, stage_dir / f"{name}.pending")
+            staged_files = ["package", "FELPOS.exe", "VERSION", "BUILD_DATE"]
             if can_write_install:
                 staged_files.extend(_stage_support_files(install_dir, extract_dir))
             else:
-                # Copia support bats al staging; el script elevado los pondra en install.
                 for file_name in UPDATE_SUPPORT_FILES:
                     assets_dir = Path(__file__).resolve().parent.parent.parent / "installer" / "assets"
                     source = extract_dir / file_name
@@ -970,6 +1028,7 @@ def prepare_update_apply() -> dict:
             "stage_dir": str(stage_dir),
             "requires_elevation": not can_write_install,
             "expected_exe_bytes": exe_size,
+            "payload_mode": "onedir",
         }
         meta_path = (install_dir if can_write_install else stage_dir) / PENDING_UPDATE_META
         try:

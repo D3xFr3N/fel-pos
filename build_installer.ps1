@@ -75,11 +75,15 @@ function Build-LicenseHelper {
 function Prepare-Staging {
     $staging = Join-Path $root "installer\staging"
     $assets = Join-Path $root "installer\assets"
-    $exePath = Join-Path $root "dist\FELPOS.exe"
+    $appDir = Join-Path $root "dist\FELPOS"
+    $exePath = Join-Path $appDir "FELPOS.exe"
     $helperPath = Join-Path $root "dist\helper\install_license_helper.exe"
 
     if (-not (Test-Path $exePath)) {
-        throw "No se encontro dist\FELPOS.exe. Ejecuta primero build_exe.ps1"
+        throw "No se encontro dist\FELPOS\FELPOS.exe. Ejecuta primero build_exe.ps1"
+    }
+    if (-not (Test-Path (Join-Path $appDir "_internal"))) {
+        throw "No se encontro dist\FELPOS\_internal. El build onedir esta incompleto."
     }
     if (-not (Test-Path $helperPath)) {
         throw "No se encontro dist\helper\install_license_helper.exe. Ejecuta Build-LicenseHelper primero."
@@ -91,7 +95,7 @@ function Prepare-Staging {
     New-Item -ItemType Directory -Path $staging | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $staging "data\backups") -Force | Out-Null
 
-    Copy-Item $exePath (Join-Path $staging "FELPOS.exe") -Force
+    Copy-Item (Join-Path $appDir "*") $staging -Recurse -Force
     Copy-Item $helperPath (Join-Path $staging "install_license_helper.exe") -Force
     Copy-Item (Join-Path $root ".env.example") (Join-Path $staging ".env.example") -Force
     Copy-Item (Join-Path $assets "*") $staging -Force

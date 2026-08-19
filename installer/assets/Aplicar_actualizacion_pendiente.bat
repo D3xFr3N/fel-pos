@@ -25,7 +25,7 @@ exit /b 1
 :has_pending
 set "PENDING_SIZE=0"
 for %%I in ("FELPOS.exe.pending") do set "PENDING_SIZE=%%~zI"
-if !PENDING_SIZE! LSS 15000000 goto pending_bad
+if !PENDING_SIZE! LSS 500000 goto pending_bad
 goto pending_ok
 
 :pending_bad

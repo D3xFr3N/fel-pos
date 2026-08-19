@@ -27,7 +27,7 @@ If Not fso.FileExists(exePath) Then
   WScript.Quit 1
 End If
 
-If fso.GetFile(exePath).Size < 15000000 Then
+If fso.GetFile(exePath).Size < 500000 Then
   MsgBox "FELPOS.exe parece incompleto o danado. Ejecuta Reparar_instalacion.bat", vbCritical, "FEL POS"
   WScript.Quit 1
 End If

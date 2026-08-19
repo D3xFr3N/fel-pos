@@ -6,7 +6,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PyInstaller.building.api import EXE, PYZ
+from PyInstaller.building.api import COLLECT, EXE, PYZ
 from PyInstaller.building.build_main import Analysis
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
@@ -214,6 +214,7 @@ datas = [
 ]
 
 icon_path = ROOT / "installer" / "assets" / "felpos.ico"
+# onedir: evita extraccion _MEI (LoadLibrary python312.dll en runtime-tmp).
 exe_kwargs = {
     "name": "FELPOS",
     "debug": False,
@@ -221,16 +222,13 @@ exe_kwargs = {
     "strip": False,
     "upx": False,
     "upx_exclude": [],
-    # Fijo en build: el bootloader IGNORA TEMP/TMP del sistema.
-    # Evita fallo LoadLibrary cuando el usuario Windows tiene espacios
-    # (ej. C:\Users\COMPU SAN JUAN\...).
-    "runtime_tmpdir": r"C:\Users\Public\FELPOS\runtime-tmp",
     "console": False,
     "disable_windowed_traceback": False,
     "argv_emulation": False,
     "target_arch": None,
     "codesign_identity": None,
     "entitlements_file": None,
+    "exclude_binaries": True,
 }
 if icon_path.exists():
     exe_kwargs["icon"] = str(icon_path)
@@ -262,8 +260,13 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
     **exe_kwargs,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    name="FELPOS",
 )

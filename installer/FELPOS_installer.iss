@@ -36,30 +36,9 @@ Name: "desktopicon"; Description: "Crear acceso directo en el escritorio"; Group
 Name: "cleaninstall"; Description: "Instalacion limpia (BORRA base de datos y respaldos: productos, ventas y caja)"; GroupDescription: "Datos:"; Flags: unchecked
 
 [Files]
-Source: "staging\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\.env.example"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\LEEME_INSTALACION.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\Iniciar_FELPOS.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\Iniciar_FELPOS.vbs"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\Iniciar_FELPOS_Caja.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\Iniciar_FELPOS_Caja.vbs"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\Iniciar_FELPOS_Servidor.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\Iniciar_FELPOS_Servidor.vbs"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\Boot_FELPOS.cmd"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\Boot_FELPOS.vbs"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\_relaunch_here.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\_resolve_runtime_tmp.cmd"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\pre_update_backup.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\update_system_safe.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\Aplicar_actualizacion_pendiente.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\Reparar_instalacion.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\Limpiar_actualizacion_pendiente.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\Diagnostico_instalacion.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\Reparar_permisos_instalacion.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\VERSION"; DestDir: "{app}"; Flags: ignoreversion
-Source: "staging\BUILD_DATE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "staging\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "staging\install_license_helper.exe"; DestDir: "{tmp}"; DestName: "install_license_helper.exe"; Flags: dontcopy noencryption deleteafterinstall
-
+; Nota: data\ se crea vacia abajo; no se sobrescribe la base existente en actualizaciones.
 [Dirs]
 Name: "{app}"; Permissions: users-modify
 Name: "{app}\data"; Permissions: users-full

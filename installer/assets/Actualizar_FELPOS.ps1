@@ -1,7 +1,6 @@
 # Actualizar_FELPOS.ps1
-# Actualizador independiente: descarga la ultima version y reemplaza FELPOS.exe.
-# Doble clic en Actualizar_FELPOS.cmd o:
-#   powershell -NoProfile -ExecutionPolicy Bypass -File Actualizar_FELPOS.ps1
+# Actualizador independiente (onedir): reemplaza FELPOS.exe + _internal sin tocar data\.
+# Doble clic en Actualizar_FELPOS.cmd o ejecutar como administrador.
 
 $ErrorActionPreference = "Stop"
 $ManifestUrl = if ($env:FELPOS_UPDATE_MANIFEST_URL) {
@@ -44,7 +43,7 @@ function Ensure-Admin {
   try {
     Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList $args -Wait
   } catch {
-    Show-Msg "Se necesita permiso de administrador para actualizar FEL POS.`n$($_.Exception.Message)" "Error"
+    Show-Msg "Se necesita permiso de administrador.`n$($_.Exception.Message)" "Error"
     exit 1
   }
   exit 0
@@ -52,7 +51,6 @@ function Ensure-Admin {
 
 function Find-InstallDir {
   $candidates = New-Object System.Collections.Generic.List[string]
-
   foreach ($rootKey in @(
       "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
       "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
@@ -62,32 +60,20 @@ function Find-InstallDir {
         Where-Object { $_.DisplayName -like "*FEL POS*" -or $_.DisplayName -like "*FELPOS*" } |
         ForEach-Object {
           if ($_.InstallLocation) { [void]$candidates.Add([string]$_.InstallLocation) }
-          if ($_.InstallDir) { [void]$candidates.Add([string]$_.InstallDir) }
-          if ($_.DisplayIcon) {
-            $icon = [string]$_.DisplayIcon
-            if ($icon -match '^(.*FELPOS\.exe)') {
-              [void]$candidates.Add([System.IO.Path]::GetDirectoryName($Matches[1].Trim('"')))
-            }
-          }
         }
     } catch {}
   }
-
   foreach ($dir in @(
-      "${env:ProgramFiles(x86)}\FEL POS",
-      "$env:ProgramFiles\FEL POS",
       "C:\FELPOS",
-      "C:\Program Files (x86)\FEL POS",
-      "C:\Program Files\FEL POS"
+      "${env:ProgramFiles(x86)}\FEL POS",
+      "$env:ProgramFiles\FEL POS"
     )) {
     if ($dir) { [void]$candidates.Add($dir) }
   }
-
   foreach ($dir in $candidates) {
     $clean = ($dir -as [string]).Trim().TrimEnd('\')
     if ([string]::IsNullOrWhiteSpace($clean)) { continue }
-    $exe = Join-Path $clean "FELPOS.exe"
-    if (Test-Path -LiteralPath $exe) {
+    if (Test-Path -LiteralPath (Join-Path $clean "FELPOS.exe")) {
       return (Resolve-Path -LiteralPath $clean).Path
     }
   }
@@ -96,8 +82,7 @@ function Find-InstallDir {
 
 Ensure-Admin
 New-Item -ItemType Directory -Force -Path $PublicDir | Out-Null
-Write-Log "Actualizador independiente iniciado (admin)"
-Write-Log "Manifest=$ManifestUrl"
+Write-Log "Actualizador independiente iniciado (onedir)"
 
 try {
   $installDir = Find-InstallDir
@@ -106,7 +91,6 @@ try {
   }
   Write-Log "InstallDir=$installDir"
 
-  Write-Log "Consultando manifiesto..."
   $manifest = Invoke-RestMethod -Uri $ManifestUrl -TimeoutSec 60
   $version = [string]$manifest.version
   $downloadUrl = [string]$manifest.download_url
@@ -121,13 +105,11 @@ try {
     $currentVersion = (Get-Content -LiteralPath $versionFile -Raw).Trim()
   }
   Write-Log "Actual=$currentVersion  Publicada=$version"
-
-  if ($currentVersion -eq $version) {
-    Show-Msg "FEL POS ya esta en la version $version."
+  if ($currentVersion -eq $version -and (Test-Path -LiteralPath (Join-Path $installDir "_internal"))) {
+    Show-Msg "FEL POS ya esta en la version $version (onedir)."
     exit 0
   }
 
-  # Cerrar app
   Get-Process -Name "FELPOS" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   Start-Sleep -Seconds 2
 
@@ -136,49 +118,59 @@ try {
   try {
     $zipPath = Join-Path $tempRoot "felpos-update.zip"
     Write-Log "Descargando $downloadUrl"
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -TimeoutSec 600
-
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -TimeoutSec 900
     if ($sha256) {
       $actual = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLower()
-      if ($actual -ne $sha256.ToLower()) {
-        throw "Hash SHA256 no coincide"
-      }
+      if ($actual -ne $sha256.ToLower()) { throw "Hash SHA256 no coincide" }
     }
 
     $extractDir = Join-Path $tempRoot "extracted"
     Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force
     $exeSource = Get-ChildItem -LiteralPath $extractDir -Recurse -Filter "FELPOS.exe" | Select-Object -First 1
     if (-not $exeSource) { throw "El paquete no contiene FELPOS.exe" }
-    if ($exeSource.Length -lt 15000000) {
-      throw "FELPOS.exe incompleto ($($exeSource.Length) bytes)"
+    $payloadRoot = $exeSource.Directory.FullName
+    $internal = Join-Path $payloadRoot "_internal"
+    if (-not (Test-Path -LiteralPath $internal)) {
+      throw "Paquete incompleto: falta carpeta _internal. Usa FELPOS_Setup.exe v0.6.23+."
     }
 
-    $exe = Join-Path $installDir "FELPOS.exe"
-    $old = Join-Path $installDir "FELPOS.exe.old"
-    $pending = Join-Path $installDir "FELPOS.exe.pending"
-
-    Copy-Item -LiteralPath $exeSource.FullName -Destination $pending -Force
-    if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Force }
-    if (Test-Path -LiteralPath $exe) { Rename-Item -LiteralPath $exe -NewName "FELPOS.exe.old" }
-    Rename-Item -LiteralPath $pending -NewName "FELPOS.exe"
-    Write-Log "FELPOS.exe reemplazado"
-
-    foreach ($name in @("VERSION", "BUILD_DATE")) {
-      $src = Get-ChildItem -LiteralPath $extractDir -Recurse -Filter $name -ErrorAction SilentlyContinue | Select-Object -First 1
-      if ($src) {
-        Copy-Item -LiteralPath $src.FullName -Destination (Join-Path $installDir $name) -Force
+    Write-Log "Sincronizando archivos a $installDir (conserva data y .env)"
+    $excludeDirs = @("data", "update_backups", "runtime-tmp")
+    $excludeFiles = @(".env", "felpos-error.log", "felpos-update.log", "pending_update.json")
+    Get-ChildItem -LiteralPath $payloadRoot -Force | ForEach-Object {
+      $name = $_.Name
+      if ($excludeDirs -contains $name.ToLower()) { return }
+      if ($excludeFiles -contains $name.ToLower()) { return }
+      $dest = Join-Path $installDir $name
+      if ($_.PSIsContainer) {
+        if (Test-Path -LiteralPath $dest) {
+          Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        Copy-Item -LiteralPath $_.FullName -Destination $dest -Recurse -Force
+      } else {
+        if ($name -eq "FELPOS.exe") {
+          $old = Join-Path $installDir "FELPOS.exe.old"
+          if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue }
+          if (Test-Path -LiteralPath $dest) {
+            Rename-Item -LiteralPath $dest -NewName "FELPOS.exe.old" -ErrorAction SilentlyContinue
+          }
+        }
+        Copy-Item -LiteralPath $_.FullName -Destination $dest -Force
       }
     }
 
-    # Copiar helpers utiles
-    foreach ($name in @("Actualizar_FELPOS.ps1", "Reparar_instalacion.bat", "Aplicar_actualizacion_pendiente.bat")) {
-      $src = Get-ChildItem -LiteralPath $extractDir -Recurse -Filter $name -ErrorAction SilentlyContinue | Select-Object -First 1
-      if ($src) {
-        try { Copy-Item -LiteralPath $src.FullName -Destination (Join-Path $installDir $name) -Force } catch {}
-      }
+    # Limpia extracciones _MEI viejas (ya no se usan en onedir).
+    $meiRoot = Join-Path $PublicDir "runtime-tmp"
+    if (Test-Path -LiteralPath $meiRoot) {
+      Get-ChildItem -LiteralPath $meiRoot -Directory -Filter "_MEI*" -ErrorAction SilentlyContinue |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     }
   } finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+  }
+
+  if (-not (Test-Path -LiteralPath (Join-Path $installDir "_internal"))) {
+    throw "Tras actualizar falta _internal. Reinstala con FELPOS_Setup.exe."
   }
 
   $runtimeTmp = Join-Path $PublicDir "runtime-tmp"
@@ -187,28 +179,25 @@ try {
   $exePath = Join-Path $installDir "FELPOS.exe"
   @"
 Option Explicit
-Dim app, fso, exePath, workDir, tmpDir, shell
-Set shell = CreateObject("WScript.Shell")
+Dim app, fso, exePath, workDir
 Set app = CreateObject("Shell.Application")
 Set fso = CreateObject("Scripting.FileSystemObject")
 exePath = "$($exePath.Replace('"','""'))"
 workDir = "$($installDir.Replace('"','""'))"
-tmpDir = "$runtimeTmp"
-If Not fso.FolderExists(tmpDir) Then fso.CreateFolder tmpDir
-shell.CurrentDirectory = workDir
-shell.Environment("PROCESS")("TEMP") = tmpDir
-shell.Environment("PROCESS")("TMP") = tmpDir
+If Not fso.FileExists(exePath) Then
+  MsgBox "No se encontro FELPOS.exe", vbCritical, "FEL POS"
+  WScript.Quit 1
+End If
 app.ShellExecute exePath, "", workDir, "open", 1
 "@ | Set-Content -LiteralPath $relaunchVbs -Encoding ASCII
 
-  Start-Sleep -Seconds 1
   Start-Process -FilePath "wscript.exe" -ArgumentList @("//nologo", $relaunchVbs) | Out-Null
-  Write-Log "OK actualizado a v$version"
+  Write-Log "OK actualizado a v$version (onedir)"
   Show-Msg "Actualizacion aplicada: v$version`nFEL POS se esta abriendo."
   exit 0
 }
 catch {
   Write-Log ("ERROR: " + $_.Exception.Message)
-  Show-Msg ("No se pudo actualizar:`n" + $_.Exception.Message + "`n`nRevisa:`n$LogPath") "Error"
+  Show-Msg ("No se pudo actualizar:`n" + $_.Exception.Message + "`n`nLog: $LogPath") "Error"
   exit 1
 }

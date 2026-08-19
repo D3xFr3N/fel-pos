@@ -34,7 +34,7 @@ for /d %%D in ("%ProgramData%\FELPOS\runtime-tmp\_MEI*") do rmdir /S /Q "%%D" >n
 if not exist "FELPOS.exe.pending" goto after_pending_size
 set "PENDING_SIZE=0"
 for %%I in ("FELPOS.exe.pending") do set "PENDING_SIZE=%%~zI"
-if !PENDING_SIZE! LSS 15000000 goto drop_pending
+if !PENDING_SIZE! LSS 500000 goto drop_pending
 goto after_pending_size
 
 :drop_pending
@@ -45,7 +45,7 @@ del /F /Q "FELPOS.exe.pending" >nul 2>&1
 if not exist "FELPOS.exe" goto try_pending_or_old
 set "EXE_SIZE=0"
 for %%I in ("FELPOS.exe") do set "EXE_SIZE=%%~zI"
-if !EXE_SIZE! LSS 15000000 goto exe_damaged
+if !EXE_SIZE! LSS 500000 goto exe_damaged
 echo [OK] FELPOS.exe encontrado.
 if exist "FELPOS.exe.pending" goto clear_stale_pending
 goto launch

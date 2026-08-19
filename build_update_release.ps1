@@ -17,8 +17,9 @@ function Get-ProjectVersion {
     return (Get-Content (Join-Path $root "VERSION") -Raw).Trim()
 }
 
-$exePath = Join-Path $root "dist\FELPOS.exe"
-Write-Host "Generando FELPOS.exe..."
+$appDir = Join-Path $root "dist\FELPOS"
+$exePath = Join-Path $appDir "FELPOS.exe"
+Write-Host "Generando FELPOS (onedir)..."
 & (Join-Path $root "build_exe.ps1")
 
 $version = Get-ProjectVersion
@@ -35,13 +36,16 @@ New-Item -ItemType Directory -Path $versionDir | Out-Null
 
 $stagingDir = Join-Path $versionDir "package"
 New-Item -ItemType Directory -Path $stagingDir | Out-Null
-Copy-Item $exePath (Join-Path $stagingDir "FELPOS.exe") -Force
+
+# Empaqueta carpeta onedir completa (FELPOS.exe + _internal + VERSION).
+Copy-Item (Join-Path $appDir "*") $stagingDir -Recurse -Force
 Set-Content (Join-Path $stagingDir "VERSION") $version
 Set-Content (Join-Path $stagingDir "BUILD_DATE") $buildDate
 $assetsDir = Join-Path $root "installer\assets"
 foreach ($assetName in @(
     "Aplicar_actualizacion_pendiente.bat",
     "Actualizar_FELPOS.ps1",
+    "Actualizar_FELPOS.cmd",
     "Reparar_instalacion.bat",
     "Iniciar_FELPOS.bat",
     "Iniciar_FELPOS.vbs",
@@ -61,6 +65,10 @@ foreach ($assetName in @(
     if (Test-Path $assetPath) {
         Copy-Item $assetPath (Join-Path $stagingDir $assetName) -Force
     }
+}
+
+if (-not (Test-Path (Join-Path $stagingDir "_internal"))) {
+    throw "Paquete incompleto: falta _internal en el zip de update."
 }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem

@@ -4,7 +4,8 @@ param(
 
     [string]$GitHubRepo = "fel-pos",
 
-    [int]$KeepVersionCount = 2,
+    [int]$KeepVersionCount = 1,
+
 
     [switch]$SkipBuild
 )

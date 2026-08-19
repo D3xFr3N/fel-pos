@@ -35,7 +35,7 @@ If Not fso.FileExists(exePath) Then
   WScript.Quit 1
 End If
 
-If fso.GetFile(exePath).Size < 15000000 Then
+If fso.GetFile(exePath).Size < 500000 Then
   MsgBox "FELPOS.exe parece danado o incompleto." & vbCrLf & vbCrLf & _
          "Ejecuta Reparar_instalacion.bat", _
          vbCritical, "FEL POS"
@@ -52,7 +52,10 @@ If Trim(bindHost) = "" Then
   shell.Environment("PROCESS")("FELPOS_BIND_HOST") = "0.0.0.0"
 End If
 
-shell.Run """" & exePath & """", 1, False
+' ShellExecute: no rompe rutas con Program Files (x86).
+Dim app
+Set app = CreateObject("Shell.Application")
+app.ShellExecute exePath, "", appDir, "open", 1
 WScript.Quit 0
 
 Function ResolveSpaceFreeRuntimeRoot()

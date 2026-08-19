@@ -27,7 +27,7 @@ exit /b 1
 :launch
 set "EXE_SIZE=0"
 for %%I in ("FELPOS.exe") do set "EXE_SIZE=%%~zI"
-if !EXE_SIZE! LSS 15000000 goto exe_bad
+if !EXE_SIZE! LSS 500000 goto exe_bad
 goto exe_ok
 
 :exe_bad
