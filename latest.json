@@ -1,7 +1,7 @@
 {
-    "version":  "0.6.33",
-    "build_date":  "2026-08-21 16:06:12",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.33/felpos-update-0.6.33.zip",
-    "sha256":  "975413f8a3ced61b7b68fac214ba8b20ac626db4dcc9cf8a448a700bbf4e0f4c",
-    "release_notes":  "Actualizacion FEL POS v0.6.33\r\n\r\n- Se quito la barra rapida Total / Pago Con / Cambio del pie de venta.\r\n- Columna Importe centrada y con texto mas legible."
+    "version":  "0.6.34",
+    "build_date":  "2026-08-21 16:39:21",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.34/felpos-update-0.6.34.zip",
+    "sha256":  "8d3a9fc1bbc7f955d4fc7a7f6b1dd1a6e49234dd1d7974c0e9388e769f14355e",
+    "release_notes":  "Actualizacion FEL POS v0.6.34\r\n\r\n- Boton Eliminar debajo de F6 Pendiente.\r\n- Asignar cliente en la fila inferior, bajo F5 Cambiar."
 }
