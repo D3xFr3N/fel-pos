@@ -82,57 +82,47 @@
           </div>
 
           <div class="pos-lines-wrap">
-            <table class="pos-lines-table">
-              <thead>
-                <tr>
-                  <th>Codigo de Barras</th>
-                  <th>Descripcion del Producto</th>
-                  <th>Precio Venta</th>
-                  <th>Cant.</th>
-                  <th>Importe</th>
-                  <th>Existencia</th>
-                </tr>
-              </thead>
-              <tbody id="cart-items"></tbody>
-            </table>
+            <div class="pos-lines-scroll">
+              <table class="pos-lines-table">
+                <thead>
+                  <tr>
+                    <th class="col-barcode">Codigo de Barras</th>
+                    <th class="col-name">Descripcion del Producto</th>
+                    <th class="col-price">Precio Venta</th>
+                    <th class="col-qty">Cant.</th>
+                    <th class="col-importe">Importe</th>
+                    <th class="col-stock">Existencia</th>
+                  </tr>
+                </thead>
+                <tbody id="cart-items"></tbody>
+              </table>
+            </div>
             <div class="pos-lines-meta">
               <span id="pos-lines-count">0 Productos en la venta actual.</span>
-              <span id="active-ticket-title" class="pos-active-ticket-label">Ticket 1</span>
+              <span id="active-ticket-title" class="pos-active-ticket-label" hidden>Ticket 1</span>
               <small id="active-ticket-subtitle" class="ticket-subtitle" hidden>Listo</small>
             </div>
           </div>
 
           <div class="pos-footer">
-            <div class="pos-footer-actions">
-              <button id="pos-change-qty-btn" class="btn ghost pos-action-btn" type="button" title="Cambiar cantidad (F5)">F5 · Cambiar</button>
-              <button id="hold-ticket-btn" class="btn ghost pos-action-btn" type="button" title="Dejar ticket pendiente (F6)">F6 · Pendiente</button>
-              <button id="pos-remove-line-btn" class="btn ghost pos-action-btn" type="button" title="Eliminar linea seleccionada">Eliminar</button>
-              <button id="pos-assign-customer-btn" class="btn ghost pos-action-btn" type="button" title="Asignar cliente CF o NIT">Asignar cliente</button>
-            </div>
-
-            <div class="pos-footer-summary">
-              <div class="pos-summary-row"><span>Total</span><strong id="grand-total">Q 0.00</strong></div>
-              <div class="pos-summary-row">
-                <span>Pago Con</span>
-                <label class="pos-paid-wrap">
-                  <span class="visually-hidden">Pago con</span>
-                  <input id="pos-paid-with" type="text" inputmode="decimal" autocomplete="off" value="0.00" aria-label="Pago con">
-                </label>
+            <div class="pos-footer-left">
+              <div class="pos-footer-actions">
+                <button id="pos-change-qty-btn" class="btn ghost pos-action-btn" type="button" title="Cambiar cantidad (F5)">F5 · Cambiar</button>
+                <button id="hold-ticket-btn" class="btn ghost pos-action-btn" type="button" title="Dejar ticket pendiente (F6)">F6 · Pendiente</button>
+                <button id="pos-remove-line-btn" class="btn ghost pos-action-btn pos-action-btn--under-hold" type="button" title="Eliminar linea seleccionada">Eliminar</button>
+                <button id="pos-assign-customer-btn" class="btn ghost pos-action-btn" type="button" title="Asignar cliente CF o NIT">Asignar cliente</button>
               </div>
-              <div class="pos-summary-row"><span>Cambio</span><strong id="pos-change-display">Q 0.00</strong></div>
-              <div class="pos-summary-row is-muted"><span>Subtotal</span><strong id="subtotal">Q 0.00</strong></div>
-              <div class="pos-summary-row is-muted totals-discount" id="totals-discount-row">
-                <span>Descuento</span><strong id="cart-discount-display">Q 0.00</strong>
-              </div>
-              <div class="pos-summary-row is-muted"><span>IVA (inc.)</span><strong id="tax-total">Q 0.00</strong></div>
-              <button id="pos-clear-paid-btn" class="btn ghost pos-clear-paid" type="button" title="Limpiar pago con">Limpiar pago</button>
             </div>
 
             <div class="pos-footer-checkout">
-              <button id="open-cash-capture-btn" class="btn primary pos-charge-btn" type="button">F12 · Cobrar</button>
-              <div class="pos-big-total" id="pos-big-total">Q 0.00</div>
-              <button id="pos-reprint-last-btn" class="btn ghost" type="button">Reimprimir ultimo ticket</button>
-              <button id="pos-go-sales-btn" class="btn ghost" type="button">Ventas del dia y devoluciones</button>
+              <div class="pos-checkout-main">
+                <button id="open-cash-capture-btn" class="btn primary pos-charge-btn" type="button">F12 · Cobrar</button>
+                <div class="pos-big-total" id="pos-big-total">Q 0.00</div>
+              </div>
+              <div class="pos-checkout-links">
+                <button id="pos-reprint-last-btn" class="btn ghost" type="button">Reimprimir ultimo ticket</button>
+                <button id="pos-go-sales-btn" class="btn ghost" type="button">Ventas del dia y devoluciones</button>
+              </div>
             </div>
           </div>
 

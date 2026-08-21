@@ -37,8 +37,10 @@ shell.Environment("PROCESS")("TEMP") = tmpDir
 shell.Environment("PROCESS")("TMP") = tmpDir
 shell.Environment("PROCESS")("FELPOS_RUNTIME_TMP") = tmpDir
 
-' Run con ruta completa: no usa "start" de CMD (rompe con (x86)).
-shell.Run """" & exePath & """", 1, False
+' ShellExecute: no rompe rutas con Program Files (x86).
+Dim app
+Set app = CreateObject("Shell.Application")
+app.ShellExecute exePath, "", Left(appDir, Len(appDir) - 1), "open", 1
 WScript.Quit 0
 
 Sub EnsureFolder(path)

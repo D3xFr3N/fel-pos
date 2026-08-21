@@ -26,8 +26,12 @@ function New-SignedLicenseKey {
         [Parameter(Mandatory = $true)][string]$StoreId,
         [Parameter(Mandatory = $true)][string]$StoreLabel,
         [string]$Status = "active",
-        [string]$Fingerprint = ""
+        [Parameter(Mandatory = $true)][string]$Fingerprint
     )
+    $boundFp = $Fingerprint.Trim().ToUpper()
+    if (-not $boundFp -or $boundFp.Length -lt 8) {
+        throw "Fingerprint de equipo obligatorio para firmar (evita compartir entre PCs)."
+    }
     Ensure-LicenseKeypair
     $python = Get-PythonExe
     $issuedAt = Get-Date -Format "yyyy-MM-dd"
@@ -36,11 +40,9 @@ function New-SignedLicenseKey {
         "--store-id", $StoreId,
         "--store-label", $StoreLabel,
         "--issued-at", $issuedAt,
-        "--status", $Status
+        "--status", $Status,
+        "--fingerprint", $boundFp
     )
-    if ($Fingerprint.Trim()) {
-        $args += @("--fingerprint", $Fingerprint.Trim().ToUpper())
-    }
     $license = & $python @args
     if ($LASTEXITCODE -ne 0 -or -not $license) {
         throw "No se pudo firmar la licencia."
@@ -111,8 +113,13 @@ function New-StoreActivation {
         [Parameter(Mandatory = $true)][string]$StoreLabel,
         [string]$Contact = "",
         [string]$Notes = "",
-        [string]$Fingerprint = ""
+        [Parameter(Mandatory = $true)][string]$Fingerprint
     )
+
+    $boundFp = $Fingerprint.Trim().ToUpper()
+    if (-not $boundFp -or $boundFp.Length -lt 8) {
+        throw "Fingerprint de equipo obligatorio (minimo 8 caracteres). Sin el, la licencia se puede copiar a otra PC."
+    }
 
     $registry = Read-PrivateRegistry
     $normalizedId = Normalize-StoreId $StoreId
@@ -120,26 +127,27 @@ function New-StoreActivation {
         throw "Ya existe una tienda con ID $normalizedId. Usa otro ID o reemite la licencia."
     }
 
-    $license = New-SignedLicenseKey -StoreId $normalizedId -StoreLabel $StoreLabel.Trim() -Fingerprint $Fingerprint
+    $license = New-SignedLicenseKey -StoreId $normalizedId -StoreLabel $StoreLabel.Trim() -Fingerprint $boundFp
+    $activationCode = New-ActivationCode -StoreId $normalizedId
     $entry = [ordered]@{
         store_id = $normalizedId
         store_label = $StoreLabel.Trim()
         license_key = $license
+        activation_code = $activationCode
+        fingerprint = $boundFp
         status = "active"
         issued_at = (Get-Date -Format "yyyy-MM-dd")
         contact = $Contact.Trim()
         notes = $Notes.Trim()
     }
-    if ($Fingerprint.Trim()) {
-        $entry.fingerprint = $Fingerprint.Trim().ToUpper()
-    }
     $registry.entries += $entry
     Save-PrivateRegistry $registry
 
-    $letterPath = Write-ActivationLetter -Entry $entry
+    $paths = Write-ActivationLetter -Entry $entry
     return [ordered]@{
         entry = $entry
-        letter_path = $letterPath
+        letter_path = $paths.letter_path
+        license_file = $paths.license_file
         message = (Build-ActivationMessage -Entry $entry)
     }
 }
@@ -148,7 +156,7 @@ function Reissue-StoreLicense {
     param(
         [Parameter(Mandatory = $true)][string]$StoreId,
         [string]$Notes = "",
-        [string]$Fingerprint = ""
+        [Parameter(Mandatory = $true)][string]$Fingerprint
     )
 
     $registry = Read-PrivateRegistry
@@ -161,23 +169,69 @@ function Reissue-StoreLicense {
         throw "La tienda esta revocada. Crea una activacion nueva con otro ID."
     }
 
-    $boundFingerprint = if ($Fingerprint.Trim()) { $Fingerprint.Trim().ToUpper() } else { [string]$entry.fingerprint }
-    $entry.license_key = New-SignedLicenseKey -StoreId $normalizedId -StoreLabel ([string]$entry.store_label) -Fingerprint $boundFingerprint
-    if ($boundFingerprint) {
-        $entry.fingerprint = $boundFingerprint
+    $boundFingerprint = $Fingerprint.Trim().ToUpper()
+    if (-not $boundFingerprint -or $boundFingerprint.Length -lt 8) {
+        throw "Fingerprint de equipo obligatorio al reemitir."
     }
+    $entry.license_key = New-SignedLicenseKey -StoreId $normalizedId -StoreLabel ([string]$entry.store_label) -Fingerprint $boundFingerprint
+    $entry.activation_code = New-ActivationCode -StoreId $normalizedId
+    $entry.fingerprint = $boundFingerprint
     $entry.issued_at = (Get-Date -Format "yyyy-MM-dd")
     $entry | Add-Member -NotePropertyName reissued_at -NotePropertyValue (Get-Date -Format "yyyy-MM-dd HH:mm:ss") -Force
     if ($Notes.Trim()) {
         $entry.notes = $Notes.Trim()
     }
     Save-PrivateRegistry $registry
-    $letterPath = Write-ActivationLetter -Entry $entry
+    $paths = Write-ActivationLetter -Entry $entry
     return [ordered]@{
         entry = $entry
-        letter_path = $letterPath
+        letter_path = $paths.letter_path
+        license_file = $paths.license_file
         message = (Build-ActivationMessage -Entry $entry)
     }
+}
+
+function New-ActivationCode {
+    param([string]$StoreId = "")
+    $alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    $chars = New-Object char[] 8
+    for ($i = 0; $i -lt 8; $i++) {
+        $chars[$i] = $alphabet[(Get-Random -Maximum $alphabet.Length)]
+    }
+    $raw = -join $chars
+    $clean = ($StoreId.ToUpper() -replace "[^A-Z0-9]", "")
+    if ($clean.Length -ge 3) {
+        $prefix = $clean.Substring(0, 3)
+    } elseif ($clean) {
+        $prefix = $clean
+    } else {
+        $prefix = "FEL"
+    }
+    return ("{0}-{1}-{2}" -f $prefix, $raw.Substring(0, 4), $raw.Substring(4, 4)).ToUpper()
+}
+
+function Write-LicenseFile {
+    param($Entry)
+    if (-not (Test-Path $script:ActivationsDir)) {
+        New-Item -ItemType Directory -Path $script:ActivationsDir | Out-Null
+    }
+    $code = [string]$Entry.activation_code
+    if (-not $code) {
+        $code = New-ActivationCode -StoreId ([string]$Entry.store_id)
+        $Entry | Add-Member -NotePropertyName activation_code -NotePropertyValue $code -Force
+    }
+    $payload = [ordered]@{
+        format = "felpos-lic-1"
+        activation_code = $code
+        store_id = [string]$Entry.store_id
+        store_label = [string]$Entry.store_label
+        issued_at = [string]$Entry.issued_at
+        license_key = [string]$Entry.license_key
+    }
+    $fileName = "{0}_{1}.felpos-lic" -f $Entry.store_id, (Get-Date -Format "yyyyMMdd")
+    $path = Join-Path $script:ActivationsDir $fileName
+    ($payload | ConvertTo-Json -Depth 4) | Set-Content -Path $path -Encoding UTF8
+    return $path
 }
 
 function Build-ActivationMessage {
@@ -190,6 +244,10 @@ function Build-ActivationMessage {
     if ($Entry.fingerprint) {
         $fingerprintBlock = "`nID equipo vinculado: $($Entry.fingerprint)"
     }
+    $code = [string]$Entry.activation_code
+    if (-not $code) {
+        $code = "(ver archivo .felpos-lic)"
+    }
     return @"
 FEL POS - Activacion de tienda
 ==============================
@@ -197,23 +255,25 @@ ID tienda: $($Entry.store_id)
 Nombre: $($Entry.store_label)
 Fecha: $($Entry.issued_at)$contactBlock$fingerprintBlock
 
-Clave de licencia (solo para esta tienda):
-$($Entry.license_key)
+Codigo de referencia: $code
+
+*** ESTE ARCHIVO .TXT NO ES LA LICENCIA ***
+*** NO SIRVE PARA ACTIVAR FEL POS ***
+
+Envia a la tienda el archivo .felpos-lic (misma carpeta).
+Ese es el unico archivo de activacion.
+Esta licencia esta VINCULADA al ID de equipo; no sirve en otra PC.
 
 Pasos en la tienda:
 1. Abrir FEL POS como administrador
 2. Ir a Configuracion -> Licencia de tienda
-3. Pegar la clave y pulsar Guardar licencia
-4. En Actualizaciones automaticas, pulsar Buscar actualizaciones
+   (o en el instalador: Importar llave)
+3. Elegir el archivo .felpos-lic y Guardar
+4. En Actualizaciones, pulsar Buscar actualizaciones
 
-Tambien puedes agregar en el archivo .env de la carpeta de instalacion:
-STORE_LICENSE_KEY=$($Entry.license_key)
-UPDATE_MANIFEST_URL=$($script:ManifestUrl)
-LICENSE_REQUIRED_FOR_UPDATES=true
-
-La licencia se valida localmente (firmada). No se publica ningun registro en GitHub.
-No compartas esta clave con otras tiendas.
-Si cambias de PC, solicita reactivacion con el mismo ID de tienda.
+La licencia se valida localmente (firmada Ed25519).
+No compartas el .felpos-lic con otras tiendas.
+Si cambias de PC, solicita reactivacion con el nuevo ID de equipo.
 "@
 }
 
@@ -222,10 +282,14 @@ function Write-ActivationLetter {
     if (-not (Test-Path $script:ActivationsDir)) {
         New-Item -ItemType Directory -Path $script:ActivationsDir | Out-Null
     }
+    $licPath = Write-LicenseFile -Entry $Entry
     $fileName = "{0}_{1}_activacion.txt" -f $Entry.store_id, (Get-Date -Format "yyyyMMdd")
     $path = Join-Path $script:ActivationsDir $fileName
     (Build-ActivationMessage -Entry $Entry) | Set-Content $path -Encoding UTF8
-    return $path
+    return [ordered]@{
+        letter_path = $path
+        license_file = $licPath
+    }
 }
 
 function Revoke-StoreActivation {
@@ -247,9 +311,9 @@ function Revoke-StoreActivation {
     }
 
     $entry.status = "revoked"
-    $entry.revoked_at = (Get-Date -Format "yyyy-MM-dd")
+    $entry | Add-Member -NotePropertyName revoked_at -NotePropertyValue (Get-Date -Format "yyyy-MM-dd") -Force
     if ($Notes.Trim()) {
-        $entry.notes = $Notes.Trim()
+        $entry | Add-Member -NotePropertyName notes -NotePropertyValue $Notes.Trim() -Force
     }
     Save-PrivateRegistry $registry
     return $entry

@@ -1,24 +1,25 @@
 @echo off
-REM No uses rutas de Program Files (x86) con start/wscript: CMD rompe los parentesis.
-REM 1) Preferir relaunch.vbs en Public (sin espacios/parentesis)
-REM 2) Si no, PowerShell con $PSScriptRoot
+REM Rutas con "Program Files (x86)" rompen bloques if (...). Usar GOTO.
+setlocal EnableExtensions
+set "PUBLIC_RELAUNCH=C:\Users\Public\FELPOS\relaunch.vbs"
+set "LOCAL_PS1=%~dp0_relaunch_here.ps1"
+set "LOCAL_VBS=%~dp0Boot_FELPOS.vbs"
 
-if exist "C:\Users\Public\FELPOS\relaunch.vbs" (
-  wscript //nologo "C:\Users\Public\FELPOS\relaunch.vbs"
-  exit /b 0
-)
-
-if exist "%~dp0_relaunch_here.ps1" (
-  powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0_relaunch_here.ps1"
-  exit /b 0
-)
-
-REM Ultimo recurso: VBS local (puede fallar si se invoca mal desde start)
-if exist "%~dp0Boot_FELPOS.vbs" (
-  wscript //nologo "%~dp0Boot_FELPOS.vbs"
-  exit /b 0
-)
-
+if exist "%PUBLIC_RELAUNCH%" goto use_public
+if exist "%LOCAL_PS1%" goto use_ps1
+if exist "%LOCAL_VBS%" goto use_vbs
 echo ERROR: no hay lanzador seguro.
 pause
 exit /b 1
+
+:use_public
+wscript //nologo "%PUBLIC_RELAUNCH%"
+exit /b 0
+
+:use_ps1
+powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%LOCAL_PS1%"
+exit /b 0
+
+:use_vbs
+wscript //nologo "%LOCAL_VBS%"
+exit /b 0

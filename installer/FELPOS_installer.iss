@@ -79,9 +79,11 @@ var
   FingerprintEdit: TNewEdit;
   CopyFingerprintButton: TNewButton;
   LicenseCaptionLabel: TNewStaticText;
-  LicenseEdit: TNewEdit;
+  LicenseFileEdit: TNewEdit;
+  ImportLicenseButton: TNewButton;
   LicenseHintLabel: TNewStaticText;
   SavedLicenseKey: String;
+  SavedLicenseSourcePath: String;
   ProfilePage: TWizardPage;
   ProfileCombo: TNewComboBox;
   ProfileHintLabel: TNewStaticText;
@@ -267,18 +269,88 @@ begin
   end;
 end;
 
+function ExtractedLicensePath(): String;
+begin
+  Result := ExpandConstant('{tmp}\felpos_license_extracted.txt');
+end;
+
+function ValidateLicenseFile(const SourcePath: String; var OutKey: String): Boolean;
+var
+  ResultCode: Integer;
+  ExtractedPath: String;
+  Args: String;
+begin
+  Result := False;
+  OutKey := '';
+  if Trim(SourcePath) = '' then
+    Exit;
+  if not FileExists(SourcePath) then
+    Exit;
+  ExtractedPath := ExtractedLicensePath();
+  DeleteFile(ExtractedPath);
+  Args :=
+    '--validate-file "' + SourcePath + '" --write-extracted "' + ExtractedPath + '"';
+  if not RunHelper(Args, ResultCode) then
+    Exit;
+  if ResultCode <> 0 then
+    Exit;
+  if not FileExists(ExtractedPath) then
+    Exit;
+  OutKey := Trim(ReadFirstLine(ExtractedPath));
+  Result := (OutKey <> '');
+end;
+
 function ValidateLicenseKey(const Key: String): Boolean;
 var
   KeyFile: String;
-  ResultCode: Integer;
+  OutKey: String;
 begin
   Result := False;
   KeyFile := ExpandConstant('{tmp}\felpos_license_input.txt');
   if not WriteTextToFile(KeyFile, Key) then
     Exit;
-  if not RunHelper('--validate-file "' + KeyFile + '"', ResultCode) then
+  Result := ValidateLicenseFile(KeyFile, OutKey);
+end;
+
+procedure ImportLicenseClick(Sender: TObject);
+var
+  FileName: String;
+  OutKey: String;
+begin
+  FileName := '';
+  if not GetOpenFileName(
+    'Importar llave de activacion',
+    FileName,
+    '',
+    'Llave FEL POS (*.felpos-lic)|*.felpos-lic',
+    'felpos-lic'
+  ) then
     Exit;
-  Result := (ResultCode = 0);
+
+  if CompareText(ExtractFileExt(FileName), '.felpos-lic') <> 0 then
+  begin
+    MsgBox(
+      'Ese no es el archivo de llave.' + #13#10 +
+      'El .txt solo tiene instrucciones.' + #13#10 +
+      'Debes elegir el archivo .felpos-lic',
+      mbError, MB_OK);
+    Exit;
+  end;
+
+  if not ValidateLicenseFile(FileName, OutKey) then
+  begin
+    MsgBox(
+      'No se pudo importar la llave.' + #13#10 +
+      'Elige el archivo .felpos-lic (no el .txt de instrucciones).',
+      mbError, MB_OK);
+    Exit;
+  end;
+
+  SavedLicenseKey := OutKey;
+  SavedLicenseSourcePath := FileName;
+  LicenseFileEdit.Text := FileName;
+  LicenseHintLabel.Caption :=
+    'Llave importada correctamente. Puedes continuar con la instalacion.';
 end;
 
 procedure CopyFingerprintClick(Sender: TObject);
@@ -312,13 +384,14 @@ begin
   begin
     CopyFingerprintButton.Enabled := False;
     LicenseHintLabel.Caption :=
-      'No se pudo leer el ID de equipo. Aun asi intenta pegar la licencia. Si falla, ejecuta el instalador como administrador o desactiva el antivirus temporalmente.';
+      'No se pudo leer el ID de equipo. Aun asi puedes importar la llave .felpos-lic. Si falla, ejecuta el instalador como administrador.';
   end
   else
   begin
     CopyFingerprintButton.Enabled := True;
-    LicenseHintLabel.Caption :=
-      'Puedes copiar el ID con el boton o seleccionarlo y pulsar Ctrl+C. Pega la licencia completa (FELPOS-v1...) para continuar.';
+    if Trim(SavedLicenseKey) = '' then
+      LicenseHintLabel.Caption :=
+        'Copia el ID si el proveedor lo pide. Luego pulsa "Importar llave..." y elige el archivo .felpos-lic.';
   end;
 end;
 
@@ -455,6 +528,7 @@ procedure InitializeWizard();
 begin
   ExtractTemporaryFile('install_license_helper.exe');
   SavedLicenseKey := '';
+  SavedLicenseSourcePath := '';
   SelectedInstallMode := 'local';
 
   ModePage := CreateCustomPage(
@@ -487,7 +561,7 @@ begin
   LicensePage := CreateCustomPage(
     ModePage.ID,
     'Licencia de tienda',
-    'Ingresa la clave de licencia entregada por el proveedor.'
+    'Agrega o importa la llave de activacion (.felpos-lic).'
   );
 
   LicenseIntroLabel := TNewStaticText.Create(LicensePage);
@@ -498,8 +572,8 @@ begin
   LicenseIntroLabel.AutoSize := False;
   LicenseIntroLabel.WordWrap := True;
   LicenseIntroLabel.Caption :=
-    'PC principal o servidor: cada tienda necesita su licencia firmada (FELPOS-v1...). ' +
-    'Caja en red: la licencia vive en el servidor; puedes dejarla vacia aqui.';
+    'PC principal o servidor: importa el archivo .felpos-lic que te envio el proveedor. ' +
+    'Caja en red: la licencia vive en el servidor; puedes continuar sin importar aqui.';
 
   FingerprintCaptionLabel := TNewStaticText.Create(LicensePage);
   FingerprintCaptionLabel.Parent := LicensePage.Surface;
@@ -531,14 +605,24 @@ begin
   LicenseCaptionLabel.Left := 0;
   LicenseCaptionLabel.Top := 112;
   LicenseCaptionLabel.Width := LicensePage.SurfaceWidth;
-  LicenseCaptionLabel.Caption := 'Clave de licencia:';
+  LicenseCaptionLabel.Caption := 'Agregar llave / Importar llave:';
 
-  LicenseEdit := TNewEdit.Create(LicensePage);
-  LicenseEdit.Parent := LicensePage.Surface;
-  LicenseEdit.Left := 0;
-  LicenseEdit.Top := 130;
-  LicenseEdit.Width := LicensePage.SurfaceWidth;
-  LicenseEdit.Text := '';
+  LicenseFileEdit := TNewEdit.Create(LicensePage);
+  LicenseFileEdit.Parent := LicensePage.Surface;
+  LicenseFileEdit.Left := 0;
+  LicenseFileEdit.Top := 130;
+  LicenseFileEdit.Width := LicensePage.SurfaceWidth - 120;
+  LicenseFileEdit.ReadOnly := True;
+  LicenseFileEdit.Text := '';
+
+  ImportLicenseButton := TNewButton.Create(LicensePage);
+  ImportLicenseButton.Parent := LicensePage.Surface;
+  ImportLicenseButton.Left := LicensePage.SurfaceWidth - 110;
+  ImportLicenseButton.Top := 128;
+  ImportLicenseButton.Width := 110;
+  ImportLicenseButton.Height := ScaleY(23);
+  ImportLicenseButton.Caption := 'Importar llave...';
+  ImportLicenseButton.OnClick := @ImportLicenseClick;
 
   LicenseHintLabel := TNewStaticText.Create(LicensePage);
   LicenseHintLabel.Parent := LicensePage.Surface;
@@ -547,7 +631,8 @@ begin
   LicenseHintLabel.Width := LicensePage.SurfaceWidth;
   LicenseHintLabel.AutoSize := False;
   LicenseHintLabel.WordWrap := True;
-  LicenseHintLabel.Caption := 'Pega la clave completa (FELPOS-v1...). En caja de red es opcional.';
+  LicenseHintLabel.Caption :=
+    'Pulsa "Importar llave..." y elige el archivo .felpos-lic. En caja de red es opcional.';
 
   ProfilePage := CreateCustomPage(
     wpSelectDir,
@@ -719,45 +804,26 @@ begin
   if CurPageID = LicensePage.ID then
   begin
     SelectedInstallMode := GetSelectedInstallMode();
-    KeyText := Trim(LicenseEdit.Text);
+    KeyText := Trim(SavedLicenseKey);
     if IsClientMode() then
     begin
-      if KeyText <> '' then
+      if KeyText = '' then
       begin
-        if not ValidateLicenseKey(KeyText) then
-        begin
-          MsgBox(
-            'Licencia invalida.' + #13#10 +
-            'En caja de red puedes dejarla vacia (la licencia esta en el servidor).',
-            mbError, MB_OK);
-          Result := False;
-          Exit;
-        end;
-        SavedLicenseKey := KeyText;
-      end
-      else
         SavedLicenseKey := '';
+        SavedLicenseSourcePath := '';
+      end;
       Exit;
     end;
     if KeyText = '' then
     begin
       MsgBox(
-        'Debes ingresar la clave de licencia para continuar.' + #13#10 +
-        'Si no la tienes, envia el ID de equipo al proveedor.',
+        'Debes agregar/importar la llave para continuar.' + #13#10 +
+        'Pulsa "Importar llave..." y elige el archivo .felpos-lic.' + #13#10 +
+        'Si no lo tienes, envia el ID de equipo al proveedor.',
         mbError, MB_OK);
       Result := False;
       Exit;
     end;
-    if not ValidateLicenseKey(KeyText) then
-    begin
-      MsgBox(
-        'Licencia invalida o no autorizada.' + #13#10 +
-        'Verifica que pegaste la clave completa (FELPOS-v1...) o contacta al proveedor.',
-        mbError, MB_OK);
-      Result := False;
-      Exit;
-    end;
-    SavedLicenseKey := KeyText;
   end;
 
   if CurPageID = wpSelectDir then
@@ -825,5 +891,15 @@ begin
         ApplyEnvValue(EnvPath, 'LICENSE_REQUIRED_FOR_UPDATES', 'true');
       end;
     end;
+    if (Trim(SavedLicenseSourcePath) <> '') and FileExists(SavedLicenseSourcePath) then
+      CopyFile(SavedLicenseSourcePath, AppDir + '\license.felpos-lic', False)
+    else if Trim(SavedLicenseKey) <> '' then
+      WriteTextToFile(
+        AppDir + '\license.felpos-lic',
+        '{' + #13#10 +
+        '  "format": "felpos-lic-1",' + #13#10 +
+        '  "license_key": "' + SavedLicenseKey + '"' + #13#10 +
+        '}' + #13#10
+      );
   end;
 end;

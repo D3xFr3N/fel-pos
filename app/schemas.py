@@ -856,7 +856,7 @@ class LicenseConfigOut(BaseModel):
 
 
 class LicenseConfigUpdateIn(BaseModel):
-    store_license_key: str = Field(default="", max_length=80)
+    store_license_key: str = Field(default="", max_length=4096)
     license_registry_url: str = ""
     license_required_for_updates: bool = True
 

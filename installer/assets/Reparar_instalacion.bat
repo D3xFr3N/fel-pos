@@ -106,23 +106,31 @@ exit /b 1
 :launch
 echo.
 echo Iniciando FEL POS con arranque seguro...
-if exist "C:\Users\Public\FELPOS\relaunch.vbs" (
-  wscript //nologo "C:\Users\Public\FELPOS\relaunch.vbs"
-  goto done
-)
-if exist "%~dp0_relaunch_here.ps1" (
-  powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0_relaunch_here.ps1"
-  goto done
-)
-if exist "Boot_FELPOS.vbs" (
-  wscript //nologo "%~dp0Boot_FELPOS.vbs"
-  goto done
-)
-if exist "Iniciar_FELPOS.vbs" (
-  wscript //nologo "%~dp0Iniciar_FELPOS.vbs"
-  goto done
-)
-powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0_relaunch_here.ps1"
+set "PUBLIC_RELAUNCH=C:\Users\Public\FELPOS\relaunch.vbs"
+set "LOCAL_PS1=%~dp0_relaunch_here.ps1"
+set "LOCAL_BOOT=%~dp0Boot_FELPOS.vbs"
+set "LOCAL_INIT=%~dp0Iniciar_FELPOS.vbs"
+if exist "%PUBLIC_RELAUNCH%" goto launch_public
+if exist "%LOCAL_PS1%" goto launch_ps1
+if exist "%LOCAL_BOOT%" goto launch_boot
+if exist "%LOCAL_INIT%" goto launch_init
+powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%LOCAL_PS1%"
+goto done
+
+:launch_public
+wscript //nologo "%PUBLIC_RELAUNCH%"
+goto done
+
+:launch_ps1
+powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%LOCAL_PS1%"
+goto done
+
+:launch_boot
+wscript //nologo "%LOCAL_BOOT%"
+goto done
+
+:launch_init
+wscript //nologo "%LOCAL_INIT%"
 goto done
 
 :done

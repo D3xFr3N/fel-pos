@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import platform
 import sys
 from pathlib import Path
@@ -31,6 +32,39 @@ def normalize_license_key(value: str) -> str:
     return text.upper()
 
 
+def extract_license_key_from_text(value: str) -> str:
+    text = (value or "").strip().lstrip("\ufeff")
+    if not text:
+        return ""
+
+    if text.startswith("{"):
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict):
+            for key_name in ("license_key", "key", "store_license_key"):
+                candidate = str(data.get(key_name) or "").strip()
+                if candidate.upper().startswith(LICENSE_PREFIX.upper()):
+                    return normalize_license_key(candidate)
+
+    if text.upper().startswith(LICENSE_PREFIX.upper()):
+        return normalize_license_key(text)
+
+    for line in text.splitlines():
+        candidate = line.strip().strip('"').strip("'")
+        upper = candidate.upper()
+        if upper.startswith(LICENSE_PREFIX.upper()):
+            return normalize_license_key(candidate)
+        if "FELPOS-V1." in upper:
+            start = upper.find("FELPOS-V1.")
+            chunk = candidate[start:].split()[0].strip(",;")
+            if chunk.upper().startswith(LICENSE_PREFIX.upper()):
+                return normalize_license_key(chunk)
+
+    return ""
+
+
 def get_install_fingerprint() -> str:
     parts = [platform.node().strip().lower(), platform.machine().strip().lower()]
     if sys.platform.startswith("win"):
@@ -53,6 +87,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Validacion de licencia para instalador FEL POS")
     parser.add_argument("--write-fingerprint", metavar="PATH", help="Escribe el ID de equipo en un archivo")
     parser.add_argument("--validate-file", metavar="PATH", help="Valida la licencia leida desde un archivo")
+    parser.add_argument(
+        "--write-extracted",
+        metavar="PATH",
+        help="Si la validacion es OK, escribe la clave FELPOS-v1 normalizada aqui",
+    )
     args = parser.parse_args()
 
     if args.write_fingerprint:
@@ -64,15 +103,17 @@ def main() -> int:
         if not path.exists():
             print("No se encontro el archivo de licencia.", file=sys.stderr)
             return 1
-        license_key = normalize_license_key(path.read_text(encoding="utf-8-sig"))
+        license_key = extract_license_key_from_text(path.read_text(encoding="utf-8-sig"))
         if not license_key:
-            print("Debes ingresar una clave de licencia.", file=sys.stderr)
+            print("No se encontro una llave firmada en el archivo.", file=sys.stderr)
             return 1
         result = verify_signed_license(license_key, machine_fingerprint=get_install_fingerprint())
-        if result.valid:
-            return 0
-        print(result.message or "Licencia invalida.", file=sys.stderr)
-        return 1
+        if not result.valid:
+            print(result.message or "Licencia invalida.", file=sys.stderr)
+            return 1
+        if args.write_extracted:
+            Path(args.write_extracted).write_text(license_key, encoding="utf-8")
+        return 0
 
     parser.print_help()
     return 2

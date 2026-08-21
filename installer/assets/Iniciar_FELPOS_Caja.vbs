@@ -37,7 +37,9 @@ If Trim(shell.Environment("PROCESS")("FELPOS_PORT")) = "" Then
   shell.Environment("PROCESS")("FELPOS_PORT") = "8000"
 End If
 
-shell.Run """" & exePath & """", 1, False
+Dim app
+Set app = CreateObject("Shell.Application")
+app.ShellExecute exePath, "", appDir, "open", 1
 WScript.Quit 0
 
 Function ResolveSpaceFreeRuntimeRoot()

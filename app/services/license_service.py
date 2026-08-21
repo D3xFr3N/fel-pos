@@ -74,6 +74,43 @@ class LicenseValidation:
 
 
 
+def extract_license_key_from_text(value: str) -> str:
+    """Acepta solo clave FELPOS-v1 firmada (directa, JSON .felpos-lic, o linea embebida).
+
+    No acepta cartas .txt ni texto libre: si no hay FELPOS-v1, devuelve vacio.
+    """
+    text = (value or "").strip().lstrip("\ufeff")
+    if not text:
+        return ""
+
+    if text.startswith("{"):
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict):
+            for key_name in ("license_key", "key", "store_license_key"):
+                candidate = str(data.get(key_name) or "").strip()
+                if candidate and is_signed_license_key(candidate):
+                    return normalize_license_key(candidate)
+
+    if is_signed_license_key(text):
+        return normalize_license_key(text)
+
+    for line in text.splitlines():
+        candidate = line.strip().strip('"').strip("'")
+        if is_signed_license_key(candidate):
+            return normalize_license_key(candidate)
+        upper = candidate.upper()
+        if "FELPOS-V1." in upper:
+            start = upper.find("FELPOS-V1.")
+            chunk = candidate[start:].split()[0].strip(",;")
+            if is_signed_license_key(chunk):
+                return normalize_license_key(chunk)
+
+    return ""
+
+
 def normalize_license_key(value: str) -> str:
 
     text = (value or "").strip()

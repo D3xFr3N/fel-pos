@@ -1549,21 +1549,26 @@ def save_license_config_route(
 ):
     from app.services.audit_service import log_action
     from app.services.license_config_service import update_license_config
-    from app.services.license_service import normalize_license_key
+    from app.services.license_service import extract_license_key_from_text, normalize_license_key
+    from app.config import settings
 
     bootstrap_store_settings(db)
-    license_key = normalize_license_key(payload.store_license_key)
+    license_key = extract_license_key_from_text(payload.store_license_key)
+    if not license_key:
+        license_key = normalize_license_key(settings.store_license_key or "")
     if payload.license_required_for_updates and len(license_key) < 12:
         raise HTTPException(
             status_code=400,
-            detail="Debes indicar una licencia valida para recibir actualizaciones.",
+            detail="Elige el archivo .felpos-lic o indica una licencia firmada valida.",
         )
     try:
         result = update_license_config(
-            store_license_key=license_key,
+            store_license_key=license_key or payload.store_license_key,
             license_registry_url=payload.license_registry_url,
             license_required_for_updates=payload.license_required_for_updates,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"No se pudo guardar .env: {exc}") from exc
 

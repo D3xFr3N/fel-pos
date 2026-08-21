@@ -1312,12 +1312,34 @@ function renderOpenTicketsBar() {
 function focusProductSearch() {
   const searchInput = document.getElementById("product-search");
   if (!searchInput || searchInput.disabled) return;
-  setTimeout(() => {
-    searchInput.focus();
-    if (typeof searchInput.select === "function") {
+  const arm = () => {
+    try {
+      searchInput.focus({ preventScroll: true });
+    } catch {
+      searchInput.focus();
+    }
+    // Listo para el siguiente codigo/escaneo (campo vacio o seleccionado).
+    if (searchInput.value) {
       searchInput.select();
     }
+  };
+  // Doble tick: sobrevive al re-render de la tabla y a dialogs que cierran.
+  setTimeout(() => {
+    arm();
+    requestAnimationFrame(arm);
   }, 0);
+}
+
+function scrollSelectedCartLineIntoView() {
+  const selectedId = state.selectedCartProductId;
+  if (!selectedId) return;
+  const row = document.querySelector(`#cart-items tr[data-cart-line-id="${selectedId}"]`);
+  if (!row) return;
+  try {
+    row.scrollIntoView({ block: "nearest", inline: "nearest" });
+  } catch {
+    row.scrollIntoView(false);
+  }
 }
 
 function clearAdminCashMonitorTimer() {
@@ -1929,7 +1951,9 @@ function renderProducts() {
     if (!product || (productTracksInventory(product) && getPosAvailableStock(product) <= 0)) {
       return;
     }
-    card.addEventListener("click", () => addToCart(Number(card.dataset.id)));
+    card.addEventListener("click", () => {
+      void addToCart(Number(card.dataset.id));
+    });
   });
   renderCatalogPager(items.length, page, pageCount);
 }
@@ -1979,6 +2003,7 @@ function renderCart() {
         const importe = Math.round(unit * Number(line.quantity || 0) * 100) / 100;
         const code = getProductBarcodeValue(product || line) || product?.sku || line.sku || "—";
         const isSelected = line.id === state.selectedCartProductId;
+        const stockLabel = tracksInventory ? formatQuantity(availableStock) : "Ilim";
         return `
       <tr class="${isSelected ? "is-selected" : ""}" data-cart-line-id="${line.id}">
         <td title="${escapeHtml(code)}">${escapeHtml(code)}</td>
@@ -1986,7 +2011,7 @@ function renderCart() {
         <td>${money(unit)}</td>
         <td>${formatQuantity(line.quantity)}</td>
         <td>${money(importe)}</td>
-        <td>${tracksInventory ? formatQuantity(availableStock) : "—"}</td>
+        <td>${escapeHtml(stockLabel)}</td>
       </tr>
     `;
       })
@@ -1996,12 +2021,15 @@ function renderCart() {
       lineEl.addEventListener("click", () => {
         state.selectedCartProductId = Number(lineEl.dataset.cartLineId);
         renderCart();
+        scrollSelectedCartLineIntoView();
+        focusProductSearch();
       });
       lineEl.addEventListener("dblclick", () => {
         state.selectedCartProductId = Number(lineEl.dataset.cartLineId);
         void changeSelectedCartLineQuantity();
       });
     });
+    scrollSelectedCartLineIntoView();
   }
   renderTotals();
   renderOpenTicketsBar();
@@ -2018,15 +2046,24 @@ function adjustCartLineQuantity(productId, delta) {
   const tracksInventory = productTracksInventory(product ?? line);
   const availableStock = getPosAvailableStock(product ?? line);
   const currentQty = Number(line.quantity || 0);
+  const step = Number(delta || 0);
+  if (!step) return false;
 
-  if (delta > 0 && tracksInventory && currentQty >= availableStock) {
+  if (step > 0 && tracksInventory && currentQty >= availableStock) {
     alert(`No puedes vender mas de ${formatQuantity(availableStock)} unidades de ${line.name}.`);
     return false;
   }
 
-  line.quantity = currentQty + delta;
+  line.quantity = currentQty + step;
   state.cart = state.cart.filter((item) => item.quantity > 0);
+  if (!state.cart.some((item) => item.id === id)) {
+    state.selectedCartProductId = state.cart.length ? state.cart[state.cart.length - 1].id : null;
+  } else {
+    state.selectedCartProductId = id;
+  }
   renderCart();
+  scrollSelectedCartLineIntoView();
+  focusProductSearch();
   return true;
 }
 
@@ -2047,19 +2084,29 @@ function isTypingInField(target) {
   );
 }
 
+function getCartQuantityShortcutDelta(event) {
+  if (event.key === "+" || event.key === "Add" || event.code === "NumpadAdd") return 1;
+  if (event.key === "=" && event.shiftKey) return 1;
+  if (event.key === "-" || event.key === "Subtract" || event.code === "NumpadSubtract") return -1;
+  return 0;
+}
+
 function handleCartQuantityShortcuts(event) {
   if (event.ctrlKey || event.altKey || event.metaKey) return;
-  if (isTypingInField(event.target)) return;
   if (document.querySelector("dialog[open]")) return;
   if (!document.getElementById("tab-pos")?.classList.contains("active")) return;
   if (!state.cart.length) return;
 
-  let delta = 0;
-  if (event.key === "+" || event.code === "NumpadAdd") delta = 1;
-  if (event.key === "-" || event.code === "NumpadSubtract") delta = -1;
+  const delta = getCartQuantityShortcutDelta(event);
   if (!delta) return;
 
+  const target = event.target;
+  const isProductSearch = target?.id === "product-search";
+  // Como Eleventa: + / - funcionan aunque el foco este en el buscador.
+  if (isTypingInField(target) && !isProductSearch) return;
+
   event.preventDefault();
+  event.stopPropagation();
   adjustSelectedCartLine(delta);
 }
 
@@ -2326,13 +2373,15 @@ function startPosStatusClock() {
   clock.dataset.wired = "1";
   const tick = () => {
     const now = new Date();
-    clock.textContent = now.toLocaleString("es-GT", {
+    const when = now.toLocaleString("es-GT", {
       day: "numeric",
       month: "short",
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
     });
+    const ver = state.appVersion?.version ? `Ver: ${state.appVersion.version}` : "";
+    clock.textContent = [ver, when].filter(Boolean).join("   ");
   };
   tick();
   setInterval(tick, 30000);
@@ -3084,6 +3133,8 @@ async function addToCart(productId) {
   }
   state.selectedCartProductId = product.id;
   renderCart();
+  scrollSelectedCartLineIntoView();
+  focusProductSearch();
 }
 
 function findProductsByExactCode(rawCode) {
@@ -7539,12 +7590,25 @@ function renderConfig() {
       `
     ${renderVersionHistorySection()}
     <h3 class="config-subhead">Licencia de tienda</h3>
-    <p class="hint">Las licencias firmadas se validan localmente. No se publica ningun registro de tiendas en GitHub.</p>
+    <p class="hint">Activa con el archivo <strong>.felpos-lic</strong> que te enviamos. No hace falta copiar la clave larga.</p>
     <form id="license-config-form">
       <label>
-        Clave de licencia
-        <input name="store_license_key" value="${escapeHtml(state.licenseConfig?.store_license_key || "")}" placeholder="FELPOS-v1..." required>
+        Archivo de activacion (.felpos-lic)
+        <input type="file" id="license-file-input" accept=".felpos-lic,application/json">
       </label>
+      <input type="hidden" name="store_license_key" id="store-license-key-input" value="">
+      <p class="hint" id="license-file-hint">${
+        state.licenseConfig?.license_key_configured || state.licenseConfig?.configured
+          ? "Licencia ya guardada. Elige otro archivo solo si te reemitieron la activacion."
+          : "Selecciona el archivo .felpos-lic (no el .txt de instrucciones)."
+      }</p>
+      <details class="config-advanced">
+        <summary>Avanzado: pegar clave FELPOS-v1</summary>
+        <label>
+          Clave firmada (opcional)
+          <textarea name="store_license_key_paste" id="store-license-key-paste" rows="3" placeholder="Solo si no tienes el archivo .felpos-lic"></textarea>
+        </label>
+      </details>
       <label>
         <input type="checkbox" name="license_required_for_updates" ${state.licenseConfig?.license_required_for_updates !== false ? "checked" : ""}>
         Exigir licencia valida para actualizar
@@ -7553,6 +7617,7 @@ function renderConfig() {
     </form>
     <p class="hint">
       Estado: ${escapeHtml(state.licenseConfig?.message || "Sin validar")}
+      ${state.licenseConfig?.store_label ? ` · Tienda: ${escapeHtml(state.licenseConfig.store_label)}` : ""}
       ${state.licenseConfig?.fingerprint ? ` · ID equipo: ${escapeHtml(state.licenseConfig.fingerprint)}` : ""}
     </p>
     ${renderAutoUpdateSection()}
@@ -8149,14 +8214,46 @@ function renderConfig() {
 
   document.getElementById("pending-fel-retry-all-btn")?.addEventListener("click", retryAllPendingFel);
 
+  const licenseFileInput = document.getElementById("license-file-input");
+  const licenseKeyHidden = document.getElementById("store-license-key-input");
+  const licenseKeyPaste = document.getElementById("store-license-key-paste");
+  const licenseFileHint = document.getElementById("license-file-hint");
+
+  licenseFileInput?.addEventListener("change", async () => {
+    const file = licenseFileInput.files?.[0];
+    if (!file) return;
+    const name = String(file.name || "").toLowerCase();
+    if (!name.endsWith(".felpos-lic")) {
+      if (licenseKeyHidden) licenseKeyHidden.value = "";
+      if (licenseFileHint) {
+        licenseFileHint.textContent =
+          "Ese no es el archivo de llave. Usa el .felpos-lic (el .txt solo son instrucciones).";
+      }
+      alert("El .txt no es la licencia. Elige el archivo .felpos-lic");
+      licenseFileInput.value = "";
+      return;
+    }
+    try {
+      const text = await file.text();
+      if (licenseKeyHidden) licenseKeyHidden.value = text.trim();
+      if (licenseFileHint) {
+        licenseFileHint.textContent = `Archivo listo: ${file.name}. Pulsa Guardar licencia.`;
+      }
+    } catch (error) {
+      alert(error.message || "No se pudo leer el archivo de licencia.");
+    }
+  });
+
   document.getElementById("license-config-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.target;
+    const fromFile = String(licenseKeyHidden?.value || "").trim();
+    const fromPaste = String(licenseKeyPaste?.value || "").trim();
     try {
       state.licenseConfig = await api("/api/config/license", {
         method: "PUT",
         body: JSON.stringify({
-          store_license_key: form.store_license_key.value.trim(),
+          store_license_key: fromFile || fromPaste,
           license_required_for_updates: Boolean(form.license_required_for_updates?.checked),
         }),
       });
@@ -11428,7 +11525,7 @@ function setupTabs() {
 }
 
 function setupEvents() {
-  document.addEventListener("keydown", handleCartQuantityShortcuts);
+  document.addEventListener("keydown", handleCartQuantityShortcuts, true);
   [
     "sales-filter-from",
     "sales-filter-to",
@@ -11460,6 +11557,12 @@ function setupEvents() {
     renderProductSearchSuggestions();
   });
   productSearch.addEventListener("keydown", (event) => {
+    const qtyDelta = getCartQuantityShortcutDelta(event);
+    if (qtyDelta && state.cart.length) {
+      event.preventDefault();
+      adjustSelectedCartLine(qtyDelta);
+      return;
+    }
     const box = document.getElementById("product-search-suggestions");
     const suggestionsOpen = Boolean(box && !box.hidden);
     if (event.key === "ArrowDown" && suggestionsOpen) {
@@ -11593,12 +11696,6 @@ function setupEvents() {
     void reprintLastTicket();
   });
   document.getElementById("pos-go-sales-btn")?.addEventListener("click", goToSalesTab);
-  document.getElementById("pos-paid-with")?.addEventListener("input", () => updatePosPaidChangeDisplay());
-  document.getElementById("pos-clear-paid-btn")?.addEventListener("click", () => {
-    const paid = document.getElementById("pos-paid-with");
-    if (paid) paid.value = "0.00";
-    updatePosPaidChangeDisplay();
-  });
   document.getElementById("new-ticket-btn")?.addEventListener("click", () => {
     createNewTicket();
   });

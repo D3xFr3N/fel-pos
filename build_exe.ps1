@@ -54,8 +54,30 @@ if (-not $pyDll) {
   throw "No se encontro python312.dll dentro de _internal."
 }
 
-# Copia de conveniencia para scripts viejos que buscan dist\FELPOS.exe
-Copy-Item $exePath (Join-Path $root "dist\FELPOS.exe") -Force
+# NUNCA copiar FELPOS.exe suelto a dist\: el onedir exige
+# dist\FELPOS\FELPOS.exe junto a dist\FELPOS\_internal\.
+# Un EXE en dist\ busca dist\_internal\ y falla con python312.dll.
+$orphanExe = Join-Path $root "dist\FELPOS.exe"
+if (Test-Path $orphanExe) {
+  Remove-Item $orphanExe -Force -ErrorAction SilentlyContinue
+}
+$launcherCmd = Join-Path $root "dist\Abrir_FELPOS.cmd"
+@(
+  "@echo off"
+  "setlocal"
+  "cd /d ""%~dp0FELPOS"""
+  "if not exist ""FELPOS.exe"" ("
+  "  echo No se encontro dist\FELPOS\FELPOS.exe"
+  "  pause"
+  "  exit /b 1"
+  ")"
+  "if not exist ""_internal\python312.dll"" ("
+  "  echo Falta _internal. Compila de nuevo con build_exe.ps1 / build_installer.ps1"
+  "  pause"
+  "  exit /b 1"
+  ")"
+  "start """" ""FELPOS.exe"""
+) | Set-Content -Path $launcherCmd -Encoding ASCII
 
 $versionFile = Join-Path $root "VERSION"
 if (Test-Path $versionFile) {

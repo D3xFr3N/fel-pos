@@ -27,12 +27,12 @@ El instalador pide el modo de esta PC:
 - Servidor de red: solo servidor (sin ventana de venta); otras PCs se conectan como caja.
 - Caja en red: escritorio que busca sola el servidor; no guarda inventario ni requiere licencia aqui.
 
-La licencia FELPOS-v1... va en Local o Servidor. En Caja en red puede quedar vacia.
+La llave de activacion (.felpos-lic) va en Local o Servidor. En Caja en red puede quedar vacia.
 
 PRIMER USO
 ----------
 1. Elige el tipo de instalacion (Local, Servidor o Caja).
-2. En Local/Servidor: ingresa la licencia de tu tienda (FELPOS-v1...) y anota el ID de equipo si necesitas reactivacion.
+2. En Local/Servidor: pulsa "Importar llave..." y elige el archivo .felpos-lic. Anota el ID de equipo si necesitas reactivacion.
 3. En Local/Servidor: elige el tipo de negocio y si deseas factura contable (FEL).
 4. Abre el acceso directo que corresponda (FEL POS, FEL POS Servidor o FEL POS Caja).
 5. Inicia sesion como admin (admin / admin123) en la PC con inventario.

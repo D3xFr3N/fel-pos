@@ -98,28 +98,38 @@ def verify_signed_license(
     if not store_id:
         return SignedLicenseInfo(valid=False, message="Licencia sin ID de tienda.")
 
-    if bound_fingerprint:
-        current_fingerprint = str(machine_fingerprint or "").strip().upper()
-        if not current_fingerprint:
-            return SignedLicenseInfo(
-                valid=False,
-                store_id=store_id,
-                store_label=store_label,
-                issued_at=issued_at,
-                status=status,
-                machine_fingerprint=bound_fingerprint,
-                message="Licencia vinculada a equipo; no se pudo leer el ID de equipo.",
-            )
-        if bound_fingerprint != current_fingerprint:
-            return SignedLicenseInfo(
-                valid=False,
-                store_id=store_id,
-                store_label=store_label,
-                issued_at=issued_at,
-                status=status,
-                machine_fingerprint=bound_fingerprint,
-                message="Licencia no valida para este equipo.",
-            )
+    # Obligatorio: sin fingerprint la misma llave serviria en cualquier PC.
+    if not bound_fingerprint:
+        return SignedLicenseInfo(
+            valid=False,
+            store_id=store_id,
+            store_label=store_label,
+            issued_at=issued_at,
+            status=status,
+            message="Licencia no vinculada a un equipo. Debe reemitirse con ID de computadora.",
+        )
+
+    current_fingerprint = str(machine_fingerprint or "").strip().upper()
+    if not current_fingerprint:
+        return SignedLicenseInfo(
+            valid=False,
+            store_id=store_id,
+            store_label=store_label,
+            issued_at=issued_at,
+            status=status,
+            machine_fingerprint=bound_fingerprint,
+            message="Licencia vinculada a equipo; no se pudo leer el ID de este equipo.",
+        )
+    if bound_fingerprint != current_fingerprint:
+        return SignedLicenseInfo(
+            valid=False,
+            store_id=store_id,
+            store_label=store_label,
+            issued_at=issued_at,
+            status=status,
+            machine_fingerprint=bound_fingerprint,
+            message="Licencia no valida para este equipo (no se puede compartir entre PCs).",
+        )
 
     if status != "active":
         return SignedLicenseInfo(
@@ -138,5 +148,5 @@ def verify_signed_license(
         issued_at=issued_at,
         status=status,
         machine_fingerprint=bound_fingerprint,
-        message="Licencia firmada valida.",
+        message="Licencia firmada valida para este equipo.",
     )

@@ -188,13 +188,19 @@ try {
       Write-Log ("AVISO al abrir EXE: " + $_.Exception.Message)
     }
   }
+  $relaunchVbs = Join-Path $PublicDir "relaunch.vbs"
+  if (-not $opened -and (Test-Path -LiteralPath $relaunchVbs)) {
+    # ArgumentList en array NO cita rutas con espacios (rompe C:\Program Files).
+    Start-Process -FilePath "wscript.exe" -ArgumentList ('//nologo "' + $relaunchVbs + '"') | Out-Null
+    $opened = $true
+    Write-Log "Abriendo via relaunch.vbs"
+  }
   if (-not $opened -and (Test-Path -LiteralPath $iniciarVbs)) {
-    Start-Process -FilePath "wscript.exe" -ArgumentList @("//nologo", $iniciarVbs) -WorkingDirectory $installDir | Out-Null
+    Start-Process -FilePath "wscript.exe" -ArgumentList ('//nologo "' + $iniciarVbs + '"') -WorkingDirectory $installDir | Out-Null
     $opened = $true
     Write-Log "Abriendo via Iniciar_FELPOS.vbs"
   }
   if (-not $opened) {
-    $relaunchVbs = Join-Path $PublicDir "relaunch.vbs"
     @"
 Option Explicit
 Dim app, fso, exePath, workDir
@@ -208,7 +214,7 @@ If Not fso.FileExists(exePath) Then
 End If
 app.ShellExecute exePath, "", workDir, "open", 1
 "@ | Set-Content -LiteralPath $relaunchVbs -Encoding ASCII
-    Start-Process -FilePath "wscript.exe" -ArgumentList @("//nologo", $relaunchVbs) | Out-Null
+    Start-Process -FilePath "wscript.exe" -ArgumentList ('//nologo "' + $relaunchVbs + '"') | Out-Null
   }
 
   Write-Log "OK actualizado a v$version (onedir)"
