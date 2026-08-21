@@ -1,7 +1,7 @@
 {
-    "version":  "0.6.29",
-    "build_date":  "2026-08-21 10:00:14",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.29/felpos-update-0.6.29.zip",
-    "sha256":  "81d2450abe8a5f440639a8083ae8c7364fe6d7b46da699187905c8e48cafc0de",
-    "release_notes":  "Actualizacion FEL POS v0.6.29\r\n\r\n- Ventana de ventas con estilo clasico (tabla, seleccion azul, totales).\r\n- Al agregar un producto queda seleccionado y el foco vuelve al buscador para seguir vendiendo.\r\n- Sin EXE huerfano en dist\\ (evita error python312.dll)."
+    "version":  "0.6.30",
+    "build_date":  "2026-08-21 10:12:43",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.30/felpos-update-0.6.30.zip",
+    "sha256":  "ed43922648b6821eeda90d67daf6325b4b21b4615357a1d770c544177ea1a36f",
+    "release_notes":  "Actualizacion FEL POS v0.6.30\r\n\r\n- Ventas estilo Eleventa: al agregar producto queda seleccionado.\r\n- + / - (y botones + Cant. / - Cant.) suben o bajan cantidad sin perder el buscador.\r\n- Se puede seguir escaneando productos enseguida."
 }
