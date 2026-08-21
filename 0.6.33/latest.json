@@ -1,0 +1,7 @@
+{
+    "version":  "0.6.33",
+    "build_date":  "2026-08-21 16:06:12",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.33/felpos-update-0.6.33.zip",
+    "sha256":  "975413f8a3ced61b7b68fac214ba8b20ac626db4dcc9cf8a448a700bbf4e0f4c",
+    "release_notes":  "Actualizacion FEL POS v0.6.33\r\n\r\n- Se quito la barra rapida Total / Pago Con / Cambio del pie de venta.\r\n- Columna Importe centrada y con texto mas legible."
+}

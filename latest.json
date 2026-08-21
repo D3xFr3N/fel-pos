@@ -1,7 +1,7 @@
 {
-    "version":  "0.6.32",
-    "build_date":  "2026-08-21 10:52:12",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.32/felpos-update-0.6.32.zip",
-    "sha256":  "898d550d2541734845c2dda561f0c492c0b300f0f7e2e5f4f481b2a2f1b02ca2",
-    "release_notes":  "Actualizacion FEL POS v0.6.32\r\n\r\n- Se quitaron los botones + Cant. / - Cant. del pie de venta.\r\n- Cantidad se ajusta con F5 o teclas + / -."
+    "version":  "0.6.33",
+    "build_date":  "2026-08-21 16:06:12",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.33/felpos-update-0.6.33.zip",
+    "sha256":  "975413f8a3ced61b7b68fac214ba8b20ac626db4dcc9cf8a448a700bbf4e0f4c",
+    "release_notes":  "Actualizacion FEL POS v0.6.33\r\n\r\n- Se quito la barra rapida Total / Pago Con / Cambio del pie de venta.\r\n- Columna Importe centrada y con texto mas legible."
 }
