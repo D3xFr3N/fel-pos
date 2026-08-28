@@ -2104,19 +2104,31 @@ function getCartQuantityShortcutDelta(event) {
   return 0;
 }
 
+function isDeleteLineShortcut(event) {
+  return event.key === "Delete" || event.key === "Del" || event.code === "Delete";
+}
+
 function handleCartQuantityShortcuts(event) {
   if (event.ctrlKey || event.altKey || event.metaKey) return;
   if (document.querySelector("dialog[open]")) return;
   if (!document.getElementById("tab-pos")?.classList.contains("active")) return;
-  if (!state.cart.length) return;
-
-  const delta = getCartQuantityShortcutDelta(event);
-  if (!delta) return;
 
   const target = event.target;
   const isProductSearch = target?.id === "product-search";
-  // Como Eleventa: + / - funcionan aunque el foco este en el buscador.
+  // Como Eleventa: atajos del ticket funcionan aunque el foco este en el buscador.
   if (isTypingInField(target) && !isProductSearch) return;
+
+  if (isDeleteLineShortcut(event)) {
+    if (!state.cart.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    removeSelectedCartLine();
+    return;
+  }
+
+  const delta = getCartQuantityShortcutDelta(event);
+  if (!delta) return;
+  if (!state.cart.length) return;
 
   event.preventDefault();
   event.stopPropagation();
@@ -2440,8 +2452,8 @@ function removeSelectedCartLine() {
     alert("No hay productos para eliminar.");
     return false;
   }
-  const selectedId = state.selectedCartProductId || state.cart[state.cart.length - 1].id;
-  state.cart = state.cart.filter((item) => item.id !== selectedId);
+  const selectedId = Number(state.selectedCartProductId || state.cart[state.cart.length - 1].id);
+  state.cart = state.cart.filter((item) => Number(item.id) !== selectedId);
   state.selectedCartProductId = state.cart.length ? state.cart[state.cart.length - 1].id : null;
   renderCart();
   focusProductSearch();
@@ -9319,8 +9331,10 @@ function handleCheckoutShortcuts(event) {
     return;
   }
 
-  if (event.key === "Delete") {
-    if (isTypingTarget(event.target) || anyDialogOpen) return;
+  if (isDeleteLineShortcut(event)) {
+    if (anyDialogOpen) return;
+    const inSearch = event.target?.id === "product-search";
+    if (isTypingTarget(event.target) && !inSearch) return;
     if (!document.getElementById("tab-pos")?.classList.contains("active")) return;
     event.preventDefault();
     removeSelectedCartLine();
