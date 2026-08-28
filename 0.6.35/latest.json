@@ -1,0 +1,7 @@
+{
+    "version":  "0.6.35",
+    "build_date":  "2026-08-28 09:53:07",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.35/felpos-update-0.6.35.zip",
+    "sha256":  "6ea3560b25c6a30b687c39f46e07c40d7713ac3e1ddd66bb59368548c17b0e48",
+    "release_notes":  "Actualizacion FEL POS v0.6.35\r\n\r\n- Al terminar de cobrar, el cursor vuelve solo a buscar producto.\r\n- Listo para el siguiente ticket sin mover el mouse."
+}
