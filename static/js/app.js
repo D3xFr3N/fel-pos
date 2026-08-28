@@ -1317,6 +1317,8 @@ function focusProductSearch({ clear = false } = {}) {
     hideProductSearchSuggestions();
   }
   const arm = () => {
+    if (searchInput.disabled) return;
+    if (document.querySelector("dialog[open]")) return;
     try {
       searchInput.focus({ preventScroll: true });
     } catch {
@@ -1327,16 +1329,27 @@ function focusProductSearch({ clear = false } = {}) {
       searchInput.select();
     }
   };
-  // Doble tick: sobrevive al re-render de la tabla y a dialogs que cierran.
-  setTimeout(() => {
+  // Varios ticks: el cierre de <dialog> restaura el foco al boton Cobrar despues.
+  arm();
+  [0, 30, 80, 160].forEach((ms) => setTimeout(arm, ms));
+  requestAnimationFrame(() => {
     arm();
     requestAnimationFrame(arm);
-  }, 0);
+  });
 }
 
-function resumeSellingAfterCheckout() {
+function setPosStatusMessage(text) {
+  const status = document.getElementById("pos-status-message");
+  if (status && text) status.textContent = text;
+}
+
+function resumeSellingAfterCheckout(statusText) {
   document.getElementById("cash-checkout-dialog")?.close();
   document.getElementById("sale-dialog")?.close();
+  document.getElementById("app-alert-dialog")?.close();
+  if (statusText) setPosStatusMessage(statusText);
+  document.getElementById("open-cash-capture-btn")?.blur();
+  document.getElementById("cash-final-print-btn")?.blur();
   if (!document.getElementById("tab-pos")?.classList.contains("active")) {
     switchToPosTab();
   }
@@ -2934,9 +2947,7 @@ async function finalizeMixedCheckout(printTicket = true) {
   }
 
   const success = await processCheckout("mixto", cashReceived, printTicket, payments);
-  if (success) {
-    document.getElementById("cash-checkout-dialog")?.close();
-  }
+  if (success) resumeSellingAfterCheckout();
   return success;
 }
 
@@ -9065,7 +9076,7 @@ async function checkout(printTicket = true) {
     openCashCheckoutDialog();
     return;
   }
-  await processCheckout(paymentMethod, null, printTicket);
+  return processCheckout(paymentMethod, null, printTicket);
 }
 
 async function processCheckout(paymentMethod, cashReceived = null, printTicket = true, payments = null) {
@@ -9180,10 +9191,8 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
     const statusSuffix = buildCheckoutStatusSuffix({ printTicket, printResult, drawerResult });
     const paymentSuffix =
       paymentMethod === "mixto" && payments ? `Pago: ${formatSalePayments(sale)}.` : "";
-    await showAppAlert(buildSaleSuccessMessage(sale, `${paymentSuffix}${statusSuffix}`) + waitingHint, {
-      title: "Venta registrada",
-    });
-    resumeSellingAfterCheckout();
+    const successMessage = buildSaleSuccessMessage(sale, `${paymentSuffix}${statusSuffix}`) + waitingHint;
+    resumeSellingAfterCheckout(successMessage);
     return true;
   } catch (error) {
     await showAppAlert(error.message);
@@ -9209,9 +9218,7 @@ async function finalizeCashCheckout(printTicket = true) {
   }
 
   const success = await processCheckout("efectivo", cashReceived, printTicket);
-  if (success) {
-    document.getElementById("cash-checkout-dialog").close();
-  }
+  if (success) resumeSellingAfterCheckout();
   return success;
 }
 
@@ -9234,7 +9241,7 @@ async function finalizeCheckoutFromDialog(printTicket = true) {
   if (method === "efectivo") return finalizeCashCheckout(printTicket);
   if (method === "mixto") return finalizeMixedCheckout(printTicket);
   const success = await checkout(printTicket);
-  if (success) document.getElementById("cash-checkout-dialog")?.close();
+  if (success) resumeSellingAfterCheckout();
   return success;
 }
 
