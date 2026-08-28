@@ -1,7 +1,0 @@
-{
-    "version":  "0.6.36",
-    "build_date":  "2026-08-28 10:16:12",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.36/felpos-update-0.6.36.zip",
-    "sha256":  "9c1c0b563f36402469b010c0e998a7955312a5683509a401dd23a6df67c4b9b7",
-    "release_notes":  "Actualizacion FEL POS v0.6.36\r\n\r\n- Metodos de pago mas legibles en cobro (Transf. en lugar de Transferencia cortada).\r\n- Tecla Supr y boton Supr · Eliminar quitan la linea aunque el cursor este en buscar."
-}
