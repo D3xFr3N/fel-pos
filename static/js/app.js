@@ -1309,9 +1309,13 @@ function renderOpenTicketsBar() {
   });
 }
 
-function focusProductSearch() {
+function focusProductSearch({ clear = false } = {}) {
   const searchInput = document.getElementById("product-search");
   if (!searchInput || searchInput.disabled) return;
+  if (clear) {
+    searchInput.value = "";
+    hideProductSearchSuggestions();
+  }
   const arm = () => {
     try {
       searchInput.focus({ preventScroll: true });
@@ -1328,6 +1332,15 @@ function focusProductSearch() {
     arm();
     requestAnimationFrame(arm);
   }, 0);
+}
+
+function resumeSellingAfterCheckout() {
+  document.getElementById("cash-checkout-dialog")?.close();
+  document.getElementById("sale-dialog")?.close();
+  if (!document.getElementById("tab-pos")?.classList.contains("active")) {
+    switchToPosTab();
+  }
+  focusProductSearch({ clear: true });
 }
 
 function scrollSelectedCartLineIntoView() {
@@ -9140,7 +9153,6 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
     document.getElementById("cash-checkout-dialog")?.close();
     document.getElementById("sale-dialog")?.close();
     await refreshPosCore();
-    openSaleDetail(sale.id);
     let printResult = null;
     let drawerResult = null;
     if (printTicket) {
@@ -9159,6 +9171,7 @@ async function processCheckout(paymentMethod, cashReceived = null, printTicket =
     await showAppAlert(buildSaleSuccessMessage(sale, `${paymentSuffix}${statusSuffix}`) + waitingHint, {
       title: "Venta registrada",
     });
+    resumeSellingAfterCheckout();
     return true;
   } catch (error) {
     await showAppAlert(error.message);

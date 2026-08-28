@@ -83,6 +83,7 @@
         { once: true }
       );
       if (!dialog.open) dialog.showModal();
+      setTimeout(() => document.getElementById("app-alert-ok")?.focus(), 0);
     });
   };
 
