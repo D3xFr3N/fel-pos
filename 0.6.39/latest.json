@@ -1,0 +1,7 @@
+{
+    "version":  "0.6.39",
+    "build_date":  "2026-09-04 14:32:14",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.39/felpos-update-0.6.39.zip",
+    "sha256":  "432fe13bbd9ba60ebd429ed22263525710befb89dbc718a9401d3b8d404a3e9e",
+    "release_notes":  "Actualizacion FEL POS v0.6.39\r\n\r\n- F5 cambia al siguiente ticket abierto (ya no pide cantidad).\r\n- F6 deja el ticket pendiente y abre uno nuevo."
+}
