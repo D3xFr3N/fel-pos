@@ -1131,6 +1131,8 @@ function holdCurrentTicket() {
   }
   snapshotActiveTicket();
   startBlankTicket();
+  setPosStatusMessage("Ticket en espera. Ticket nuevo listo.");
+  focusProductSearch({ clear: true });
   return true;
 }
 
@@ -1158,6 +1160,24 @@ function switchToOpenTicket(ticketId) {
   // Quita vacios retenidos al cambiar
   state.openTickets = state.openTickets.filter((ticket) => ticket.id === target.id || ticketHasContent(ticket));
   restoreTicket(target);
+}
+
+function cycleOpenTicket() {
+  snapshotActiveTicket();
+  const tickets = [...state.openTickets]
+    .filter((ticket) => ticket.id === state.activeTicketId || ticketHasContent(ticket))
+    .sort(compareTicketsByHoldOrder);
+  if (tickets.length < 2) {
+    setPosStatusMessage("No hay otro ticket. Usa F6 para dejar este pendiente.");
+    focusProductSearch();
+    return false;
+  }
+  const currentIndex = tickets.findIndex((ticket) => ticket.id === state.activeTicketId);
+  const nextIndex = (currentIndex >= 0 ? currentIndex + 1 : 0) % tickets.length;
+  switchToOpenTicket(tickets[nextIndex].id);
+  setPosStatusMessage(`Ticket ${getTicketNumber(tickets[nextIndex].id)}`);
+  focusProductSearch();
+  return true;
 }
 
 function discardOpenTicket(ticketId) {
@@ -2131,11 +2151,11 @@ function handleCartQuantityShortcuts(event) {
   // Como Eleventa: atajos del ticket funcionan aunque el foco este en el buscador.
   if (isTypingInField(target) && !isProductSearch) return;
 
-  // F5 en buscar no debe recargar el navegador.
+  // F5 en buscar no debe recargar el navegador: cambia de ticket.
   if (event.key === "F5") {
     event.preventDefault();
     event.stopPropagation();
-    if (state.cart.length) void changeSelectedCartLineQuantity();
+    cycleOpenTicket();
     return;
   }
   if (event.key === "F3") {
@@ -9367,7 +9387,7 @@ function handleCheckoutShortcuts(event) {
     const inSearch = event.target?.id === "product-search";
     if ((isTypingTarget(event.target) && !inSearch) || anyDialogOpen) return;
     event.preventDefault();
-    void changeSelectedCartLineQuantity();
+    cycleOpenTicket();
     return;
   }
 
@@ -11730,7 +11750,7 @@ function setupEvents() {
     holdCurrentTicket();
   });
   document.getElementById("pos-change-qty-btn")?.addEventListener("click", () => {
-    void changeSelectedCartLineQuantity();
+    cycleOpenTicket();
   });
   document.getElementById("pos-remove-line-btn")?.addEventListener("click", () => {
     removeSelectedCartLine();
