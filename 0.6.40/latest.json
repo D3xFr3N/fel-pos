@@ -1,0 +1,7 @@
+{
+    "version":  "0.6.40",
+    "build_date":  "2026-09-04 15:20:15",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.40/felpos-update-0.6.40.zip",
+    "sha256":  "50f7374f2ccccedcb0be815ffed8e2208ba8fcfd4c72d0aff82640b8f22ae4be",
+    "release_notes":  "Actualizacion FEL POS v0.6.40\r\n\r\n- F5 vuelve al ticket pendiente despues de F6 (aunque el actual este vacio).\r\n- F5 ya no recarga la ventana de escritorio."
+}
