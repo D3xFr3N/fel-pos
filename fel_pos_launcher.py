@@ -303,6 +303,101 @@ def _screen_size(webview_module) -> tuple[int, int]:
     return 1360, 860
 
 
+def _hook_desktop_function_keys(window) -> None:
+    """F5 is a browser accelerator in WebView2 and often never reaches JavaScript."""
+
+    def dispatch_cycle_ticket() -> None:
+        try:
+            window.evaluate_js(
+                "try{if(typeof cycleOpenTicket==='function')cycleOpenTicket()}catch(e){}"
+            )
+        except Exception:
+            pass
+
+    def bind() -> bool:
+        native = getattr(window, "native", None)
+        if native is None:
+            return False
+        if getattr(native, "_felpos_f5_hooked", False):
+            return True
+
+        def on_winforms_f5(sender, args) -> None:
+            try:
+                key_code = int(getattr(args, "KeyCode", 0) or 0)
+            except Exception:
+                key_code = 0
+            if key_code != 116:
+                return
+            try:
+                args.Handled = True
+                args.SuppressKeyPress = True
+            except Exception:
+                pass
+            dispatch_cycle_ticket()
+
+        def on_accelerator(sender, args) -> None:
+            try:
+                virtual_key = int(getattr(args, "VirtualKey", 0) or 0)
+            except Exception:
+                virtual_key = 0
+            if virtual_key != 116:
+                return
+            try:
+                args.Handled = True
+            except Exception:
+                pass
+            dispatch_cycle_ticket()
+
+        hooked = False
+        try:
+            native.KeyPreview = True
+            native.KeyDown += on_winforms_f5
+            hooked = True
+        except Exception:
+            pass
+
+        try:
+            controls = list(native.Controls)
+        except Exception:
+            controls = []
+        for ctrl in controls:
+            try:
+                type_name = str(ctrl.GetType().Name)
+            except Exception:
+                type_name = ""
+            if "WebView" not in type_name:
+                continue
+            try:
+                ctrl.PreviewKeyDown += on_winforms_f5
+                hooked = True
+            except Exception:
+                pass
+            controller = getattr(ctrl, "CoreWebView2Controller", None)
+            if controller is None:
+                core = getattr(ctrl, "CoreWebView2", None)
+                controller = getattr(core, "Parent", None) if core is not None else None
+            if controller is not None:
+                try:
+                    controller.AcceleratorKeyPressed += on_accelerator
+                    hooked = True
+                except Exception:
+                    pass
+
+        if hooked:
+            try:
+                native._felpos_f5_hooked = True
+            except Exception:
+                pass
+        return hooked
+
+    def retry(attempt: int = 0) -> None:
+        if bind() or attempt >= 24:
+            return
+        threading.Timer(0.25, lambda: retry(attempt + 1)).start()
+
+    retry()
+
+
 def _maximize_window(window) -> None:
     """Maximize after the native window exists (compatible with older pywebview)."""
     try:
@@ -355,6 +450,7 @@ def _create_desktop_window(webview_module, *, url: str, js_api: DesktopApi):
 
     def _on_shown() -> None:
         _maximize_window(window)
+        _hook_desktop_function_keys(window)
 
     try:
         if hasattr(window.events, "shown"):

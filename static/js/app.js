@@ -1162,20 +1162,38 @@ function switchToOpenTicket(ticketId) {
   restoreTicket(target);
 }
 
-function cycleOpenTicket() {
-  snapshotActiveTicket();
-  const tickets = [...state.openTickets]
-    .filter((ticket) => ticket.id === state.activeTicketId || ticketHasContent(ticket))
+let lastTicketCycleAt = 0;
+
+function getHeldTickets() {
+  return [...state.openTickets]
+    .filter((ticket) => ticket.id !== state.activeTicketId && ticketHasContent(ticket))
     .sort(compareTicketsByHoldOrder);
-  if (tickets.length < 2) {
+}
+
+function cycleOpenTicket() {
+  const now = Date.now();
+  if (now - lastTicketCycleAt < 250) return false;
+  lastTicketCycleAt = now;
+  snapshotActiveTicket();
+  const held = getHeldTickets();
+  if (!held.length) {
     setPosStatusMessage("No hay otro ticket. Usa F6 para dejar este pendiente.");
     focusProductSearch();
     return false;
   }
-  const currentIndex = tickets.findIndex((ticket) => ticket.id === state.activeTicketId);
-  const nextIndex = (currentIndex >= 0 ? currentIndex + 1 : 0) % tickets.length;
-  switchToOpenTicket(tickets[nextIndex].id);
-  setPosStatusMessage(`Ticket ${getTicketNumber(tickets[nextIndex].id)}`);
+  const ordered = [...state.openTickets]
+    .filter((ticket) => ticket.id === state.activeTicketId || ticketHasContent(ticket))
+    .sort(compareTicketsByHoldOrder);
+  const currentIndex = ordered.findIndex((ticket) => ticket.id === state.activeTicketId);
+  const next = currentIndex < 0 ? held[0] : ordered[(currentIndex + 1) % ordered.length];
+  if (!next || next.id === state.activeTicketId) {
+    switchToOpenTicket(held[0].id);
+    setPosStatusMessage(getTicketLabel(held[0]));
+    focusProductSearch();
+    return true;
+  }
+  switchToOpenTicket(next.id);
+  setPosStatusMessage(getTicketLabel(next));
   focusProductSearch();
   return true;
 }
@@ -2143,21 +2161,25 @@ function isDeleteLineShortcut(event) {
 
 function handleCartQuantityShortcuts(event) {
   if (event.ctrlKey || event.altKey || event.metaKey) return;
-  if (document.querySelector("dialog[open]")) return;
-  if (!document.getElementById("tab-pos")?.classList.contains("active")) return;
 
   const target = event.target;
   const isProductSearch = target?.id === "product-search";
-  // Como Eleventa: atajos del ticket funcionan aunque el foco este en el buscador.
-  if (isTypingInField(target) && !isProductSearch) return;
 
-  // F5 en buscar no debe recargar el navegador: cambia de ticket.
+  // F5 lo intercepta WebView2/Edge como recargar. Siempre cancelarlo primero.
   if (event.key === "F5") {
     event.preventDefault();
     event.stopPropagation();
+    if (document.querySelector("dialog[open]")) return;
+    if (!document.getElementById("tab-pos")?.classList.contains("active")) return;
+    if (isTypingInField(target) && !isProductSearch) return;
     cycleOpenTicket();
     return;
   }
+
+  if (document.querySelector("dialog[open]")) return;
+  if (!document.getElementById("tab-pos")?.classList.contains("active")) return;
+  // Como Eleventa: atajos del ticket funcionan aunque el foco este en el buscador.
+  if (isTypingInField(target) && !isProductSearch) return;
   if (event.key === "F3") {
     event.preventDefault();
     event.stopPropagation();
@@ -11612,6 +11634,13 @@ function setupTabs() {
 }
 
 function setupEvents() {
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key === "F5") event.preventDefault();
+    },
+    true
+  );
   document.addEventListener("keydown", handleCartQuantityShortcuts, true);
   [
     "sales-filter-from",
