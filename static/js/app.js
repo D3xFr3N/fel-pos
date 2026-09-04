@@ -2131,6 +2131,36 @@ function handleCartQuantityShortcuts(event) {
   // Como Eleventa: atajos del ticket funcionan aunque el foco este en el buscador.
   if (isTypingInField(target) && !isProductSearch) return;
 
+  // F5 en buscar no debe recargar el navegador.
+  if (event.key === "F5") {
+    event.preventDefault();
+    event.stopPropagation();
+    if (state.cart.length) void changeSelectedCartLineQuantity();
+    return;
+  }
+  if (event.key === "F3") {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!state.cart.length) {
+      alert("El ticket ya esta vacio.");
+      return;
+    }
+    if (!confirm("Limpiar el ticket actual?")) return;
+    state.cart = [];
+    resetCartDiscount();
+    const paid = document.getElementById("pos-paid-with");
+    if (paid) paid.value = "0.00";
+    renderCart();
+    focusProductSearch({ clear: true });
+    return;
+  }
+  if (event.key === "F4" || event.key === "F6") {
+    event.preventDefault();
+    event.stopPropagation();
+    holdCurrentTicket();
+    return;
+  }
+
   if (isDeleteLineShortcut(event)) {
     if (!state.cart.length) return;
     event.preventDefault();
@@ -9310,7 +9340,8 @@ function handleCheckoutShortcuts(event) {
   }
 
   if (event.key === "F3") {
-    if (isTypingTarget(event.target) || anyDialogOpen) return;
+    const inSearch = event.target?.id === "product-search";
+    if ((isTypingTarget(event.target) && !inSearch) || anyDialogOpen) return;
     event.preventDefault();
     if (!state.cart.length) {
       alert("El ticket ya esta vacio.");
@@ -9325,14 +9356,16 @@ function handleCheckoutShortcuts(event) {
   }
 
   if (event.key === "F4" || event.key === "F6") {
-    if (isTypingTarget(event.target) || anyDialogOpen) return;
+    const inSearch = event.target?.id === "product-search";
+    if ((isTypingTarget(event.target) && !inSearch) || anyDialogOpen) return;
     event.preventDefault();
     holdCurrentTicket();
     return;
   }
 
   if (event.key === "F5") {
-    if (isTypingTarget(event.target) || anyDialogOpen) return;
+    const inSearch = event.target?.id === "product-search";
+    if ((isTypingTarget(event.target) && !inSearch) || anyDialogOpen) return;
     event.preventDefault();
     void changeSelectedCartLineQuantity();
     return;
