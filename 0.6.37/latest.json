@@ -1,7 +1,0 @@
-{
-    "version":  "0.6.37",
-    "build_date":  "2026-08-28 11:46:46",
-    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.37/felpos-update-0.6.37.zip",
-    "sha256":  "6c04c66c98853e0475d73466e27739038d9840f1b21ff135784cf6a3e387c60a",
-    "release_notes":  "Actualizacion FEL POS v0.6.37\r\n\r\n- Al terminar de cobrar, el cursor queda en buscar producto (sin aviso que quite el foco).\r\n- El resumen de la venta se muestra en la barra de estado."
-}

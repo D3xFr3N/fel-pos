@@ -1,0 +1,7 @@
+{
+    "version":  "0.6.38",
+    "build_date":  "2026-09-04 14:01:00",
+    "download_url":  "https://D3xFr3N.github.io/fel-pos/0.6.38/felpos-update-0.6.38.zip",
+    "sha256":  "964ae71eef4262c139555cf09da843886b7f89bddd673a219e2b2dd91f7de3cf",
+    "release_notes":  "Actualizacion FEL POS v0.6.38\r\n\r\n- F3, F4, F5 y F6 funcionan con el cursor en buscar producto.\r\n- F5 ya no recarga el navegador: cambia la cantidad de la linea."
+}
